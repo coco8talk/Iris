@@ -4,9 +4,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from langchain_core.messages import HumanMessage
-
 from sre_copilot.config import create_alibaba_model, create_openrouter_model
+from sre_copilot.structured import generate_rca_summary
+
+ALERT_TEXT = """\
+[FIRING] HighErrorRate
+service: checkout-service
+description: 5xx error ratio reached 34% over the last 5 minutes (threshold 5%).
+detail: downstream MySQL instance db-payments-01 reports connection pool \
+exhausted (200/200 in use); checkout requests time out after 10s.
+started_at: 2026-07-12T09:14:00Z
+"""
 
 
 def run_smoke(provider, create_model) -> bool:
@@ -16,25 +24,19 @@ def run_smoke(provider, create_model) -> bool:
     try:
         model = create_model()
         model_name = model.model_name
-        response = model.invoke(
-            [HumanMessage(content="Reply with one short sentence confirming connection.")]
-        )
-        text = response.text.strip()
-        if not text:
-            raise RuntimeError("empty model response")
-
+        result = generate_rca_summary(model, ALERT_TEXT)
         elapsed_ms = round((time.perf_counter() - started) * 1000)
-        summary = " ".join(text.split())[:120]
         print(
-            f'PASS provider={provider} model={model_name} '
-            f'elapsed_ms={elapsed_ms} response="{summary}"'
+            f"PASS provider={provider} model={model_name} "
+            f"elapsed_ms={elapsed_ms} result={result.model_dump(mode='json')}"
         )
         return True
     except Exception as exc:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
+        message = " ".join(str(exc).split())[:200]
         print(
             f"FAIL provider={provider} model={model_name} "
-            f"elapsed_ms={elapsed_ms} error={type(exc).__name__}",
+            f'elapsed_ms={elapsed_ms} error={type(exc).__name__} message="{message}"',
             file=sys.stderr,
         )
         return False

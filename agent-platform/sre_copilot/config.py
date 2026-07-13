@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
@@ -6,10 +7,13 @@ from langchain_openrouter import ChatOpenRouter
 from pydantic import AnyHttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Anchor to the project directory so scripts work from any cwd.
+_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+
 
 class AlibabaSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_prefix="ALIBABA_",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -22,7 +26,7 @@ class AlibabaSettings(BaseSettings):
 
 class OpenRouterSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_prefix="OPENROUTER_",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -51,6 +55,7 @@ def create_alibaba_model(
         api_key=settings.api_key,
         base_url=str(settings.base_url),
         model=settings.model,
+        extra_body={"enable_thinking": False},
     )
 
 
@@ -62,4 +67,5 @@ def create_openrouter_model(
         api_key=settings.api_key,
         base_url=str(settings.base_url),
         model=settings.model,
+        reasoning={"effort": "none"},
     )

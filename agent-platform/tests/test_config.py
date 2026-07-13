@@ -78,6 +78,7 @@ def test_alibaba_factory_passes_expected_parameters(monkeypatch) -> None:
         "api_key": settings.api_key,
         "base_url": "https://alibaba.example/v1",
         "model": "alibaba-test-model",
+        "extra_body": {"enable_thinking": False},
     }
 
 
@@ -102,4 +103,5 @@ def test_openrouter_factory_passes_expected_parameters(monkeypatch) -> None:
         "api_key": settings.api_key,
         "base_url": "https://openrouter.example/v1",
         "model": "openrouter-test-model",
+        "reasoning": {"effort": "none"},
     }
