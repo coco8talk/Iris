@@ -29,6 +29,7 @@ ENV/
 # Build and packaging
 build/
 dist/
+target/
 *.egg-info/
 .eggs/
 *.egg
@@ -46,12 +47,19 @@ htmlcov/
 .env.*
 !.env.example
 !.env.*.example
+application.yml
 
 # Logs and temporary files
 *.log
 *.tmp
 *.temp
 .cache/
+
+# Local databases and tool caches
+data/
+*.db
+*.sqlite
+.codegraph/
 
 # Documentation
 docs/

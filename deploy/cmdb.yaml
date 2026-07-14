@@ -1,0 +1,41 @@
+services:
+  - name: gateway
+    container: patient-gateway
+    port: 8080
+    depends_on: [order-service]
+    middleware: [nacos]
+    jvm_opts: "-Xms256m -Xmx512m"
+    config_notes: {}
+    owner: chen.jing
+
+  - name: order-service
+    container: order-service
+    port: 8081
+    depends_on: [inventory-service, payment-service]
+    middleware: [mysql, redis, nacos]
+    jvm_opts: "-Xms256m -Xmx512m -XX:+UseG1GC"
+    config_notes:
+      pool_size: 10
+      feign_timeout_ms: 3000
+    owner: li.na
+
+  - name: inventory-service
+    container: inventory-service
+    port: 8082
+    depends_on: []
+    middleware: [mysql, redis, nacos]
+    jvm_opts: "-Xms256m -Xmx512m"
+    config_notes:
+      pool_size: 10
+    owner: wang.lei
+
+  - name: payment-service
+    container: payment-service
+    port: 8083
+    depends_on: []
+    middleware: [mysql, nacos]
+    jvm_opts: "-Xms256m -Xmx384m"
+    config_notes:
+      pool_size: 4
+      channel_timeout_ms: 5000
+    owner: zhang.wei
