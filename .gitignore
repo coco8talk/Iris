@@ -47,7 +47,7 @@ htmlcov/
 .env.*
 !.env.example
 !.env.*.example
-application.yml
+tool-gateway/src/main/resources/application.yml
 
 # Logs and temporary files
 *.log

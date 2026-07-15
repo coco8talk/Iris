@@ -3,6 +3,7 @@ name = "agent-platform"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx",
     "langchain-openai",
     "langchain-openrouter",
     "langchain_core",
