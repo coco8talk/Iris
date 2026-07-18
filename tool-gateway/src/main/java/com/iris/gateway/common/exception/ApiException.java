@@ -46,6 +46,16 @@ public class ApiException extends RuntimeException {
     }
 
     /**
+     * 创建时间窗超限异常。
+     *
+     * @param message 时间窗超过护栏上限的具体原因
+     * @return HTTP 状态码为 {@link HttpStatus#BAD_REQUEST}、错误码 RANGE_TOO_LARGE 的 API 异常
+     */
+    public static ApiException rangeTooLarge(String message) {
+        return new ApiException(HttpStatus.BAD_REQUEST, "RANGE_TOO_LARGE", message);
+    }
+
+    /**
      * 创建未授权访问异常。
      *
      * @param message 身份认证失败或缺少认证信息的具体原因

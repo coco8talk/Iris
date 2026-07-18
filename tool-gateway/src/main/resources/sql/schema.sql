@@ -45,3 +45,25 @@ CREATE TABLE IF NOT EXISTS audit_log
     -- 0 = 未降级，1 = 已降级
     degraded        INTEGER NOT NULL DEFAULT 0
 );
+
+-- 变更事件表：发版/配置调优/重启等运维动作，供 F09 变更溯源(T17)
+CREATE TABLE IF NOT EXISTS change_event
+(
+    -- 变更唯一标识，主键
+    change_id TEXT PRIMARY KEY,
+
+    -- 变更发生时间，ISO 8601 格式
+    ts        TEXT,
+
+    -- 变更类型：deploy / config_change / restart 等
+    type      TEXT,
+
+    -- 关联服务名
+    service   TEXT,
+
+    -- 变更摘要
+    summary   TEXT,
+
+    -- 变更操作人
+    operator  TEXT
+);
