@@ -46,12 +46,28 @@ public record ApiEnvelope<T>(
      * @return 正常成功响应
      */
     public static <T> ApiEnvelope<T> ok(T data, long elapsedMs) {
+        return ok(data, elapsedMs, false);
+    }
+
+    /**
+     * 创建正常成功响应，并显式标记结果是否被截断。
+     *
+     * <p>当返回的 series/行数/条数超过护栏上限而被截断时，{@code truncated} 置为
+     * {@code true}，供调用方感知数据不完整。</p>
+     *
+     * @param data      响应数据
+     * @param elapsedMs 接口调用耗时，单位：毫秒
+     * @param truncated 结果是否因数量限制被截断
+     * @param <T>       响应数据类型
+     * @return 正常成功响应
+     */
+    public static <T> ApiEnvelope<T> ok(T data, long elapsedMs, boolean truncated) {
         return new ApiEnvelope<>(
                 true,
                 false,
                 null,
                 data,
-                new Meta(elapsedMs, false, -1)
+                new Meta(elapsedMs, truncated, -1)
         );
     }
 

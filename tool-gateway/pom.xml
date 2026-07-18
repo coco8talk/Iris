@@ -114,6 +114,13 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- WireMock:假 Prometheus/Loki/Zipkin 上游,仅用于单元测试(standalone 已 shade 依赖,避免冲突) -->
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-standalone</artifactId>
+      <version>3.9.2</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
