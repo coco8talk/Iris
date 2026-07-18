@@ -72,19 +72,24 @@ class GatewayClient:
     def call(self, path: str, body: dict[str, Any]) -> Envelope:
         response = self._http.post(path, json=body)
         if 400 <= response.status_code < 500:
-            error = response.json()
+            try:
+                error = response.json()
+            except ValueError:
+                error = {}
             error_cls = (
                 BudgetExceededError
                 if response.status_code == 429
                 else GatewayRequestError
-            )
+        )
             raise error_cls(
                 response.status_code,
                 error.get("code", "UNKNOWN"),
-                error.get("message", ""),
-            )
+                error.get("message", response.text[:200]),
+        )
+
         response.raise_for_status()
         return Envelope.model_validate(response.json())
+
 
     def close(self) -> None:
         self._http.close()

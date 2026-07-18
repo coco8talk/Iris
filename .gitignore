@@ -54,6 +54,7 @@ tool-gateway/src/main/resources/application.yml
 *.tmp
 *.temp
 .cache/
+agent-platform/runs/
 
 # Local databases and tool caches
 data/

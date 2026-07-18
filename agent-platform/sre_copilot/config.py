@@ -67,5 +67,5 @@ def create_openrouter_model(
         api_key=settings.api_key,
         base_url=str(settings.base_url),
         model=settings.model,
-        reasoning={"effort": "none"},
+        reasoning={"effort": "high"},
     )
