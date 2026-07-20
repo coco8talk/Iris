@@ -159,6 +159,7 @@ def _complete_report(
 ) -> RcaReport:
     """取证 Agent 达到预算时，用已登记证据让真实模型完成结构化报告。"""
     evidence = "\n\n".join(store.read(eid) for eid in store.list_ids())
+
     reporter = build_simple_agent(
         model=model,
         tools=[],
@@ -170,6 +171,7 @@ def _complete_report(
         response_schema=RcaReport,
         name="investigator-reporter",
     )
+
     result = reporter.invoke(
         {
             "messages": [{
