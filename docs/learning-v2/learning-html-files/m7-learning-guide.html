@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="source-sha256" content="10ffcad917c1c2ae901ce8c46f8872a1e2c5151640bd215e7a9cef9d0965fc60">
+  <title>模块 7 · 排查简版（单 Agent 直连工具）+ 证据台账 — 版本 C</title>
+  <style>
+    :root {
+      --bg: oklch(0.9697 0.0153 7.48);
+      --surface: oklch(1.0000 0.0000 89.88 / 0.85);
+      --fg: oklch(0.3109 0.0222 355.11);
+      --muted: oklch(0.3808 0.0172 348.75);
+      --border: oklch(1.0000 0.0000 89.88 / 0.60);
+      --accent: oklch(0.7893 0.1284 5.11);
+      --accent-ink: oklch(0.4930 0.1280 4.50);
+      --highlight: oklch(0.9450 0.0360 55 / 0.78);
+      --soft-pink: oklch(0.9470 0.0248 2.08);
+      --shadow: oklch(0.6521 0.0908 1.39 / 0.15);
+      --tip: oklch(0.6140 0.1300 243);
+      --warn: oklch(0.7000 0.1450 75);
+      --danger: oklch(0.5900 0.1800 25);
+      --success: oklch(0.6200 0.1600 145);
+      --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-display: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+      --code-bg: #282C34;
+      --code-fg: #ABB2BF;
+      --code-comment: #5C6370;
+      --code-keyword: #C678DD;
+      --code-string: #98C379;
+      --code-function: #61AFEF;
+      --code-number: #D19A66;
+      --code-type: #E5C07B;
+      --code-operator: #56B6C2;
+      --code-error: #E06C75;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--muted);
+      background:
+        linear-gradient(160deg, #FFF1F3 0%, #FDE7EC 100%);
+      font-family: var(--font-body);
+      font-size: 17px;
+      font-weight: 400;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: var(--fg);
+      text-decoration-color: color-mix(in oklch, var(--muted) 42%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+      overflow-wrap: anywhere;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .ambient {
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(92px);
+      opacity: 0.56;
+      pointer-events: none;
+    }
+
+    .ambient-one {
+      width: 36vw;
+      height: 36vw;
+      top: -10vw;
+      left: -8vw;
+      background: oklch(0.8550 0.0850 3 / 0.55);
+    }
+
+    .ambient-two {
+      width: 34vw;
+      height: 34vw;
+      top: 30vh;
+      right: -12vw;
+      background: oklch(0.8700 0.0700 50 / 0.42);
+    }
+
+    .ambient-three {
+      width: 28vw;
+      height: 28vw;
+      bottom: -8vw;
+      left: 18vw;
+      background: oklch(0.8500 0.0600 315 / 0.38);
+    }
+
+    .page-shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .reader-layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 920px);
+      justify-content: center;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .reader-layout:has(.toc details:not([open])) {
+      grid-template-columns: 56px minmax(0, 920px);
+    }
+
+    .document {
+      grid-column: 2;
+      width: 100%;
+      max-width: 920px;
+      min-width: 0;
+    }
+
+    .glass-card {
+      position: relative;
+      padding: clamp(28px, 4vw, 44px);
+      margin: 0 0 28px;
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 32px rgba(190,120,140,0.15);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 38px rgba(190,120,140,0.19);
+    }
+
+    .hero {
+      overflow: hidden;
+      padding-top: clamp(36px, 6vw, 58px);
+      padding-bottom: clamp(34px, 5vw, 52px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 118px;
+      height: 4px;
+      left: clamp(28px, 4vw, 44px);
+      bottom: 25px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--fg);
+      font-family: var(--font-display);
+      font-weight: 650;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 17ch;
+      font-size: clamp(17px, 2.9vw, 26px);
+      line-height: 1.12;
+      letter-spacing: -0.025em;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(25px, 4vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+
+    h3 {
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-size: clamp(20px, 3vw, 23px);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 65ch;
+      margin: 0 0 16px;
+    }
+
+    strong {
+      color: var(--fg);
+      font-weight: 600;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+
+    em {
+      color: var(--fg);
+      font-style: italic;
+    }
+
+    mark {
+      color: inherit;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+    }
+
+    code:not(pre code) {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      color: oklch(0.4300 0.1350 12);
+      background: color-mix(in oklch, var(--accent) 22%, white);
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    ul, ol {
+      margin: 12px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    ul:not(.checklist) > li::before {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 0.72em;
+      border-radius: 50%;
+      background: var(--accent-ink);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent);
+    }
+
+    ol:not(.steps) {
+      counter-reset: ordered;
+    }
+
+    ol:not(.steps) > li {
+      counter-increment: ordered;
+      padding-left: 34px;
+    }
+
+    ol:not(.steps) > li::before {
+      content: counter(ordered) ".";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-ink);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      font-weight: 600;
+    }
+
+    .checklist > li {
+      padding-left: 0;
+    }
+
+    .completion-label {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+
+    .completion-checkbox {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .check-box {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      margin-top: 0.32em;
+      border: 1.5px solid color-mix(in oklch, var(--accent-ink) 68%, var(--border));
+      border-radius: 5px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .completion-checkbox:focus-visible + .check-box {
+      outline: 3px solid color-mix(in oklch, var(--success) 28%, transparent);
+      outline-offset: 3px;
+    }
+
+    .completion-checkbox:checked + .check-box {
+      border-color: var(--success);
+      background: var(--success);
+      transform: scale(1.04);
+    }
+
+    .completion-checkbox:checked + .check-box::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      left: 5px;
+      top: 1px;
+      border-right: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(45deg);
+    }
+
+    .steps {
+      position: relative;
+      margin-left: 2px;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 25px;
+      bottom: 25px;
+      width: 1px;
+      background: color-mix(in oklch, var(--accent) 48%, var(--border));
+    }
+
+    .steps > li {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 0;
+      margin: 12px 0;
+    }
+
+    .step-badge {
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid color-mix(in oklch, var(--accent-ink) 24%, white);
+      border-radius: 50%;
+      color: var(--accent-ink);
+      background: color-mix(in oklch, var(--soft-pink) 80%, white);
+      box-shadow: 0 4px 12px var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .step-card {
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+    }
+
+    blockquote {
+      margin: 24px 0 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--tip);
+      border-radius: 0 14px 14px 0;
+      color: var(--fg);
+      background: color-mix(in oklch, var(--tip) 7%, var(--surface));
+    }
+
+    blockquote p {
+      margin: 0;
+    }
+
+    .meta-strip {
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.35);
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-strip p {
+      margin: 0;
+    }
+
+    .code-shell {
+      position: relative;
+      margin: 20px 0 22px;
+      border-radius: 12px;
+      overflow: hidden;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    }
+
+    .code-toolbar {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .language-label {
+      color: color-mix(in srgb, var(--code-fg) 74%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .copy-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: var(--code-fg);
+      background: rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .copy-code:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .copy-code:active {
+      transform: translateY(2px);
+    }
+
+    .copy-code svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    pre {
+      margin: 0;
+      padding: 48px 18px 18px;
+      overflow: auto;
+      color: var(--code-fg);
+      background: #282C34;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font-family: inherit;
+      white-space: pre;
+    }
+
+    .hljs { color: var(--code-fg); background: transparent; }
+    .hljs-comment, .hljs-quote { color: var(--code-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--code-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: var(--code-string); }
+    .hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--code-function); }
+    .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--code-number); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-built_in { color: var(--code-type); }
+    .hljs-operator, .hljs-attr, .hljs-attribute { color: var(--code-operator); }
+    .hljs-deletion, .hljs-variable, .hljs-template-variable { color: var(--code-error); }
+
+    .closing-note {
+      color: var(--fg);
+      font-weight: 560;
+    }
+
+    .toc {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1;
+      top: 28px;
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      box-shadow: 0 8px 28px var(--shadow);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+
+    .toc details {
+      padding: 8px;
+    }
+
+    .toc summary {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .toc summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .toc details:not([open]) .toc-list {
+      display: none;
+    }
+
+    .toc summary svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .toc-list li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list li::before {
+      display: none;
+    }
+
+    .toc-list a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: color-mix(in oklch, var(--muted) 86%, transparent);
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .toc-list a:hover {
+      color: var(--fg);
+      background: rgba(255,255,255,0.42);
+    }
+
+    .toc-list a[aria-current="true"] {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 20%, white);
+      font-weight: 550;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 480ms ease, transform 480ms ease;
+    }
+
+    @media (max-width: 1240px) {
+      .page-shell {
+        width: min(980px, calc(100% - 40px));
+      }
+
+      .reader-layout,
+      .reader-layout:has(.toc details:not([open])) {
+        grid-template-columns: minmax(0, 920px);
+        gap: 18px;
+      }
+
+      .toc {
+        z-index: 10;
+        grid-column: 1;
+        top: 12px;
+        grid-row: 1;
+        max-height: min(62vh, 520px);
+      }
+
+      .toc summary {
+        display: flex;
+      }
+
+      .toc details:not([open]) .toc-list {
+        display: none;
+      }
+
+      .document {
+        grid-column: 1;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 16px;
+      }
+
+      .page-shell {
+        width: min(100% - 24px, 620px);
+        padding: 18px 0 64px;
+      }
+
+      .glass-card {
+        padding: 24px 20px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+      }
+
+      .hero {
+        padding-top: 32px;
+        padding-bottom: 42px;
+      }
+
+      .hero::after {
+        left: 20px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 7vw, 29px);
+      }
+
+      h3 {
+        margin-top: 28px;
+      }
+
+      .steps > li {
+        gap: 10px;
+      }
+
+      .step-card {
+        padding: 12px 13px;
+      }
+
+      pre {
+        padding: 48px 16px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media print {
+      @page { margin: 16mm; }
+
+      body {
+        color: #4A3F44;
+        background: white !important;
+        font-size: 12pt;
+      }
+
+      .ambient, .toc, .copy-code {
+        display: none !important;
+      }
+
+      .page-shell {
+        width: 100%;
+        padding: 0;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .glass-card {
+        break-inside: avoid;
+        padding: 0;
+        margin: 0 0 18pt;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .hero::after {
+        display: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .code-shell, pre {
+        break-inside: avoid;
+        color: #ABB2BF !important;
+        background: #282C34 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  
+
+    .table-wrap {
+      margin: 20px 0 22px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      font-size: 0.92em;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 14%, white);
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+</style>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="ambient ambient-three" aria-hidden="true"></div>
+
+  <main class="page-shell" data-od-id="page-shell">
+    <div class="reader-layout">
+      <article class="document" id="document-content" data-od-id="document-content">
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 7 · 排查简版（单 Agent 直连工具）+ 证据台账 — 版本 C</h1></header>
+<blockquote>
+<p>greenfield。🟢复刻 create_agent 官方样例 → 🟡改造成持全部工具的排查 Agent → 🔴自研证据台账。<strong>本实现永久保留为消融 A2（去 subagent 对照组）。</strong></p>
+</blockquote>
+<section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
+<ol>
+<li>用一个持有全部只读工具的单 Agent（ReAct 循环）把一次告警查到有结论。</li>
+<li>让 Agent 每次取证都把关键结果按格式登记为带编号的证据（EV-M-001…），落盘可回放。</li>
+<li>让结论必须引用 <code>[EV-*]</code>，为 M9 的反幻觉验收打地基。</li>
+</ol>
+</section>
+<section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<ul>
+<li><code>src/.../agents/evidence.py</code>（EvidenceStore）</li>
+<li><code>src/.../agents/simple_investigator.py</code>（单 Agent 排查）</li>
+<li><code>src/.../graph/nodes/investigate.py</code>（investigate 节点，接单 Agent）</li>
+<li><code>runs/incidents/{id}/evidence/</code>（运行时证据产物）</li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t7-1-证据台账-evidencestore" data-od-id="section-任务-t7-1-证据台账-evidencestore"><h2 data-od-id="section-任务-t7-1-证据台账-evidencestore">任务 T7.1 · 证据台账 EvidenceStore</h2>
+<div class="meta-strip"><p><strong>id</strong>：T7.1 ｜ <strong>所属模块</strong>：M7 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：从 0 写一个能按类型编号、落盘、防路径穿越的证据台账。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>证据台账（可回放取证）</strong>：每次工具取证把"来源 + 摘要 + 关键摘录"写成一份带编号的证据文件，结论靠引用它们支撑。<em>Java 类比</em>：像结构化的审计日志 + 附件，每条有唯一 id 可溯源。📖（自研；格式见执行计划 §0.6）</li>
+<li><strong>防路径穿越</strong>：证据只能写进 <code>runs/incidents/{id}/</code> 子目录，拒 <code>..</code>/绝对路径/软链逃逸。<em>Java 类比</em>：文件上传时校验落地路径必须在白名单目录内，防目录穿越漏洞。📖 <a href="https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html" rel="noreferrer" target="_blank">https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html</a> （路径穿越防护，需核实锚点）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：Python 标准 <code>pathlib</code> 写文件 + 一个带 frontmatter 的 Markdown 样例结构。</li>
+<li><strong>跑什么</strong>：手写个最小函数把一份 <code>{frontmatter}\n正文</code> 写进指定目录，先证明落盘 OK。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>写 <code>EvidenceStore(incident_id)</code>：<code>new_id(kind: "M"|"L"|"T"|"S") -&gt; "EV-M-001"</code>（按类型递增）、<code>write(evidence_id, source, agent_role, degraded, summary, excerpt) -&gt; Path</code>（§0.6 格式）、<code>list_ids/read</code>、<code>write_alert(alerts)</code>。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写防穿越校验：所有写路径 <code>resolve()</code> 后必须是 <code>runs/incidents/{id}/</code> 的真实子目录，否则抛异常。自测 <code>..</code>、绝对路径、软链三种攻击都被拒。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：pathlib 写一份带 frontmatter 的文件。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成 EvidenceStore + EV 编号。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次调用：写两条证据，看编号是否 EV-M-001/002 递增。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研防穿越：构造 <code>../../etc/x</code> 写入，验证被拒。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证 frontmatter 字段齐全。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>编号按 kind 分别递增（M/L/T/S），别混。</li>
+<li>防穿越用 <code>Path.resolve()</code> 后比较前缀，别用字符串拼接判断。</li>
+<li>这个类是 M9/M10 的共同依赖，格式即契约，先定死。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>编号乱：确认 new_id 是扫描已有文件自增，不是内存计数（重启会乱）。</li>
+<li>视频：证据台账无对口视频，以自研为主。</li>
+<li>问 AI：「Python 里我要保证写文件路径必须落在某个基目录内、防 <code>..</code> 穿越和软链逃逸，正确的校验写法是什么？给校验函数 + 3 个攻击用例。」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 用一个小脚本驱动 EvidenceStore（本任务偏库，验收用脚本 + 真机文件）
+uv run python -c "from ...agents.evidence import EvidenceStore; s=EvidenceStore('inc-t'); print(s.new_id('M'), s.new_id('M'))"  # EV-M-001 EV-M-002
+ls runs/incidents/inc-t/evidence/metrics/   # 有文件，frontmatter 字段齐全
+# 异常路径：让 write 落到 '../x' → 抛异常、不落盘
+</code></pre></div>
+<p>判定特征：EV 编号按类型递增；证据文件 frontmatter（evidence_id/source/agent_role/ts/degraded）齐全；穿越路径被拒。依赖真实外部服务：无（纯本地，但证据内容来自真实工具调用）。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>pathlib 落盘样例跑通（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>EV 编号按 kind 递增、落盘格式合 §0.6</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>..</code>/绝对路径/软链三种穿越均被拒</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>frontmatter 字段齐全</span></label></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t7-2-单-agent-排查-simple-investigator" data-od-id="section-任务-t7-2-单-agent-排查-simple-investigator"><h2 data-od-id="section-任务-t7-2-单-agent-排查-simple-investigator">任务 T7.2 · 单 Agent 排查 simple_investigator</h2>
+<div class="meta-strip"><p><strong>id</strong>：T7.2 ｜ <strong>所属模块</strong>：M7 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：用 create_agent 建一个持全部只读工具的排查 Agent，取证并登记证据、输出带引用的报告。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>create_agent + ReAct 循环</strong>：给 Agent 一组工具，它自己决定调哪个、看结果、再调，直到能结论。<em>Java 类比</em>：一个会自己决定调哪个下游接口的循环控制器，你只给它工具和目标。📖 <a href="https://docs.langchain.com/oss/python/langchain/agents" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/agents</a> （create_agent，需核实锚点）· video-2 P10-16「创建 Agent·定义工具」</li>
+<li><strong>证据登记做成工具（而非解析自由文本）</strong>：给 Agent 一个 <code>record_evidence</code> 工具，让它主动登记，可靠性高于事后解析。<em>Java 类比</em>：让调用方显式调审计接口，而不是从日志里正则抠。📖（复用 T7.1 EvidenceStore）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-8" id="section-第-1-段-复刻-8">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：LangChain <code>create_agent(model, tools, response_format=...)</code> 官方最小样例。</li>
+<li><strong>跑什么</strong>：照样例建一个持 1 个工具的 Agent 跑一次，看它怎么调工具、怎么结束。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-9" id="section-第-2-段-改造-9">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>写 <code>simple_investigator.investigate(state, tools, model, evidence_store)</code>：<code>create_agent(model, tools, response_format=RcaReport)</code>；system prompt 要点——先看告警+拓扑、每次取证后调 <code>record_evidence</code> 登记、结论必引 <code>[EV-*]</code>。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-10" id="section-第-3-段-自研-10">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写回流逻辑：<code>verifier_feedback</code> 非空时，prompt 附驳回意见并声明"增量补证、复用已有 evidence_id"；token 用量累加进 <code>budget.tokens_used</code>（从 usage metadata 读）。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻官方 create_agent 样例跑通。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成持全部工具 + record_evidence + RcaReport 输出。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：注入一个真实故障→webhook→看 Agent 是否真调工具取证。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研回流：模拟 verifier_feedback，验证增量补证不重头再来。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证 report_draft 结论都带 [EV-*]。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>用官方 <code>create_agent</code>，<strong>别手写 Agent 循环</strong>，也别用已弃用的 <code>create_react_agent</code>。</li>
+<li>record_evidence 是工具不是解析——让 Agent 主动登记。</li>
+<li>这是消融 A2 的正式配置，M10 上线多 Agent 后靠 <code>subagents_enabled</code> 切换，别删。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>Agent 不调工具：检查工具的 args_schema description 是否让 LLM 看得懂（M3 定义的）。</li>
+<li>视频：video-1 P51-55「Agent 概述·调用·绑定工具」逐步兜底；video-2 P14「工具测试和 Agent 整合」。</li>
+<li>问 AI：「LangChain create_agent 给了工具但模型总不调 record_evidence 登记证据，我的 system prompt 和工具 description 这样（贴出），怎么让它每次取证后必登记？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 注入某故障 → webhook → 看 investigate 产出
+curl -XPOST localhost:8000/webhook/alertmanager -d @some-fault-alert.json
+ls runs/incidents/inc-*/evidence/*/       # 生成若干 EV 证据
+cat runs/incidents/inc-*/report_draft.md  # 结论带 [EV-*] 引用
+# 异常路径：网关 degraded 时，证据仍带 degraded 标注落盘，Agent 不假装数据齐全
+</code></pre></div>
+<p>判定特征：真实注入 → 生成证据 + report_draft（结论带引用）；degraded 被如实标注。依赖真实服务：M2 网关、Prometheus/Loki、DashScope（investigate 模型）。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>官方 create_agent 样例复现（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>单 Agent 持全部工具、真实取证并登记 EV</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>report_draft 结论都带 [EV-*]</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>回流时增量补证、复用已有 evidence_id</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>subagents_enabled</code> 切换点预留（A2 配置）</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：排查全靠"复刻 create_agent 样例 → 改造成持工具+登记证据 → 自研台账与回流"，第一个能自己取证的 Agent 从官方样例长出来。</em></p>
+</section>
+      </article>
+      <aside class="toc" data-od-id="table-of-contents">
+        <details open>
+          <summary aria-label="展开或收起目录">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </summary>
+          <ol class="toc-list" id="toc-list">
+            <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
+            <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
+            <li><a href="#section-任务-t7-1-证据台账-evidencestore">任务 T7.1 · 证据台账 EvidenceStore</a></li>
+            <li><a href="#section-任务-t7-2-单-agent-排查-simple-investigator">任务 T7.2 · 单 Agent 排查 simple_investigator</a></li>
+          </ol>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNyDCtyDmjpLmn6XnroDniYjvvIjljZUgQWdlbnQg55u06L+e5bel5YW377yJKyDor4Hmja7lj7DotKYg4oCUIOeJiOacrCBDCgo+IGdyZWVuZmllbGTjgILwn5+i5aSN5Yi7IGNyZWF0ZV9hZ2VudCDlrpjmlrnmoLfkvosg4oaSIPCfn6HmlLnpgKDmiJDmjIHlhajpg6jlt6XlhbfnmoTmjpLmn6UgQWdlbnQg4oaSIPCflLToh6rnoJTor4Hmja7lj7DotKbjgIIqKuacrOWunueOsOawuOS5heS/neeVmeS4uua2iOiejSBBMu+8iOWOuyBzdWJhZ2VudCDlr7nnhafnu4TvvInjgIIqKgoKIyMg5a2m5a6M5pys5qih5Z2X5L2g6IO95YGa5Yiw55qEIDMg5Lu25LqLCjEuIOeUqOS4gOS4quaMgeacieWFqOmDqOWPquivu+W3peWFt+eahOWNlSBBZ2VudO+8iFJlQWN0IOW+queOr++8ieaKiuS4gOasoeWRiuitpuafpeWIsOaciee7k+iuuuOAggoyLiDorqkgQWdlbnQg5q+P5qyh5Y+W6K+B6YO95oqK5YWz6ZSu57uT5p6c5oyJ5qC85byP55m76K6w5Li65bim57yW5Y+355qE6K+B5o2u77yIRVYtTS0wMDHigKbvvInvvIzokL3nm5jlj6/lm57mlL7jgIIKMy4g6K6p57uT6K665b+F6aG75byV55SoIGBbRVYtKl1g77yM5Li6IE05IOeahOWPjeW5u+iniemqjOaUtuaJk+WcsOWfuuOAggoKIyMg5pys5qih5Z2X5Lqk5LuY54mp5riF5Y2V77yI5paH5Lu26Lev5b6E57qn77yJCi0gYHNyYy8uLi4vYWdlbnRzL2V2aWRlbmNlLnB5YO+8iEV2aWRlbmNlU3RvcmXvvIkKLSBgc3JjLy4uLi9hZ2VudHMvc2ltcGxlX2ludmVzdGlnYXRvci5weWDvvIjljZUgQWdlbnQg5o6S5p+l77yJCi0gYHNyYy8uLi4vZ3JhcGgvbm9kZXMvaW52ZXN0aWdhdGUucHlg77yIaW52ZXN0aWdhdGUg6IqC54K577yM5o6l5Y2VIEFnZW5077yJCi0gYHJ1bnMvaW5jaWRlbnRzL3tpZH0vZXZpZGVuY2UvYO+8iOi/kOihjOaXtuivgeaNruS6p+eJqe+8iQoKLS0tCgojIyDku7vliqEgVDcuMSDCtyDor4Hmja7lj7DotKYgRXZpZGVuY2VTdG9yZQoKKippZCoq77yaVDcuMSDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk03IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrku44gMCDlhpnkuIDkuKrog73mjInnsbvlnovnvJblj7fjgIHokL3nm5jjgIHpmLLot6/lvoTnqb/otornmoTor4Hmja7lj7DotKbjgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoq6K+B5o2u5Y+w6LSm77yI5Y+v5Zue5pS+5Y+W6K+B77yJKirvvJrmr4/mrKHlt6Xlhbflj5bor4Hmiooi5p2l5rqQICsg5pGY6KaBICsg5YWz6ZSu5pGY5b2VIuWGmeaIkOS4gOS7veW4pue8luWPt+eahOivgeaNruaWh+S7tu+8jOe7k+iuuumdoOW8leeUqOWug+S7rOaUr+aSkeOAgipKYXZhIOexu+avlCrvvJrlg4/nu5PmnoTljJbnmoTlrqHorqHml6Xlv5cgKyDpmYTku7bvvIzmr4/mnaHmnInllK/kuIAgaWQg5Y+v5rqv5rqQ44CC8J+Tlu+8iOiHqueglO+8m+agvOW8j+ingeaJp+ihjOiuoeWIkiDCpzAuNu+8iQotICoq6Ziy6Lev5b6E56m/6LaKKirvvJror4Hmja7lj6rog73lhpnov5sgYHJ1bnMvaW5jaWRlbnRzL3tpZH0vYCDlrZDnm67lvZXvvIzmi5IgYC4uYC/nu53lr7not6/lvoQv6L2v6ZO+6YCD6YC444CCKkphdmEg57G75q+UKu+8muaWh+S7tuS4iuS8oOaXtuagoemqjOiQveWcsOi3r+W+hOW/hemhu+WcqOeZveWQjeWNleebruW9leWGhe+8jOmYsuebruW9leepv+i2iua8j+a0nuOAgvCfk5YgaHR0cHM6Ly9jaGVhdHNoZWV0c2VyaWVzLm93YXNwLm9yZy9jaGVhdHNoZWV0cy9GaWxlX1VwbG9hZF9DaGVhdF9TaGVldC5odG1sIO+8iOi3r+W+hOepv+i2iumYsuaKpO+8jOmcgOaguOWunumUmueCue+8iQoKIyMjIPCfn6Ig56ysIDEg5q61IMK3IOWkjeWIuwotICoq6K+75LuA5LmIKirvvJpQeXRob24g5qCH5YeGIGBwYXRobGliYCDlhpnmlofku7YgKyDkuIDkuKrluKYgZnJvbnRtYXR0ZXIg55qEIE1hcmtkb3duIOagt+S+i+e7k+aehOOAggotICoq6LeR5LuA5LmIKirvvJrmiYvlhpnkuKrmnIDlsI/lh73mlbDmiorkuIDku70gYHtmcm9udG1hdHRlcn1cbuato+aWh2Ag5YaZ6L+b5oyH5a6a55uu5b2V77yM5YWI6K+B5piO6JC955uYIE9L44CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCgCi0g5YaZIGBFdmlkZW5jZVN0b3JlKGluY2lkZW50X2lkKWDvvJpgbmV3X2lkKGtpbmQ6ICJNInwiTCJ8IlQifCJTIikgLT4gIkVWLU0tMDAxImDvvIjmjInnsbvlnovpgJLlop7vvInjgIFgd3JpdGUoZXZpZGVuY2VfaWQsIHNvdXJjZSwgYWdlbnRfcm9sZSwgZGVncmFkZWQsIHN1bW1hcnksIGV4Y2VycHQpIC0+IFBhdGhg77yIwqcwLjYg5qC85byP77yJ44CBYGxpc3RfaWRzL3JlYWRg44CBYHdyaXRlX2FsZXJ0KGFsZXJ0cylg44CCCgojIyMg8J+UtCDnrKwgMyDmrrUgwrcg6Ieq56CUCi0gKirku47nqbrmlofku7YqKuWGmemYsuepv+i2iuagoemqjO+8muaJgOacieWGmei3r+W+hCBgcmVzb2x2ZSgpYCDlkI7lv4XpobvmmK8gYHJ1bnMvaW5jaWRlbnRzL3tpZH0vYCDnmoTnnJ/lrp7lrZDnm67lvZXvvIzlkKbliJnmipvlvILluLjjgILoh6rmtYsgYC4uYOOAgee7neWvuei3r+W+hOOAgei9r+mTvuS4ieenjeaUu+WHu+mDveiiq+aLkuOAggoKKirokL3nrJTpobrluo8qKgoxLiDlpI3liLvvvJpwYXRobGliIOWGmeS4gOS7veW4piBmcm9udG1hdHRlciDnmoTmlofku7bjgIIKMi4g5pS56YCg5oiQIEV2aWRlbmNlU3RvcmUgKyBFViDnvJblj7fjgIIKMy4g5Y+R5LiA5qyh6LCD55So77ya5YaZ5Lik5p2h6K+B5o2u77yM55yL57yW5Y+35piv5ZCmIEVWLU0tMDAxLzAwMiDpgJLlop7jgIIKNC4g6Ieq56CU6Ziy56m/6LaK77ya5p6E6YCgIGAuLi8uLi9ldGMveGAg5YaZ5YWl77yM6aqM6K+B6KKr5ouS44CCCjUuIOmqjOivgSBmcm9udG1hdHRlciDlrZfmrrXpvZDlhajjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g57yW5Y+35oyJIGtpbmQg5YiG5Yir6YCS5aKe77yITS9ML1QvU++8ie+8jOWIq+a3t+OAggotIOmYsuepv+i2iueUqCBgUGF0aC5yZXNvbHZlKClgIOWQjuavlOi+g+WJjee8gO+8jOWIq+eUqOWtl+espuS4suaLvOaOpeWIpOaWreOAggotIOi/meS4quexu+aYryBNOS9NMTAg55qE5YWx5ZCM5L6d6LWW77yM5qC85byP5Y2z5aWR57qm77yM5YWI5a6a5q2744CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g57yW5Y+35Lmx77ya56Gu6K6kIG5ld19pZCDmmK/miavmj4/lt7LmnInmlofku7boh6rlop7vvIzkuI3mmK/lhoXlrZjorqHmlbDvvIjph43lkK/kvJrkubHvvInjgIIKLSDop4bpopHvvJror4Hmja7lj7DotKbml6Dlr7nlj6Pop4bpopHvvIzku6Xoh6rnoJTkuLrkuLvjgIIKLSDpl64gQUnvvJrjgIxQeXRob24g6YeM5oiR6KaB5L+d6K+B5YaZ5paH5Lu26Lev5b6E5b+F6aG76JC95Zyo5p+Q5Liq5Z+655uu5b2V5YaF44CB6ZiyIGAuLmAg56m/6LaK5ZKM6L2v6ZO+6YCD6YC477yM5q2j56Gu55qE5qCh6aqM5YaZ5rOV5piv5LuA5LmI77yf57uZ5qCh6aqM5Ye95pWwICsgMyDkuKrmlLvlh7vnlKjkvovjgILjgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaAojIOeUqOS4gOS4quWwj+iEmuacrOmpseWKqCBFdmlkZW5jZVN0b3Jl77yI5pys5Lu75Yqh5YGP5bqT77yM6aqM5pS255So6ISa5pysICsg55yf5py65paH5Lu277yJCnV2IHJ1biBweXRob24gLWMgImZyb20gLi4uYWdlbnRzLmV2aWRlbmNlIGltcG9ydCBFdmlkZW5jZVN0b3JlOyBzPUV2aWRlbmNlU3RvcmUoJ2luYy10Jyk7IHByaW50KHMubmV3X2lkKCdNJyksIHMubmV3X2lkKCdNJykpIiAgIyBFVi1NLTAwMSBFVi1NLTAwMgpscyBydW5zL2luY2lkZW50cy9pbmMtdC9ldmlkZW5jZS9tZXRyaWNzLyAgICMg5pyJ5paH5Lu277yMZnJvbnRtYXR0ZXIg5a2X5q616b2Q5YWoCiMg5byC5bi46Lev5b6E77ya6K6pIHdyaXRlIOiQveWIsCAnLi4veCcg4oaSIOaKm+W8guW4uOOAgeS4jeiQveebmApgYGAK5Yik5a6a54m55b6B77yaRVYg57yW5Y+35oyJ57G75Z6L6YCS5aKe77yb6K+B5o2u5paH5Lu2IGZyb250bWF0dGVy77yIZXZpZGVuY2VfaWQvc291cmNlL2FnZW50X3JvbGUvdHMvZGVncmFkZWTvvInpvZDlhajvvJvnqb/otorot6/lvoTooqvmi5LjgILkvp3otZbnnJ/lrp7lpJbpg6jmnI3liqHvvJrml6DvvIjnuq/mnKzlnLDvvIzkvYbor4Hmja7lhoXlrrnmnaXoh6rnnJ/lrp7lt6XlhbfosIPnlKjvvInjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0gcGF0aGxpYiDokL3nm5jmoLfkvovot5HpgJrvvIjlpI3liLvmrrXvvIkKLSBbIF0gRVYg57yW5Y+35oyJIGtpbmQg6YCS5aKe44CB6JC955uY5qC85byP5ZCIIMKnMC42Ci0gWyBdIGAuLmAv57ud5a+56Lev5b6EL+i9r+mTvuS4ieenjeepv+i2iuWdh+iiq+aLkgotIFsgXSBmcm9udG1hdHRlciDlrZfmrrXpvZDlhagKCi0tLQoKIyMg5Lu75YqhIFQ3LjIgwrcg5Y2VIEFnZW50IOaOkuafpSBzaW1wbGVfaW52ZXN0aWdhdG9yCgoqKmlkKirvvJpUNy4yIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTcg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8mueUqCBjcmVhdGVfYWdlbnQg5bu65LiA5Liq5oyB5YWo6YOo5Y+q6K+75bel5YW355qE5o6S5p+lIEFnZW5077yM5Y+W6K+B5bm255m76K6w6K+B5o2u44CB6L6T5Ye65bim5byV55So55qE5oql5ZGK44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKmNyZWF0ZV9hZ2VudCArIFJlQWN0IOW+queOryoq77ya57uZIEFnZW50IOS4gOe7hOW3peWFt++8jOWug+iHquW3seWGs+Wumuiwg+WTquS4quOAgeeci+e7k+aenOOAgeWGjeiwg++8jOebtOWIsOiDvee7k+iuuuOAgipKYXZhIOexu+avlCrvvJrkuIDkuKrkvJroh6rlt7HlhrPlrprosIPlk6rkuKrkuIvmuLjmjqXlj6PnmoTlvqrnjq/mjqfliLblmajvvIzkvaDlj6rnu5nlroPlt6Xlhbflkoznm67moIfjgILwn5OWIGh0dHBzOi8vZG9jcy5sYW5nY2hhaW4uY29tL29zcy9weXRob24vbGFuZ2NoYWluL2FnZW50cyDvvIhjcmVhdGVfYWdlbnTvvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFAxMC0xNuOAjOWIm+W7uiBBZ2VudMK35a6a5LmJ5bel5YW344CNCi0gKiror4Hmja7nmbvorrDlgZrmiJDlt6XlhbfvvIjogIzpnZ7op6PmnpDoh6rnlLHmlofmnKzvvIkqKu+8mue7mSBBZ2VudCDkuIDkuKogYHJlY29yZF9ldmlkZW5jZWAg5bel5YW377yM6K6p5a6D5Li75Yqo55m76K6w77yM5Y+v6Z2g5oCn6auY5LqO5LqL5ZCO6Kej5p6Q44CCKkphdmEg57G75q+UKu+8muiuqeiwg+eUqOaWueaYvuW8j+iwg+WuoeiuoeaOpeWPo++8jOiAjOS4jeaYr+S7juaXpeW/l+mHjOato+WImeaKoOOAgvCfk5bvvIjlpI3nlKggVDcuMSBFdmlkZW5jZVN0b3Jl77yJCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mkxhbmdDaGFpbiBgY3JlYXRlX2FnZW50KG1vZGVsLCB0b29scywgcmVzcG9uc2VfZm9ybWF0PS4uLilgIOWumOaWueacgOWwj+agt+S+i+OAggotICoq6LeR5LuA5LmIKirvvJrnhafmoLfkvovlu7rkuIDkuKrmjIEgMSDkuKrlt6XlhbfnmoQgQWdlbnQg6LeR5LiA5qyh77yM55yL5a6D5oCO5LmI6LCD5bel5YW344CB5oCO5LmI57uT5p2f44CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCgCi0g5YaZIGBzaW1wbGVfaW52ZXN0aWdhdG9yLmludmVzdGlnYXRlKHN0YXRlLCB0b29scywgbW9kZWwsIGV2aWRlbmNlX3N0b3JlKWDvvJpgY3JlYXRlX2FnZW50KG1vZGVsLCB0b29scywgcmVzcG9uc2VfZm9ybWF0PVJjYVJlcG9ydClg77ybc3lzdGVtIHByb21wdCDopoHngrnigJTigJTlhYjnnIvlkYroraYr5ouT5omR44CB5q+P5qyh5Y+W6K+B5ZCO6LCDIGByZWNvcmRfZXZpZGVuY2VgIOeZu+iusOOAgee7k+iuuuW/heW8lSBgW0VWLSpdYOOAggoKIyMjIPCflLQg56ysIDMg5q61IMK3IOiHqueglAotICoq5LuO56m65paH5Lu2Kirlhpnlm57mtYHpgLvovpHvvJpgdmVyaWZpZXJfZmVlZGJhY2tgIOmdnuepuuaXtu+8jHByb21wdCDpmYTpqbPlm57mhI/op4Hlubblo7DmmI4i5aKe6YeP6KGl6K+B44CB5aSN55So5bey5pyJIGV2aWRlbmNlX2lkIu+8m3Rva2VuIOeUqOmHj+e0r+WKoOi/myBgYnVkZ2V0LnRva2Vuc191c2VkYO+8iOS7jiB1c2FnZSBtZXRhZGF0YSDor7vvvInjgIIKCioq6JC956yU6aG65bqPKioKMS4g5aSN5Yi75a6Y5pa5IGNyZWF0ZV9hZ2VudCDmoLfkvovot5HpgJrjgIIKMi4g5pS56YCg5oiQ5oyB5YWo6YOo5bel5YW3ICsgcmVjb3JkX2V2aWRlbmNlICsgUmNhUmVwb3J0IOi+k+WHuuOAggozLiDlj5HkuIDmrKHor7fmsYLvvJrms6jlhaXkuIDkuKrnnJ/lrp7mlYXpmpzihpJ3ZWJob29r4oaS55yLIEFnZW50IOaYr+WQpuecn+iwg+W3peWFt+WPluivgeOAggo0LiDoh6rnoJTlm57mtYHvvJrmqKHmi58gdmVyaWZpZXJfZmVlZGJhY2vvvIzpqozor4Hlop7ph4/ooaXor4HkuI3ph43lpLTlho3mnaXjgIIKNS4g6aqM6K+BIHJlcG9ydF9kcmFmdCDnu5Porrrpg73luKYgW0VWLSpd44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOeUqOWumOaWuSBgY3JlYXRlX2FnZW50YO+8jCoq5Yir5omL5YaZIEFnZW50IOW+queOryoq77yM5Lmf5Yir55So5bey5byD55So55qEIGBjcmVhdGVfcmVhY3RfYWdlbnRg44CCCi0gcmVjb3JkX2V2aWRlbmNlIOaYr+W3peWFt+S4jeaYr+ino+aekOKAlOKAlOiuqSBBZ2VudCDkuLvliqjnmbvorrDjgIIKLSDov5nmmK/mtojono0gQTIg55qE5q2j5byP6YWN572u77yMTTEwIOS4iue6v+WkmiBBZ2VudCDlkI7pnaAgYHN1YmFnZW50c19lbmFibGVkYCDliIfmjaLvvIzliKvliKDjgIIKCioq5Y2h5L2P6ZmN57qn6Lev5b6E77yIMzAg5YiG6ZKf5rKh5oCd6Lev77yJKioKLSBBZ2VudCDkuI3osIPlt6XlhbfvvJrmo4Dmn6Xlt6XlhbfnmoQgYXJnc19zY2hlbWEgZGVzY3JpcHRpb24g5piv5ZCm6K6pIExMTSDnnIvlvpfmh4LvvIhNMyDlrprkuYnnmoTvvInjgIIKLSDop4bpopHvvJp2aWRlby0xIFA1MS01NeOAjEFnZW50IOamgui/sMK36LCD55Sowrfnu5Hlrprlt6XlhbfjgI3pgJDmraXlhZzlupXvvJt2aWRlby0yIFAxNOOAjOW3peWFt+a1i+ivleWSjCBBZ2VudCDmlbTlkIjjgI3jgIIKLSDpl64gQUnvvJrjgIxMYW5nQ2hhaW4gY3JlYXRlX2FnZW50IOe7meS6huW3peWFt+S9huaooeWei+aAu+S4jeiwgyByZWNvcmRfZXZpZGVuY2Ug55m76K6w6K+B5o2u77yM5oiR55qEIHN5c3RlbSBwcm9tcHQg5ZKM5bel5YW3IGRlc2NyaXB0aW9uIOi/meagt++8iOi0tOWHuu+8ie+8jOaAjuS5iOiuqeWug+avj+asoeWPluivgeWQjuW/heeZu+iusO+8n+OAjQoKKirnnJ/lrp4gSFRUUCDpqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCiMg5rOo5YWl5p+Q5pWF6ZqcIOKGkiB3ZWJob29rIOKGkiDnnIsgaW52ZXN0aWdhdGUg5Lqn5Ye6CmN1cmwgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kIEBzb21lLWZhdWx0LWFsZXJ0Lmpzb24KbHMgcnVucy9pbmNpZGVudHMvaW5jLSovZXZpZGVuY2UvKi8gICAgICAgIyDnlJ/miJDoi6XlubIgRVYg6K+B5o2uCmNhdCBydW5zL2luY2lkZW50cy9pbmMtKi9yZXBvcnRfZHJhZnQubWQgICMg57uT6K665bimIFtFVi0qXSDlvJXnlKgKIyDlvILluLjot6/lvoTvvJrnvZHlhbMgZGVncmFkZWQg5pe277yM6K+B5o2u5LuN5bimIGRlZ3JhZGVkIOagh+azqOiQveebmO+8jEFnZW50IOS4jeWBh+ijheaVsOaNrum9kOWFqApgYGAK5Yik5a6a54m55b6B77ya55yf5a6e5rOo5YWlIOKGkiDnlJ/miJDor4Hmja4gKyByZXBvcnRfZHJhZnTvvIjnu5PorrrluKblvJXnlKjvvInvvJtkZWdyYWRlZCDooqvlpoLlrp7moIfms6jjgILkvp3otZbnnJ/lrp7mnI3liqHvvJpNMiDnvZHlhbPjgIFQcm9tZXRoZXVzL0xva2njgIFEYXNoU2NvcGXvvIhpbnZlc3RpZ2F0ZSDmqKHlnovvvInjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0g5a6Y5pa5IGNyZWF0ZV9hZ2VudCDmoLfkvovlpI3njrDvvIjlpI3liLvmrrXvvIkKLSBbIF0g5Y2VIEFnZW50IOaMgeWFqOmDqOW3peWFt+OAgeecn+WunuWPluivgeW5tueZu+iusCBFVgotIFsgXSByZXBvcnRfZHJhZnQg57uT6K666YO95bimIFtFVi0qXQotIFsgXSDlm57mtYHml7blop7ph4/ooaXor4HjgIHlpI3nlKjlt7LmnIkgZXZpZGVuY2VfaWQKLSBbIF0gYHN1YmFnZW50c19lbmFibGVkYCDliIfmjaLngrnpooTnlZnvvIhBMiDphY3nva7vvIkKCi0tLQoq54mI5pysIEMg54m55b6B77ya5o6S5p+l5YWo6Z2gIuWkjeWIuyBjcmVhdGVfYWdlbnQg5qC35L6LIOKGkiDmlLnpgKDmiJDmjIHlt6Xlhbcr55m76K6w6K+B5o2uIOKGkiDoh6rnoJTlj7DotKbkuI7lm57mtYEi77yM56ys5LiA5Liq6IO96Ieq5bex5Y+W6K+B55qEIEFnZW50IOS7juWumOaWueagt+S+i+mVv+WHuuadpeOAgioK</script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var article = document.getElementById("document-content");
+      var tocList = document.getElementById("toc-list");
+
+      article.querySelectorAll(".completion-checkbox").forEach(function (checkbox) {
+        var storageKey = checkbox.getAttribute("data-check-key");
+        try {
+          checkbox.checked = localStorage.getItem(storageKey) === "true";
+        } catch (_) {}
+        checkbox.addEventListener("change", function () {
+          try {
+            localStorage.setItem(storageKey, String(checkbox.checked));
+          } catch (_) {}
+        });
+      });
+
+      article.querySelectorAll(".copy-code").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var code = button.closest(".code-shell").querySelector("code").textContent;
+          navigator.clipboard.writeText(code).then(function () {
+            button.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>';
+            window.setTimeout(function () {
+              button.innerHTML =
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>';
+            }, 1400);
+          });
+        });
+      });
+
+      if (window.hljs) {
+        article.querySelectorAll("pre code").forEach(function (block) {
+          window.hljs.highlightElement(block);
+        });
+      }
+
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      article.querySelectorAll(".reveal").forEach(function (node) {
+        revealObserver.observe(node);
+      });
+
+      var tocLinks = Array.from(tocList.querySelectorAll("a"));
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (link) {
+            var current = link.getAttribute("href") === "#" + entry.target.id;
+            if (current) link.setAttribute("aria-current", "true");
+            else link.removeAttribute("aria-current");
+          });
+        });
+      }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+      tocLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute("href"));
+        if (section) sectionObserver.observe(section);
+      });
+    }());
+  </script>
+</body>
+</html>

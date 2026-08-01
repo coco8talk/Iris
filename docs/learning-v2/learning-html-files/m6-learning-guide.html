@@ -1,0 +1,970 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="source-sha256" content="01ee11c989a5556bd488468294ca6b42e17a1e04dfdb6acfb46f65429a453189">
+  <title>模块 6 · 分诊节点 triage — 版本 C</title>
+  <style>
+    :root {
+      --bg: oklch(0.9697 0.0153 7.48);
+      --surface: oklch(1.0000 0.0000 89.88 / 0.85);
+      --fg: oklch(0.3109 0.0222 355.11);
+      --muted: oklch(0.3808 0.0172 348.75);
+      --border: oklch(1.0000 0.0000 89.88 / 0.60);
+      --accent: oklch(0.7893 0.1284 5.11);
+      --accent-ink: oklch(0.4930 0.1280 4.50);
+      --highlight: oklch(0.9450 0.0360 55 / 0.78);
+      --soft-pink: oklch(0.9470 0.0248 2.08);
+      --shadow: oklch(0.6521 0.0908 1.39 / 0.15);
+      --tip: oklch(0.6140 0.1300 243);
+      --warn: oklch(0.7000 0.1450 75);
+      --danger: oklch(0.5900 0.1800 25);
+      --success: oklch(0.6200 0.1600 145);
+      --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-display: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+      --code-bg: #282C34;
+      --code-fg: #ABB2BF;
+      --code-comment: #5C6370;
+      --code-keyword: #C678DD;
+      --code-string: #98C379;
+      --code-function: #61AFEF;
+      --code-number: #D19A66;
+      --code-type: #E5C07B;
+      --code-operator: #56B6C2;
+      --code-error: #E06C75;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--muted);
+      background:
+        linear-gradient(160deg, #FFF1F3 0%, #FDE7EC 100%);
+      font-family: var(--font-body);
+      font-size: 17px;
+      font-weight: 400;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: var(--fg);
+      text-decoration-color: color-mix(in oklch, var(--muted) 42%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+      overflow-wrap: anywhere;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .ambient {
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(92px);
+      opacity: 0.56;
+      pointer-events: none;
+    }
+
+    .ambient-one {
+      width: 36vw;
+      height: 36vw;
+      top: -10vw;
+      left: -8vw;
+      background: oklch(0.8550 0.0850 3 / 0.55);
+    }
+
+    .ambient-two {
+      width: 34vw;
+      height: 34vw;
+      top: 30vh;
+      right: -12vw;
+      background: oklch(0.8700 0.0700 50 / 0.42);
+    }
+
+    .ambient-three {
+      width: 28vw;
+      height: 28vw;
+      bottom: -8vw;
+      left: 18vw;
+      background: oklch(0.8500 0.0600 315 / 0.38);
+    }
+
+    .page-shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .reader-layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 920px);
+      justify-content: center;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .reader-layout:has(.toc details:not([open])) {
+      grid-template-columns: 56px minmax(0, 920px);
+    }
+
+    .document {
+      grid-column: 2;
+      width: 100%;
+      max-width: 920px;
+      min-width: 0;
+    }
+
+    .glass-card {
+      position: relative;
+      padding: clamp(28px, 4vw, 44px);
+      margin: 0 0 28px;
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 32px rgba(190,120,140,0.15);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 38px rgba(190,120,140,0.19);
+    }
+
+    .hero {
+      overflow: hidden;
+      padding-top: clamp(36px, 6vw, 58px);
+      padding-bottom: clamp(34px, 5vw, 52px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 118px;
+      height: 4px;
+      left: clamp(28px, 4vw, 44px);
+      bottom: 25px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--fg);
+      font-family: var(--font-display);
+      font-weight: 650;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 17ch;
+      font-size: clamp(17px, 2.9vw, 26px);
+      line-height: 1.12;
+      letter-spacing: -0.025em;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(25px, 4vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+
+    h3 {
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-size: clamp(20px, 3vw, 23px);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 65ch;
+      margin: 0 0 16px;
+    }
+
+    strong {
+      color: var(--fg);
+      font-weight: 600;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+
+    em {
+      color: var(--fg);
+      font-style: italic;
+    }
+
+    mark {
+      color: inherit;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+    }
+
+    code:not(pre code) {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      color: oklch(0.4300 0.1350 12);
+      background: color-mix(in oklch, var(--accent) 22%, white);
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    ul, ol {
+      margin: 12px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    ul:not(.checklist) > li::before {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 0.72em;
+      border-radius: 50%;
+      background: var(--accent-ink);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent);
+    }
+
+    ol:not(.steps) {
+      counter-reset: ordered;
+    }
+
+    ol:not(.steps) > li {
+      counter-increment: ordered;
+      padding-left: 34px;
+    }
+
+    ol:not(.steps) > li::before {
+      content: counter(ordered) ".";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-ink);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      font-weight: 600;
+    }
+
+    .checklist > li {
+      padding-left: 0;
+    }
+
+    .completion-label {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+
+    .completion-checkbox {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .check-box {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      margin-top: 0.32em;
+      border: 1.5px solid color-mix(in oklch, var(--accent-ink) 68%, var(--border));
+      border-radius: 5px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .completion-checkbox:focus-visible + .check-box {
+      outline: 3px solid color-mix(in oklch, var(--success) 28%, transparent);
+      outline-offset: 3px;
+    }
+
+    .completion-checkbox:checked + .check-box {
+      border-color: var(--success);
+      background: var(--success);
+      transform: scale(1.04);
+    }
+
+    .completion-checkbox:checked + .check-box::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      left: 5px;
+      top: 1px;
+      border-right: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(45deg);
+    }
+
+    .steps {
+      position: relative;
+      margin-left: 2px;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 25px;
+      bottom: 25px;
+      width: 1px;
+      background: color-mix(in oklch, var(--accent) 48%, var(--border));
+    }
+
+    .steps > li {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 0;
+      margin: 12px 0;
+    }
+
+    .step-badge {
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid color-mix(in oklch, var(--accent-ink) 24%, white);
+      border-radius: 50%;
+      color: var(--accent-ink);
+      background: color-mix(in oklch, var(--soft-pink) 80%, white);
+      box-shadow: 0 4px 12px var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .step-card {
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+    }
+
+    blockquote {
+      margin: 24px 0 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--tip);
+      border-radius: 0 14px 14px 0;
+      color: var(--fg);
+      background: color-mix(in oklch, var(--tip) 7%, var(--surface));
+    }
+
+    blockquote p {
+      margin: 0;
+    }
+
+    .meta-strip {
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.35);
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-strip p {
+      margin: 0;
+    }
+
+    .code-shell {
+      position: relative;
+      margin: 20px 0 22px;
+      border-radius: 12px;
+      overflow: hidden;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    }
+
+    .code-toolbar {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .language-label {
+      color: color-mix(in srgb, var(--code-fg) 74%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .copy-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: var(--code-fg);
+      background: rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .copy-code:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .copy-code:active {
+      transform: translateY(2px);
+    }
+
+    .copy-code svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    pre {
+      margin: 0;
+      padding: 48px 18px 18px;
+      overflow: auto;
+      color: var(--code-fg);
+      background: #282C34;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font-family: inherit;
+      white-space: pre;
+    }
+
+    .hljs { color: var(--code-fg); background: transparent; }
+    .hljs-comment, .hljs-quote { color: var(--code-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--code-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: var(--code-string); }
+    .hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--code-function); }
+    .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--code-number); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-built_in { color: var(--code-type); }
+    .hljs-operator, .hljs-attr, .hljs-attribute { color: var(--code-operator); }
+    .hljs-deletion, .hljs-variable, .hljs-template-variable { color: var(--code-error); }
+
+    .closing-note {
+      color: var(--fg);
+      font-weight: 560;
+    }
+
+    .toc {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1;
+      top: 28px;
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      box-shadow: 0 8px 28px var(--shadow);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+
+    .toc details {
+      padding: 8px;
+    }
+
+    .toc summary {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .toc summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .toc details:not([open]) .toc-list {
+      display: none;
+    }
+
+    .toc summary svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .toc-list li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list li::before {
+      display: none;
+    }
+
+    .toc-list a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: color-mix(in oklch, var(--muted) 86%, transparent);
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .toc-list a:hover {
+      color: var(--fg);
+      background: rgba(255,255,255,0.42);
+    }
+
+    .toc-list a[aria-current="true"] {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 20%, white);
+      font-weight: 550;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 480ms ease, transform 480ms ease;
+    }
+
+    @media (max-width: 1240px) {
+      .page-shell {
+        width: min(980px, calc(100% - 40px));
+      }
+
+      .reader-layout,
+      .reader-layout:has(.toc details:not([open])) {
+        grid-template-columns: minmax(0, 920px);
+        gap: 18px;
+      }
+
+      .toc {
+        z-index: 10;
+        grid-column: 1;
+        top: 12px;
+        grid-row: 1;
+        max-height: min(62vh, 520px);
+      }
+
+      .toc summary {
+        display: flex;
+      }
+
+      .toc details:not([open]) .toc-list {
+        display: none;
+      }
+
+      .document {
+        grid-column: 1;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 16px;
+      }
+
+      .page-shell {
+        width: min(100% - 24px, 620px);
+        padding: 18px 0 64px;
+      }
+
+      .glass-card {
+        padding: 24px 20px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+      }
+
+      .hero {
+        padding-top: 32px;
+        padding-bottom: 42px;
+      }
+
+      .hero::after {
+        left: 20px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 7vw, 29px);
+      }
+
+      h3 {
+        margin-top: 28px;
+      }
+
+      .steps > li {
+        gap: 10px;
+      }
+
+      .step-card {
+        padding: 12px 13px;
+      }
+
+      pre {
+        padding: 48px 16px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media print {
+      @page { margin: 16mm; }
+
+      body {
+        color: #4A3F44;
+        background: white !important;
+        font-size: 12pt;
+      }
+
+      .ambient, .toc, .copy-code {
+        display: none !important;
+      }
+
+      .page-shell {
+        width: 100%;
+        padding: 0;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .glass-card {
+        break-inside: avoid;
+        padding: 0;
+        margin: 0 0 18pt;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .hero::after {
+        display: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .code-shell, pre {
+        break-inside: avoid;
+        color: #ABB2BF !important;
+        background: #282C34 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  
+
+    .table-wrap {
+      margin: 20px 0 22px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      font-size: 0.92em;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 14%, white);
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+</style>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="ambient ambient-three" aria-hidden="true"></div>
+
+  <main class="page-shell" data-od-id="page-shell">
+    <div class="reader-layout">
+      <article class="document" id="document-content" data-od-id="document-content">
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 6 · 分诊节点 triage — 版本 C</h1></header>
+<blockquote>
+<p>编排理念：🟢复刻结构化输出官方样例 → 🟡改造成 TriageResult 分诊 → 🔴自研失败降级 + 快慢路径。</p>
+</blockquote>
+<section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
+<ol>
+<li>让轻模型（DashScope）把一组告警判成结构化的 <code>TriageResult</code>（严重度 + 疑似域 + 快慢路径）。</li>
+<li>模型输出解析失败时自动降级为"全面排查"，绝不让流程卡死。</li>
+<li>命中历史相似案例时走"快速路径"，为后面 M11 的知识闭环埋点。</li>
+</ol>
+</section>
+<section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<ul>
+<li><code>src/.../graph/nodes/triage.py</code></li>
+<li>（复用）<code>src/.../graph/state.py</code> 的 <code>TriageResult</code></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t6-1-triage-结构化输出-降级-快慢路径" data-od-id="section-任务-t6-1-triage-结构化输出-降级-快慢路径"><h2 data-od-id="section-任务-t6-1-triage-结构化输出-降级-快慢路径">任务 T6.1 · triage 结构化输出 + 降级 + 快慢路径</h2>
+<div class="meta-strip"><p><strong>id</strong>：T6.1 ｜ <strong>所属模块</strong>：M6 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：把"一堆告警"变成一个可靠的结构化分诊结果，且永不因解析失败而卡死。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>结构化输出 with_structured_output(Pydantic)</strong>：让 LLM 直接产出符合 Pydantic 模型的对象，而非自由文本再解析。<em>Java 类比</em>：像让接口把响应反序列化进一个 DTO（<code>@RequestBody</code> 的反向），schema 就是契约。📖 <a href="https://docs.langchain.com/oss/python/langchain/structured-output" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/structured-output</a> （需核实锚点）· video-2 P85-88「输出解析和结构化」</li>
+<li><strong>快慢路径 + 疑似域预筛</strong>：命中历史相似案例（相似度≥阈值）走快速验证；疑似域（db/threadpool/jvm/...）用于 M11 的 Skills 预筛。<em>Java 类比</em>：像缓存命中走快路径、未命中走全量查询；疑似域像给下游打的路由标签。📖（自研；阈值 <code>fast_path_similarity</code> 配置）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：LangChain <code>with_structured_output</code> 官方最小样例（喂一段文本→产出一个 Pydantic 对象）。</li>
+<li><strong>跑什么</strong>：照样例用 DashScope 轻模型跑一次，拿到一个结构化对象——先证明结构化输出在你这条模型上能成。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>写 <code>triage.py</code>：prompt = 告警列表 + matched_cases 摘要 + 疑似域候选（固定枚举 <code>db|threadpool|jvm|resource|container|config|cache</code>）；<code>get_model("triage").with_structured_output(TriageResult)</code>。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写降级与快路径：解析失败重试 1 次，再失败返回默认 <code>TriageResult(severity="P2", suspected_domains=&lt;全部&gt;, fast_path=False)</code>；<code>matched_cases[0].similarity &gt;= settings.fast_path_similarity</code> 时 <code>fast_path=True, candidate_root=...</code>。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻官方结构化输出样例跑通。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成 triage prompt + TriageResult。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：喂真实告警 fixture，看 suspected_domains 对不对。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研降级分支：喂一个会让模型乱答的输入，验证走默认值不崩。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">自研 fast_path：构造 similarity 0.849/0.851 两个边界。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>模型经<strong>依赖注入</strong>传入节点（不在节点内 get_model），这样 M12 消融和测试都好切。</li>
+<li>疑似域枚举必须和 M11 的 Skills 预筛映射表<strong>逐字一致</strong>，否则预筛失灵。</li>
+<li>降级默认值要"全面排查"（疑似域全开），保证不漏。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>结构化输出老失败：确认该模型支持 tool/JSON 模式；换 prompt 让字段更明确。</li>
+<li>视频：video-2 P86-87「输出解析和结构化」逐步讲解；video-1 P42-44「Pydantic 高级特性」兜底。</li>
+<li>问 AI：「DashScope qwen 用 with_structured_output(TriageResult)，severity 字段老是返回不在枚举里的值，我的 Pydantic 定义和 prompt 这样（贴出），怎么约束它？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 用某故障的真实告警 fixture 触发，只跑到 triage 观察
+curl -XPOST localhost:8000/webhook/alertmanager -d @slow-query-alert.json
+# 查 state 里的 triage：suspected_domains 应含 "db"
+sqlite3 runs/checkpoints.db "... triage ..."
+# 异常路径：喂一段畸形/无关告警 → triage 走默认值（severity=P2，疑似域全开），流程继续
+</code></pre></div>
+<p>判定特征：真实告警分诊出正确疑似域；畸形输入走默认值不卡死；fast_path 阈值边界正确。依赖真实服务：DashScope。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>官方结构化输出样例复现（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>真实告警分诊出正确 suspected_domains</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>两次解析失败 → 走默认值，流程不卡死</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>fast_path 阈值边界（0.849 不触发 / 0.851 触发）正确</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>疑似域枚举与 M11 Skills 预筛映射一致</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：分诊全靠"复刻结构化输出样例 → 改造成 TriageResult → 自研降级与快慢路径"，第一次把 LLM 的输出变成可靠契约。</em></p>
+</section>
+      </article>
+      <aside class="toc" data-od-id="table-of-contents">
+        <details open>
+          <summary aria-label="展开或收起目录">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </summary>
+          <ol class="toc-list" id="toc-list">
+            <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
+            <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
+            <li><a href="#section-任务-t6-1-triage-结构化输出-降级-快慢路径">任务 T6.1 · triage 结构化输出 + 降级 + 快慢路径</a></li>
+          </ol>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNiDCtyDliIbor4roioLngrkgdHJpYWdlIOKAlCDniYjmnKwgQwoKPiDnvJbmjpLnkIblv7XvvJrwn5+i5aSN5Yi757uT5p6E5YyW6L6T5Ye65a6Y5pa55qC35L6LIOKGkiDwn5+h5pS56YCg5oiQIFRyaWFnZVJlc3VsdCDliIbor4og4oaSIPCflLToh6rnoJTlpLHotKXpmY3nuqcgKyDlv6vmhaLot6/lvoTjgIIKCiMjIOWtpuWujOacrOaooeWdl+S9oOiDveWBmuWIsOeahCAzIOS7tuS6iwoxLiDorqnovbvmqKHlnovvvIhEYXNoU2NvcGXvvInmiorkuIDnu4TlkYrorabliKTmiJDnu5PmnoTljJbnmoQgYFRyaWFnZVJlc3VsdGDvvIjkuKXph43luqYgKyDnlpHkvLzln58gKyDlv6vmhaLot6/lvoTvvInjgIIKMi4g5qih5Z6L6L6T5Ye66Kej5p6Q5aSx6LSl5pe26Ieq5Yqo6ZmN57qn5Li6IuWFqOmdouaOkuafpSLvvIznu53kuI3orqnmtYHnqIvljaHmrbvjgIIKMy4g5ZG95Lit5Y6G5Y+y55u45Ly85qGI5L6L5pe26LWwIuW/q+mAn+i3r+W+hCLvvIzkuLrlkI7pnaIgTTExIOeahOefpeivhumXreeOr+Wfi+eCueOAggoKIyMg5pys5qih5Z2X5Lqk5LuY54mp5riF5Y2V77yI5paH5Lu26Lev5b6E57qn77yJCi0gYHNyYy8uLi4vZ3JhcGgvbm9kZXMvdHJpYWdlLnB5YAotIO+8iOWkjeeUqO+8iWBzcmMvLi4uL2dyYXBoL3N0YXRlLnB5YCDnmoQgYFRyaWFnZVJlc3VsdGAKCi0tLQoKIyMg5Lu75YqhIFQ2LjEgwrcgdHJpYWdlIOe7k+aehOWMlui+k+WHuiArIOmZjee6pyArIOW/q+aFoui3r+W+hAoKKippZCoq77yaVDYuMSDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk02IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrmiooi5LiA5aCG5ZGK6K2mIuWPmOaIkOS4gOS4quWPr+mdoOeahOe7k+aehOWMluWIhuiviue7k+aenO+8jOS4lOawuOS4jeWboOino+aekOWksei0peiAjOWNoeatu+OAggoKKirliY3nva7nn6Xor4bvvIjiiaQyIOaWsOamguW/te+8iSoqCi0gKirnu5PmnoTljJbovpPlh7ogd2l0aF9zdHJ1Y3R1cmVkX291dHB1dChQeWRhbnRpYykqKu+8muiuqSBMTE0g55u05o6l5Lqn5Ye656ym5ZCIIFB5ZGFudGljIOaooeWei+eahOWvueixoe+8jOiAjOmdnuiHqueUseaWh+acrOWGjeino+aekOOAgipKYXZhIOexu+avlCrvvJrlg4/orqnmjqXlj6Pmiorlk43lupTlj43luo/liJfljJbov5vkuIDkuKogRFRP77yIYEBSZXF1ZXN0Qm9keWAg55qE5Y+N5ZCR77yJ77yMc2NoZW1hIOWwseaYr+Wlkee6puOAgvCfk5YgaHR0cHM6Ly9kb2NzLmxhbmdjaGFpbi5jb20vb3NzL3B5dGhvbi9sYW5nY2hhaW4vc3RydWN0dXJlZC1vdXRwdXQg77yI6ZyA5qC45a6e6ZSa54K577yJwrcgdmlkZW8tMiBQODUtODjjgIzovpPlh7rop6PmnpDlkoznu5PmnoTljJbjgI0KLSAqKuW/q+aFoui3r+W+hCArIOeWkeS8vOWfn+mihOetmyoq77ya5ZG95Lit5Y6G5Y+y55u45Ly85qGI5L6L77yI55u45Ly85bqm4oml6ZiI5YC877yJ6LWw5b+r6YCf6aqM6K+B77yb55aR5Ly85Z+f77yIZGIvdGhyZWFkcG9vbC9qdm0vLi4u77yJ55So5LqOIE0xMSDnmoQgU2tpbGxzIOmihOetm+OAgipKYXZhIOexu+avlCrvvJrlg4/nvJPlrZjlkb3kuK3otbDlv6vot6/lvoTjgIHmnKrlkb3kuK3otbDlhajph4/mn6Xor6LvvJvnlpHkvLzln5/lg4/nu5nkuIvmuLjmiZPnmoTot6/nlLHmoIfnrb7jgILwn5OW77yI6Ieq56CU77yb6ZiI5YC8IGBmYXN0X3BhdGhfc2ltaWxhcml0eWAg6YWN572u77yJCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mkxhbmdDaGFpbiBgd2l0aF9zdHJ1Y3R1cmVkX291dHB1dGAg5a6Y5pa55pyA5bCP5qC35L6L77yI5ZaC5LiA5q615paH5pys4oaS5Lqn5Ye65LiA5LiqIFB5ZGFudGljIOWvueixoe+8ieOAggotICoq6LeR5LuA5LmIKirvvJrnhafmoLfkvovnlKggRGFzaFNjb3BlIOi9u+aooeWei+i3keS4gOasoe+8jOaLv+WIsOS4gOS4que7k+aehOWMluWvueixoeKAlOKAlOWFiOivgeaYjue7k+aehOWMlui+k+WHuuWcqOS9oOi/meadoeaooeWei+S4iuiDveaIkOOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIOWGmSBgdHJpYWdlLnB5YO+8mnByb21wdCA9IOWRiuitpuWIl+ihqCArIG1hdGNoZWRfY2FzZXMg5pGY6KaBICsg55aR5Ly85Z+f5YCZ6YCJ77yI5Zu65a6a5p6a5Li+IGBkYnx0aHJlYWRwb29sfGp2bXxyZXNvdXJjZXxjb250YWluZXJ8Y29uZmlnfGNhY2hlYO+8ie+8m2BnZXRfbW9kZWwoInRyaWFnZSIpLndpdGhfc3RydWN0dXJlZF9vdXRwdXQoVHJpYWdlUmVzdWx0KWDjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJQKLSAqKuS7juepuuaWh+S7tioq5YaZ6ZmN57qn5LiO5b+r6Lev5b6E77ya6Kej5p6Q5aSx6LSl6YeN6K+VIDEg5qyh77yM5YaN5aSx6LSl6L+U5Zue6buY6K6kIGBUcmlhZ2VSZXN1bHQoc2V2ZXJpdHk9IlAyIiwgc3VzcGVjdGVkX2RvbWFpbnM9POWFqOmDqD4sIGZhc3RfcGF0aD1GYWxzZSlg77ybYG1hdGNoZWRfY2FzZXNbMF0uc2ltaWxhcml0eSA+PSBzZXR0aW5ncy5mYXN0X3BhdGhfc2ltaWxhcml0eWAg5pe2IGBmYXN0X3BhdGg9VHJ1ZSwgY2FuZGlkYXRlX3Jvb3Q9Li4uYOOAggoKKirokL3nrJTpobrluo8qKgoxLiDlpI3liLvlrpjmlrnnu5PmnoTljJbovpPlh7rmoLfkvovot5HpgJrjgIIKMi4g5pS56YCg5oiQIHRyaWFnZSBwcm9tcHQgKyBUcmlhZ2VSZXN1bHTjgIIKMy4g5Y+R5LiA5qyh6K+35rGC77ya5ZaC55yf5a6e5ZGK6K2mIGZpeHR1cmXvvIznnIsgc3VzcGVjdGVkX2RvbWFpbnMg5a+55LiN5a+544CCCjQuIOiHqueglOmZjee6p+WIhuaUr++8muWWguS4gOS4quS8muiuqeaooeWei+S5seetlOeahOi+k+WFpe+8jOmqjOivgei1sOm7mOiupOWAvOS4jeW0qeOAggo1LiDoh6rnoJQgZmFzdF9wYXRo77ya5p6E6YCgIHNpbWlsYXJpdHkgMC44NDkvMC44NTEg5Lik5Liq6L6555WM44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOaooeWei+e7jyoq5L6d6LWW5rOo5YWlKirkvKDlhaXoioLngrnvvIjkuI3lnKjoioLngrnlhoUgZ2V0X21vZGVs77yJ77yM6L+Z5qC3IE0xMiDmtojono3lkozmtYvor5Xpg73lpb3liIfjgIIKLSDnlpHkvLzln5/mnprkuL7lv4XpobvlkowgTTExIOeahCBTa2lsbHMg6aKE562b5pig5bCE6KGoKirpgJDlrZfkuIDoh7QqKu+8jOWQpuWImemihOetm+WkseeBteOAggotIOmZjee6p+m7mOiupOWAvOimgSLlhajpnaLmjpLmn6Ui77yI55aR5Ly85Z+f5YWo5byA77yJ77yM5L+d6K+B5LiN5ryP44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g57uT5p6E5YyW6L6T5Ye66ICB5aSx6LSl77ya56Gu6K6k6K+l5qih5Z6L5pSv5oyBIHRvb2wvSlNPTiDmqKHlvI/vvJvmjaIgcHJvbXB0IOiuqeWtl+auteabtOaYjuehruOAggotIOinhumike+8mnZpZGVvLTIgUDg2LTg344CM6L6T5Ye66Kej5p6Q5ZKM57uT5p6E5YyW44CN6YCQ5q2l6K6y6Kej77ybdmlkZW8tMSBQNDItNDTjgIxQeWRhbnRpYyDpq5jnuqfnibnmgKfjgI3lhZzlupXjgIIKLSDpl64gQUnvvJrjgIxEYXNoU2NvcGUgcXdlbiDnlKggd2l0aF9zdHJ1Y3R1cmVkX291dHB1dChUcmlhZ2VSZXN1bHQp77yMc2V2ZXJpdHkg5a2X5q616ICB5piv6L+U5Zue5LiN5Zyo5p6a5Li+6YeM55qE5YC877yM5oiR55qEIFB5ZGFudGljIOWumuS5ieWSjCBwcm9tcHQg6L+Z5qC377yI6LS05Ye677yJ77yM5oCO5LmI57qm5p2f5a6D77yf44CNCgoqKuecn+WuniBIVFRQIOmqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKIyDnlKjmn5DmlYXpmpznmoTnnJ/lrp7lkYroraYgZml4dHVyZSDop6blj5HvvIzlj6rot5HliLAgdHJpYWdlIOinguWvnwpjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAc2xvdy1xdWVyeS1hbGVydC5qc29uCiMg5p+lIHN0YXRlIOmHjOeahCB0cmlhZ2XvvJpzdXNwZWN0ZWRfZG9tYWlucyDlupTlkKsgImRiIgpzcWxpdGUzIHJ1bnMvY2hlY2twb2ludHMuZGIgIi4uLiB0cmlhZ2UgLi4uIgojIOW8guW4uOi3r+W+hO+8muWWguS4gOauteeVuOW9oi/ml6DlhbPlkYroraYg4oaSIHRyaWFnZSDotbDpu5jorqTlgLzvvIhzZXZlcml0eT1QMu+8jOeWkeS8vOWfn+WFqOW8gO+8ie+8jOa1geeoi+e7p+e7rQpgYGAK5Yik5a6a54m55b6B77ya55yf5a6e5ZGK6K2m5YiG6K+K5Ye65q2j56Gu55aR5Ly85Z+f77yb55W45b2i6L6T5YWl6LWw6buY6K6k5YC85LiN5Y2h5q2777ybZmFzdF9wYXRoIOmYiOWAvOi+ueeVjOato+ehruOAguS+nei1luecn+WunuacjeWKoe+8mkRhc2hTY29wZeOAggoKKirlrozmiJDliKTlrpoqKgotIFsgXSDlrpjmlrnnu5PmnoTljJbovpPlh7rmoLfkvovlpI3njrDvvIjlpI3liLvmrrXvvIkKLSBbIF0g55yf5a6e5ZGK6K2m5YiG6K+K5Ye65q2j56GuIHN1c3BlY3RlZF9kb21haW5zCi0gWyBdIOS4pOasoeino+aekOWksei0pSDihpIg6LWw6buY6K6k5YC877yM5rWB56iL5LiN5Y2h5q27Ci0gWyBdIGZhc3RfcGF0aCDpmIjlgLzovrnnlYzvvIgwLjg0OSDkuI3op6blj5EgLyAwLjg1MSDop6blj5HvvInmraPnoa4KLSBbIF0g55aR5Ly85Z+f5p6a5Li+5LiOIE0xMSBTa2lsbHMg6aKE562b5pig5bCE5LiA6Ie0CgotLS0KKueJiOacrCBDIOeJueW+ge+8muWIhuiviuWFqOmdoCLlpI3liLvnu5PmnoTljJbovpPlh7rmoLfkvosg4oaSIOaUuemAoOaIkCBUcmlhZ2VSZXN1bHQg4oaSIOiHqueglOmZjee6p+S4juW/q+aFoui3r+W+hCLvvIznrKzkuIDmrKHmioogTExNIOeahOi+k+WHuuWPmOaIkOWPr+mdoOWlkee6puOAgioK</script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var article = document.getElementById("document-content");
+      var tocList = document.getElementById("toc-list");
+
+      article.querySelectorAll(".completion-checkbox").forEach(function (checkbox) {
+        var storageKey = checkbox.getAttribute("data-check-key");
+        try {
+          checkbox.checked = localStorage.getItem(storageKey) === "true";
+        } catch (_) {}
+        checkbox.addEventListener("change", function () {
+          try {
+            localStorage.setItem(storageKey, String(checkbox.checked));
+          } catch (_) {}
+        });
+      });
+
+      article.querySelectorAll(".copy-code").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var code = button.closest(".code-shell").querySelector("code").textContent;
+          navigator.clipboard.writeText(code).then(function () {
+            button.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>';
+            window.setTimeout(function () {
+              button.innerHTML =
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>';
+            }, 1400);
+          });
+        });
+      });
+
+      if (window.hljs) {
+        article.querySelectorAll("pre code").forEach(function (block) {
+          window.hljs.highlightElement(block);
+        });
+      }
+
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      article.querySelectorAll(".reveal").forEach(function (node) {
+        revealObserver.observe(node);
+      });
+
+      var tocLinks = Array.from(tocList.querySelectorAll("a"));
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (link) {
+            var current = link.getAttribute("href") === "#" + entry.target.id;
+            if (current) link.setAttribute("aria-current", "true");
+            else link.removeAttribute("aria-current");
+          });
+        });
+      }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+      tocLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute("href"));
+        if (section) sectionObserver.observe(section);
+      });
+    }());
+  </script>
+</body>
+</html>

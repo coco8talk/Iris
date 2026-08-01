@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="source-sha256" content="affac2ebbf3547fd351821bcae3556bab569d7fb7ca515404f9dc1b4fd95d49f">
+  <title>模块 11 · Skills(SOP) + Chroma 知识库 + 快速路径 — 版本 C</title>
+  <style>
+    :root {
+      --bg: oklch(0.9697 0.0153 7.48);
+      --surface: oklch(1.0000 0.0000 89.88 / 0.85);
+      --fg: oklch(0.3109 0.0222 355.11);
+      --muted: oklch(0.3808 0.0172 348.75);
+      --border: oklch(1.0000 0.0000 89.88 / 0.60);
+      --accent: oklch(0.7893 0.1284 5.11);
+      --accent-ink: oklch(0.4930 0.1280 4.50);
+      --highlight: oklch(0.9450 0.0360 55 / 0.78);
+      --soft-pink: oklch(0.9470 0.0248 2.08);
+      --shadow: oklch(0.6521 0.0908 1.39 / 0.15);
+      --tip: oklch(0.6140 0.1300 243);
+      --warn: oklch(0.7000 0.1450 75);
+      --danger: oklch(0.5900 0.1800 25);
+      --success: oklch(0.6200 0.1600 145);
+      --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-display: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+      --code-bg: #282C34;
+      --code-fg: #ABB2BF;
+      --code-comment: #5C6370;
+      --code-keyword: #C678DD;
+      --code-string: #98C379;
+      --code-function: #61AFEF;
+      --code-number: #D19A66;
+      --code-type: #E5C07B;
+      --code-operator: #56B6C2;
+      --code-error: #E06C75;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--muted);
+      background:
+        linear-gradient(160deg, #FFF1F3 0%, #FDE7EC 100%);
+      font-family: var(--font-body);
+      font-size: 17px;
+      font-weight: 400;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: var(--fg);
+      text-decoration-color: color-mix(in oklch, var(--muted) 42%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+      overflow-wrap: anywhere;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .ambient {
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(92px);
+      opacity: 0.56;
+      pointer-events: none;
+    }
+
+    .ambient-one {
+      width: 36vw;
+      height: 36vw;
+      top: -10vw;
+      left: -8vw;
+      background: oklch(0.8550 0.0850 3 / 0.55);
+    }
+
+    .ambient-two {
+      width: 34vw;
+      height: 34vw;
+      top: 30vh;
+      right: -12vw;
+      background: oklch(0.8700 0.0700 50 / 0.42);
+    }
+
+    .ambient-three {
+      width: 28vw;
+      height: 28vw;
+      bottom: -8vw;
+      left: 18vw;
+      background: oklch(0.8500 0.0600 315 / 0.38);
+    }
+
+    .page-shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .reader-layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 920px);
+      justify-content: center;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .reader-layout:has(.toc details:not([open])) {
+      grid-template-columns: 56px minmax(0, 920px);
+    }
+
+    .document {
+      grid-column: 2;
+      width: 100%;
+      max-width: 920px;
+      min-width: 0;
+    }
+
+    .glass-card {
+      position: relative;
+      padding: clamp(28px, 4vw, 44px);
+      margin: 0 0 28px;
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 32px rgba(190,120,140,0.15);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 38px rgba(190,120,140,0.19);
+    }
+
+    .hero {
+      overflow: hidden;
+      padding-top: clamp(36px, 6vw, 58px);
+      padding-bottom: clamp(34px, 5vw, 52px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 118px;
+      height: 4px;
+      left: clamp(28px, 4vw, 44px);
+      bottom: 25px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--fg);
+      font-family: var(--font-display);
+      font-weight: 650;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 17ch;
+      font-size: clamp(17px, 2.9vw, 26px);
+      line-height: 1.12;
+      letter-spacing: -0.025em;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(25px, 4vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+
+    h3 {
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-size: clamp(20px, 3vw, 23px);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 65ch;
+      margin: 0 0 16px;
+    }
+
+    strong {
+      color: var(--fg);
+      font-weight: 600;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+
+    em {
+      color: var(--fg);
+      font-style: italic;
+    }
+
+    mark {
+      color: inherit;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+    }
+
+    code:not(pre code) {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      color: oklch(0.4300 0.1350 12);
+      background: color-mix(in oklch, var(--accent) 22%, white);
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    ul, ol {
+      margin: 12px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    ul:not(.checklist) > li::before {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 0.72em;
+      border-radius: 50%;
+      background: var(--accent-ink);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent);
+    }
+
+    ol:not(.steps) {
+      counter-reset: ordered;
+    }
+
+    ol:not(.steps) > li {
+      counter-increment: ordered;
+      padding-left: 34px;
+    }
+
+    ol:not(.steps) > li::before {
+      content: counter(ordered) ".";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-ink);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      font-weight: 600;
+    }
+
+    .checklist > li {
+      padding-left: 0;
+    }
+
+    .completion-label {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+
+    .completion-checkbox {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .check-box {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      margin-top: 0.32em;
+      border: 1.5px solid color-mix(in oklch, var(--accent-ink) 68%, var(--border));
+      border-radius: 5px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .completion-checkbox:focus-visible + .check-box {
+      outline: 3px solid color-mix(in oklch, var(--success) 28%, transparent);
+      outline-offset: 3px;
+    }
+
+    .completion-checkbox:checked + .check-box {
+      border-color: var(--success);
+      background: var(--success);
+      transform: scale(1.04);
+    }
+
+    .completion-checkbox:checked + .check-box::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      left: 5px;
+      top: 1px;
+      border-right: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(45deg);
+    }
+
+    .steps {
+      position: relative;
+      margin-left: 2px;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 25px;
+      bottom: 25px;
+      width: 1px;
+      background: color-mix(in oklch, var(--accent) 48%, var(--border));
+    }
+
+    .steps > li {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 0;
+      margin: 12px 0;
+    }
+
+    .step-badge {
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid color-mix(in oklch, var(--accent-ink) 24%, white);
+      border-radius: 50%;
+      color: var(--accent-ink);
+      background: color-mix(in oklch, var(--soft-pink) 80%, white);
+      box-shadow: 0 4px 12px var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .step-card {
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+    }
+
+    blockquote {
+      margin: 24px 0 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--tip);
+      border-radius: 0 14px 14px 0;
+      color: var(--fg);
+      background: color-mix(in oklch, var(--tip) 7%, var(--surface));
+    }
+
+    blockquote p {
+      margin: 0;
+    }
+
+    .meta-strip {
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.35);
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-strip p {
+      margin: 0;
+    }
+
+    .code-shell {
+      position: relative;
+      margin: 20px 0 22px;
+      border-radius: 12px;
+      overflow: hidden;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    }
+
+    .code-toolbar {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .language-label {
+      color: color-mix(in srgb, var(--code-fg) 74%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .copy-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: var(--code-fg);
+      background: rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .copy-code:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .copy-code:active {
+      transform: translateY(2px);
+    }
+
+    .copy-code svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    pre {
+      margin: 0;
+      padding: 48px 18px 18px;
+      overflow: auto;
+      color: var(--code-fg);
+      background: #282C34;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font-family: inherit;
+      white-space: pre;
+    }
+
+    .hljs { color: var(--code-fg); background: transparent; }
+    .hljs-comment, .hljs-quote { color: var(--code-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--code-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: var(--code-string); }
+    .hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--code-function); }
+    .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--code-number); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-built_in { color: var(--code-type); }
+    .hljs-operator, .hljs-attr, .hljs-attribute { color: var(--code-operator); }
+    .hljs-deletion, .hljs-variable, .hljs-template-variable { color: var(--code-error); }
+
+    .closing-note {
+      color: var(--fg);
+      font-weight: 560;
+    }
+
+    .toc {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1;
+      top: 28px;
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      box-shadow: 0 8px 28px var(--shadow);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+
+    .toc details {
+      padding: 8px;
+    }
+
+    .toc summary {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .toc summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .toc details:not([open]) .toc-list {
+      display: none;
+    }
+
+    .toc summary svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .toc-list li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list li::before {
+      display: none;
+    }
+
+    .toc-list a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: color-mix(in oklch, var(--muted) 86%, transparent);
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .toc-list a:hover {
+      color: var(--fg);
+      background: rgba(255,255,255,0.42);
+    }
+
+    .toc-list a[aria-current="true"] {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 20%, white);
+      font-weight: 550;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 480ms ease, transform 480ms ease;
+    }
+
+    @media (max-width: 1240px) {
+      .page-shell {
+        width: min(980px, calc(100% - 40px));
+      }
+
+      .reader-layout,
+      .reader-layout:has(.toc details:not([open])) {
+        grid-template-columns: minmax(0, 920px);
+        gap: 18px;
+      }
+
+      .toc {
+        z-index: 10;
+        grid-column: 1;
+        top: 12px;
+        grid-row: 1;
+        max-height: min(62vh, 520px);
+      }
+
+      .toc summary {
+        display: flex;
+      }
+
+      .toc details:not([open]) .toc-list {
+        display: none;
+      }
+
+      .document {
+        grid-column: 1;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 16px;
+      }
+
+      .page-shell {
+        width: min(100% - 24px, 620px);
+        padding: 18px 0 64px;
+      }
+
+      .glass-card {
+        padding: 24px 20px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+      }
+
+      .hero {
+        padding-top: 32px;
+        padding-bottom: 42px;
+      }
+
+      .hero::after {
+        left: 20px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 7vw, 29px);
+      }
+
+      h3 {
+        margin-top: 28px;
+      }
+
+      .steps > li {
+        gap: 10px;
+      }
+
+      .step-card {
+        padding: 12px 13px;
+      }
+
+      pre {
+        padding: 48px 16px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media print {
+      @page { margin: 16mm; }
+
+      body {
+        color: #4A3F44;
+        background: white !important;
+        font-size: 12pt;
+      }
+
+      .ambient, .toc, .copy-code {
+        display: none !important;
+      }
+
+      .page-shell {
+        width: 100%;
+        padding: 0;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .glass-card {
+        break-inside: avoid;
+        padding: 0;
+        margin: 0 0 18pt;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .hero::after {
+        display: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .code-shell, pre {
+        break-inside: avoid;
+        color: #ABB2BF !important;
+        background: #282C34 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  
+
+    .table-wrap {
+      margin: 20px 0 22px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      font-size: 0.92em;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 14%, white);
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+</style>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="ambient ambient-three" aria-hidden="true"></div>
+
+  <main class="page-shell" data-od-id="page-shell">
+    <div class="reader-layout">
+      <article class="document" id="document-content" data-od-id="document-content">
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 11 · Skills(SOP) + Chroma 知识库 + 快速路径 — 版本 C</h1></header>
+<blockquote>
+<p>greenfield。🟢复刻官方格式/样例 → 🟡改造成本项目 SOP 与案例库 → 🔴自研 loader 与快速路径。</p>
+</blockquote>
+<section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
+<ol>
+<li>用 anthropics/skills 的 SKILL.md 格式写领域 SOP，并按 triage 疑似域<strong>渐进披露</strong>（只给相关的）。</li>
+<li>用 Chroma 把历史案例向量化、按症状检索相似案例。</li>
+<li>让相似案例命中时走"快速路径"，二次同类故障的排查步数可观测地下降。</li>
+</ol>
+</section>
+<section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<ul>
+<li><code>src/.../skills/loader.py</code> + <code>src/.../skills/*/SKILL.md</code>（7 个 SOP）</li>
+<li><code>src/.../knowledge/store.py</code>（Chroma）+ <code>src/.../knowledge/cases.py</code></li>
+<li><code>src/.../graph/nodes/{knowledge_match,knowledge_update}.py</code></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t11-1-skills-机制-渐进披露-loader" data-od-id="section-任务-t11-1-skills-机制-渐进披露-loader"><h2 data-od-id="section-任务-t11-1-skills-机制-渐进披露-loader">任务 T11.1 · Skills 机制（渐进披露）+ loader</h2>
+<div class="meta-strip"><p><strong>id</strong>：T11.1 ｜ <strong>所属模块</strong>：M11 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：从 0 写 SKILL.md 加载/预筛/按需读取机制 + 第一个通用 Skill。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>Skills 渐进披露（SKILL.md 三段式）</strong>：先给 lead 一份"全部 Skill 的 name+description 一览"，命中疑似域才注入具体 Skill 全文。<em>Java 类比</em>：像按需加载的 SOP/策略文档——先看目录，用到哪篇才读正文，省上下文。📖 <a href="https://github.com/anthropics/skills" rel="noreferrer" target="_blank">https://github.com/anthropics/skills</a> （SKILL.md 格式，需核实锚点）· video-3 P1-6「什么是 Skills·两种架构代码实战」</li>
+<li><strong>疑似域预筛映射</strong>：triage 的疑似域（db/threadpool/jvm/...）→ 对应 Skill 列表；config-change-first 标"通用，任何诊断必列"。<em>Java 类比</em>：按标签路由到相关规则集。📖（自研）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：anthropics/skills 仓库里一个真实 SKILL.md 的 frontmatter（name/description）+ 正文结构。</li>
+<li><strong>跑什么</strong>：照格式手写一份 <code>config-change-first/SKILL.md</code>（判别流程/根因→证据要求/修复建议），先跑通"能被解析"。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>写 <code>loader.py</code>：扫 <code>skills/*/SKILL.md</code> 解析 frontmatter；<code>listing_for(domains)</code> 按疑似域预筛（映射表 db→[mysql-slow-query] 等，config-change-first 恒列）；<code>read_skill(name)</code> 返回全文；内容里工具名全用 M2 的模板名。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写 frontmatter 解析（<code>---</code> 分割，yaml 手撕两行，不引 python-frontmatter）；<code>listing()</code> 全量一览；<code>versions()</code>（供 M12 评估记 metadata）；<code>skills_enabled=False</code> 时 lead 不注入（A1 消融）。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻 anthropics/skills 格式，手写第一个 SKILL.md。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造出 loader + 预筛映射。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次调用：给一组疑似域，看 listing_for 返回对不对。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 frontmatter 解析 + A1 开关。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证 read_skill 全文可读。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>疑似域枚举与 M6 triage 的<strong>逐字一致</strong>，否则预筛失灵。</li>
+<li>config-change-first 恒在列（任何诊断先问"最近改了什么"）。</li>
+<li>每个 Skill 引用的工具名必须在 M2 真实存在（写完 grep 校验一遍）。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>预筛不对：打印 listing_for 输入的 domains 和映射表，逐条对。</li>
+<li>视频：video-4 P7「Skills 自我进化」+ P20-21 建立 Skills 直觉（本项目不做自进化，仅渐进披露）。</li>
+<li>问 AI：「我要写一个 SKILL.md loader，解析 frontmatter 的 name/description，按传入的疑似域返回相关 Skill 列表，两行 yaml 手撕怎么写最简？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">uv run python -c "from ...skills.loader import listing_for; print(listing_for(['db']))"   # 含 mysql-slow-query + config-change-first
+uv run python -c "from ...skills.loader import read_skill; print(read_skill('config-change-first')[:200])"  # 全文
+# 异常路径：skills_enabled=False → lead prompt 不含 skill 列表（A1）
+</code></pre></div>
+<p>判定特征：预筛映射正确且 config-change-first 恒在；read_skill 返回全文；A1 关闭时不注入。依赖真实外部服务：无（纯本地机制）。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>anthropics/skills 格式的第一个 SKILL.md 可解析（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>loader 预筛映射正确、config-change-first 恒在</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>疑似域枚举与 M6 一致</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>skills_enabled=False 时不注入（A1）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>每个 Skill 工具名都在 M2 存在（grep 通过）</span></label></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t11-2-chroma-知识库-快速路径" data-od-id="section-任务-t11-2-chroma-知识库-快速路径"><h2 data-od-id="section-任务-t11-2-chroma-知识库-快速路径">任务 T11.2 · Chroma 知识库 + 快速路径</h2>
+<div class="meta-strip"><p><strong>id</strong>：T11.2 ｜ <strong>所属模块</strong>：M11 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：从 0 接 Chroma 做案例检索与沉淀，并让相似案例命中走快速路径。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>向量检索（Chroma）</strong>：把案例症状 embedding 后存库，新告警按症状检索最相似的历史案例。<em>Java 类比</em>：像一个"按语义相似度"的搜索引擎，检索键是症状不是关键词。📖 <a href="https://docs.langchain.com/oss/python/integrations/vectorstores/chroma" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/integrations/vectorstores/chroma</a> （需核实锚点）· video-2 P104-111「Embeddings·语义搜索案例」</li>
+<li><strong>沉淀门槛（只入好案例）</strong>：只有 verdict=pass 且获批的案例才入向量库，驳回的只落 Markdown 作负样本。<em>Java 类比</em>：只把复核通过的记录入正式知识库，废案单独归档。📖（自研）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-8" id="section-第-1-段-复刻-8">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：langchain-chroma 官方 <code>PersistentClient</code> + <code>add</code> + <code>similarity_search</code> 最小样例。</li>
+<li><strong>跑什么</strong>：照样例 add 两条、search 一次，看相似度排序——先证明向量检索能用。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-9" id="section-第-2-段-改造-9">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>写 <code>store.py</code>：collection <code>cases</code>，<code>add_case(case_id,text,metadata)</code> / <code>search(text,k=3)-&gt;KnowledgeHit[]</code>（embedding 走 <code>get_embeddings()</code>，similarity=1-distance，检索异常返回 <code>[]</code> 不阻塞）；<code>cases.py</code> 案例 Markdown 模板（向量化文本=症状段）。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-10" id="section-第-3-段-自研-10">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写 <code>knowledge_match</code>（告警→search→matched_cases）、<code>knowledge_update</code>（门槛：pass 且 approved 才 add_case，驳回只落 Markdown）；快速路径：<code>triage.fast_path</code> True 时 lead 注入"候选根因，优先最小取证验证"。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻 chroma 官方 add/search 样例。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造出 store + 案例模板。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发请求：knowledge_match 对新告警检索。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 update 门槛 + 快速路径注入。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证二次同类故障步数下降。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>向量化的是<strong>症状</strong>不是结论（检索键是"看到什么"，不是"结论是什么"）。</li>
+<li>检索异常返回空、不阻塞主流程。</li>
+<li>只有 pass+approved 入库，防错误案例污染知识库。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>检索不准：确认 embedding 模型可用、向量化的是症状段。</li>
+<li>视频：video-1 P112-116「嵌入模型·向量库·Milvus」兜底（本项目用 Chroma，概念通用）。</li>
+<li>问 AI：「langchain-chroma 里我想按案例症状检索相似历史案例，metadata 存根因，add_case 和 search 怎么组织？相似度阈值怎么定 fast_path？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 首次注入某故障 → 完整闭环 → 获批入库
+curl -XPOST localhost:8000/webhook/alertmanager -d @fault-A.json   # 首次，记步数
+# 再次注入同类 → 走快速路径
+curl -XPOST localhost:8000/webhook/alertmanager -d @fault-A.json   # 二次
+# 网关审计对比步数
+sqlite3 tool-gateway/data/*.db "select incident_id,count(*) from audit_log group by incident_id"  # 二次显著低于首次
+# 异常路径：驳回的 incident → 不进向量库、只落 Markdown
+</code></pre></div>
+<p>判定特征：add→search 命中且相似度排序正确；二次同类步数下降；驳回案例不入向量库。依赖真实服务：embedding（DashScope）、M2 网关。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>chroma add/search 样例复现（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>案例按症状向量化、检索命中且排序正确</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>只有 pass+approved 入库，驳回只落 Markdown</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>快速路径命中时二次步数下降（记两个数字）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>检索异常返回空不抛</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：知识闭环全靠"复刻官方 SKILL.md/chroma 样例 → 改造成本项目 SOP 与案例库 → 自研 loader/门槛/快速路径"。</em></p>
+</section>
+      </article>
+      <aside class="toc" data-od-id="table-of-contents">
+        <details open>
+          <summary aria-label="展开或收起目录">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </summary>
+          <ol class="toc-list" id="toc-list">
+            <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
+            <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
+            <li><a href="#section-任务-t11-1-skills-机制-渐进披露-loader">任务 T11.1 · Skills 机制（渐进披露）+ loader</a></li>
+            <li><a href="#section-任务-t11-2-chroma-知识库-快速路径">任务 T11.2 · Chroma 知识库 + 快速路径</a></li>
+          </ol>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgMTEgwrcgU2tpbGxzKFNPUCkgKyBDaHJvbWEg55+l6K+G5bqTICsg5b+r6YCf6Lev5b6EIOKAlCDniYjmnKwgQwoKPiBncmVlbmZpZWxk44CC8J+fouWkjeWIu+WumOaWueagvOW8jy/moLfkvosg4oaSIPCfn6HmlLnpgKDmiJDmnKzpobnnm64gU09QIOS4juahiOS+i+W6kyDihpIg8J+UtOiHqueglCBsb2FkZXIg5LiO5b+r6YCf6Lev5b6E44CCCgojIyDlrablrozmnKzmqKHlnZfkvaDog73lgZrliLDnmoQgMyDku7bkuosKMS4g55SoIGFudGhyb3BpY3Mvc2tpbGxzIOeahCBTS0lMTC5tZCDmoLzlvI/lhpnpoobln58gU09Q77yM5bm25oyJIHRyaWFnZSDnlpHkvLzln58qKua4kOi/m+aKq+mcsioq77yI5Y+q57uZ55u45YWz55qE77yJ44CCCjIuIOeUqCBDaHJvbWEg5oqK5Y6G5Y+y5qGI5L6L5ZCR6YeP5YyW44CB5oyJ55eH54q25qOA57Si55u45Ly85qGI5L6L44CCCjMuIOiuqeebuOS8vOahiOS+i+WRveS4reaXtui1sCLlv6vpgJ/ot6/lvoQi77yM5LqM5qyh5ZCM57G75pWF6Zqc55qE5o6S5p+l5q2l5pWw5Y+v6KeC5rWL5Zyw5LiL6ZmN44CCCgojIyDmnKzmqKHlnZfkuqTku5jnianmuIXljZXvvIjmlofku7bot6/lvoTnuqfvvIkKLSBgc3JjLy4uLi9za2lsbHMvbG9hZGVyLnB5YCArIGBzcmMvLi4uL3NraWxscy8qL1NLSUxMLm1kYO+8iDcg5LiqIFNPUO+8iQotIGBzcmMvLi4uL2tub3dsZWRnZS9zdG9yZS5weWDvvIhDaHJvbWHvvIkrIGBzcmMvLi4uL2tub3dsZWRnZS9jYXNlcy5weWAKLSBgc3JjLy4uLi9ncmFwaC9ub2Rlcy97a25vd2xlZGdlX21hdGNoLGtub3dsZWRnZV91cGRhdGV9LnB5YAoKLS0tCgojIyDku7vliqEgVDExLjEgwrcgU2tpbGxzIOacuuWItu+8iOa4kOi/m+aKq+mcsu+8iSsgbG9hZGVyCgoqKmlkKirvvJpUMTEuMSDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk0xMSDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5LuOIDAg5YaZIFNLSUxMLm1kIOWKoOi9vS/pooTnrZsv5oyJ6ZyA6K+75Y+W5py65Yi2ICsg56ys5LiA5Liq6YCa55SoIFNraWxs44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKlNraWxscyDmuJDov5vmiqvpnLLvvIhTS0lMTC5tZCDkuInmrrXlvI/vvIkqKu+8muWFiOe7mSBsZWFkIOS4gOS7vSLlhajpg6ggU2tpbGwg55qEIG5hbWUrZGVzY3JpcHRpb24g5LiA6KeIIu+8jOWRveS4reeWkeS8vOWfn+aJjeazqOWFpeWFt+S9kyBTa2lsbCDlhajmlofjgIIqSmF2YSDnsbvmr5Qq77ya5YOP5oyJ6ZyA5Yqg6L2955qEIFNPUC/nrZbnlaXmlofmoaPigJTigJTlhYjnnIvnm67lvZXvvIznlKjliLDlk6rnr4fmiY3or7vmraPmlofvvIznnIHkuIrkuIvmlofjgILwn5OWIGh0dHBzOi8vZ2l0aHViLmNvbS9hbnRocm9waWNzL3NraWxscyDvvIhTS0lMTC5tZCDmoLzlvI/vvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0zIFAxLTbjgIzku4DkuYjmmK8gU2tpbGxzwrfkuKTnp43mnrbmnoTku6PnoIHlrp7miJjjgI0KLSAqKueWkeS8vOWfn+mihOetm+aYoOWwhCoq77yadHJpYWdlIOeahOeWkeS8vOWfn++8iGRiL3RocmVhZHBvb2wvanZtLy4uLu+8ieKGkiDlr7nlupQgU2tpbGwg5YiX6KGo77ybY29uZmlnLWNoYW5nZS1maXJzdCDmoIci6YCa55So77yM5Lu75L2V6K+K5pat5b+F5YiXIuOAgipKYXZhIOexu+avlCrvvJrmjInmoIfnrb7ot6/nlLHliLDnm7jlhbPop4TliJnpm4bjgILwn5OW77yI6Ieq56CU77yJCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mmFudGhyb3BpY3Mvc2tpbGxzIOS7k+W6k+mHjOS4gOS4quecn+WuniBTS0lMTC5tZCDnmoQgZnJvbnRtYXR0ZXLvvIhuYW1lL2Rlc2NyaXB0aW9u77yJKyDmraPmlofnu5PmnoTjgIIKLSAqKui3keS7gOS5iCoq77ya54Wn5qC85byP5omL5YaZ5LiA5Lu9IGBjb25maWctY2hhbmdlLWZpcnN0L1NLSUxMLm1kYO+8iOWIpOWIq+a1geeoiy/moLnlm6DihpLor4Hmja7opoHmsYIv5L+u5aSN5bu66K6u77yJ77yM5YWI6LeR6YCaIuiDveiiq+ino+aekCLjgIIKCiMjIyDwn5+hIOesrCAyIOautSDCtyDmlLnpgKAKLSDlhpkgYGxvYWRlci5weWDvvJrmiasgYHNraWxscy8qL1NLSUxMLm1kYCDop6PmnpAgZnJvbnRtYXR0ZXLvvJtgbGlzdGluZ19mb3IoZG9tYWlucylgIOaMieeWkeS8vOWfn+mihOetm++8iOaYoOWwhOihqCBkYuKGkltteXNxbC1zbG93LXF1ZXJ5XSDnrYnvvIxjb25maWctY2hhbmdlLWZpcnN0IOaBkuWIl++8ie+8m2ByZWFkX3NraWxsKG5hbWUpYCDov5Tlm57lhajmlofvvJvlhoXlrrnph4zlt6XlhbflkI3lhajnlKggTTIg55qE5qih5p2/5ZCN44CCCgojIyMg8J+UtCDnrKwgMyDmrrUgwrcg6Ieq56CUCi0gKirku47nqbrmlofku7YqKuWGmSBmcm9udG1hdHRlciDop6PmnpDvvIhgLS0tYCDliIblibLvvIx5YW1sIOaJi+aSleS4pOihjO+8jOS4jeW8lSBweXRob24tZnJvbnRtYXR0ZXLvvInvvJtgbGlzdGluZygpYCDlhajph4/kuIDop4jvvJtgdmVyc2lvbnMoKWDvvIjkvpsgTTEyIOivhOS8sOiusCBtZXRhZGF0Ye+8ie+8m2Bza2lsbHNfZW5hYmxlZD1GYWxzZWAg5pe2IGxlYWQg5LiN5rOo5YWl77yIQTEg5raI6J6N77yJ44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWkjeWIuyBhbnRocm9waWNzL3NraWxscyDmoLzlvI/vvIzmiYvlhpnnrKzkuIDkuKogU0tJTEwubWTjgIIKMi4g5pS56YCg5Ye6IGxvYWRlciArIOmihOetm+aYoOWwhOOAggozLiDlj5HkuIDmrKHosIPnlKjvvJrnu5nkuIDnu4TnlpHkvLzln5/vvIznnIsgbGlzdGluZ19mb3Ig6L+U5Zue5a+55LiN5a+544CCCjQuIOiHqueglCBmcm9udG1hdHRlciDop6PmnpAgKyBBMSDlvIDlhbPjgIIKNS4g6aqM6K+BIHJlYWRfc2tpbGwg5YWo5paH5Y+v6K+744CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOeWkeS8vOWfn+aemuS4vuS4jiBNNiB0cmlhZ2Ug55qEKirpgJDlrZfkuIDoh7QqKu+8jOWQpuWImemihOetm+WkseeBteOAggotIGNvbmZpZy1jaGFuZ2UtZmlyc3Qg5oGS5Zyo5YiX77yI5Lu75L2V6K+K5pat5YWI6ZeuIuacgOi/keaUueS6huS7gOS5iCLvvInjgIIKLSDmr4/kuKogU2tpbGwg5byV55So55qE5bel5YW35ZCN5b+F6aG75ZyoIE0yIOecn+WunuWtmOWcqO+8iOWGmeWujCBncmVwIOagoemqjOS4gOmBje+8ieOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOmihOetm+S4jeWvue+8muaJk+WNsCBsaXN0aW5nX2ZvciDovpPlhaXnmoQgZG9tYWlucyDlkozmmKDlsITooajvvIzpgJDmnaHlr7njgIIKLSDop4bpopHvvJp2aWRlby00IFA344CMU2tpbGxzIOiHquaIkei/m+WMluOAjSsgUDIwLTIxIOW7uueriyBTa2lsbHMg55u06KeJ77yI5pys6aG555uu5LiN5YGa6Ieq6L+b5YyW77yM5LuF5riQ6L+b5oqr6Zyy77yJ44CCCi0g6ZeuIEFJ77ya44CM5oiR6KaB5YaZ5LiA5LiqIFNLSUxMLm1kIGxvYWRlcu+8jOino+aekCBmcm9udG1hdHRlciDnmoQgbmFtZS9kZXNjcmlwdGlvbu+8jOaMieS8oOWFpeeahOeWkeS8vOWfn+i/lOWbnuebuOWFsyBTa2lsbCDliJfooajvvIzkuKTooYwgeWFtbCDmiYvmkpXmgI7kuYjlhpnmnIDnroDvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaAp1diBydW4gcHl0aG9uIC1jICJmcm9tIC4uLnNraWxscy5sb2FkZXIgaW1wb3J0IGxpc3RpbmdfZm9yOyBwcmludChsaXN0aW5nX2ZvcihbJ2RiJ10pKSIgICAjIOWQqyBteXNxbC1zbG93LXF1ZXJ5ICsgY29uZmlnLWNoYW5nZS1maXJzdAp1diBydW4gcHl0aG9uIC1jICJmcm9tIC4uLnNraWxscy5sb2FkZXIgaW1wb3J0IHJlYWRfc2tpbGw7IHByaW50KHJlYWRfc2tpbGwoJ2NvbmZpZy1jaGFuZ2UtZmlyc3QnKVs6MjAwXSkiICAjIOWFqOaWhwojIOW8guW4uOi3r+W+hO+8mnNraWxsc19lbmFibGVkPUZhbHNlIOKGkiBsZWFkIHByb21wdCDkuI3lkKsgc2tpbGwg5YiX6KGo77yIQTHvvIkKYGBgCuWIpOWumueJueW+ge+8mumihOetm+aYoOWwhOato+ehruS4lCBjb25maWctY2hhbmdlLWZpcnN0IOaBkuWcqO+8m3JlYWRfc2tpbGwg6L+U5Zue5YWo5paH77ybQTEg5YWz6Zet5pe25LiN5rOo5YWl44CC5L6d6LWW55yf5a6e5aSW6YOo5pyN5Yqh77ya5peg77yI57qv5pys5Zyw5py65Yi277yJ44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGFudGhyb3BpY3Mvc2tpbGxzIOagvOW8j+eahOesrOS4gOS4qiBTS0lMTC5tZCDlj6/op6PmnpDvvIjlpI3liLvmrrXvvIkKLSBbIF0gbG9hZGVyIOmihOetm+aYoOWwhOato+ehruOAgWNvbmZpZy1jaGFuZ2UtZmlyc3Qg5oGS5ZyoCi0gWyBdIOeWkeS8vOWfn+aemuS4vuS4jiBNNiDkuIDoh7QKLSBbIF0gc2tpbGxzX2VuYWJsZWQ9RmFsc2Ug5pe25LiN5rOo5YWl77yIQTHvvIkKLSBbIF0g5q+P5LiqIFNraWxsIOW3peWFt+WQjemDveWcqCBNMiDlrZjlnKjvvIhncmVwIOmAmui/h++8iQoKLS0tCgojIyDku7vliqEgVDExLjIgwrcgQ2hyb21hIOefpeivhuW6kyArIOW/q+mAn+i3r+W+hAoKKippZCoq77yaVDExLjIg772cICoq5omA5bGe5qih5Z2XKirvvJpNMTEg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8muS7jiAwIOaOpSBDaHJvbWEg5YGa5qGI5L6L5qOA57Si5LiO5rKJ5reA77yM5bm26K6p55u45Ly85qGI5L6L5ZG95Lit6LWw5b+r6YCf6Lev5b6E44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKuWQkemHj+ajgOe0ou+8iENocm9tYe+8iSoq77ya5oqK5qGI5L6L55eH54q2IGVtYmVkZGluZyDlkI7lrZjlupPvvIzmlrDlkYrorabmjInnl4fnirbmo4DntKLmnIDnm7jkvLznmoTljoblj7LmoYjkvovjgIIqSmF2YSDnsbvmr5Qq77ya5YOP5LiA5LiqIuaMieivreS5ieebuOS8vOW6piLnmoTmkJzntKLlvJXmk47vvIzmo4DntKLplK7mmK/nl4fnirbkuI3mmK/lhbPplK7or43jgILwn5OWIGh0dHBzOi8vZG9jcy5sYW5nY2hhaW4uY29tL29zcy9weXRob24vaW50ZWdyYXRpb25zL3ZlY3RvcnN0b3Jlcy9jaHJvbWEg77yI6ZyA5qC45a6e6ZSa54K577yJwrcgdmlkZW8tMiBQMTA0LTExMeOAjEVtYmVkZGluZ3PCt+ivreS5ieaQnOe0ouahiOS+i+OAjQotICoq5rKJ5reA6Zeo5qeb77yI5Y+q5YWl5aW95qGI5L6L77yJKirvvJrlj6rmnIkgdmVyZGljdD1wYXNzIOS4lOiOt+aJueeahOahiOS+i+aJjeWFpeWQkemHj+W6k++8jOmps+WbnueahOWPquiQvSBNYXJrZG93biDkvZzotJ/moLfmnKzjgIIqSmF2YSDnsbvmr5Qq77ya5Y+q5oqK5aSN5qC46YCa6L+H55qE6K6w5b2V5YWl5q2j5byP55+l6K+G5bqT77yM5bqf5qGI5Y2V54us5b2S5qGj44CC8J+Tlu+8iOiHqueglO+8iQoKIyMjIPCfn6Ig56ysIDEg5q61IMK3IOWkjeWIuwotICoq6K+75LuA5LmIKirvvJpsYW5nY2hhaW4tY2hyb21hIOWumOaWuSBgUGVyc2lzdGVudENsaWVudGAgKyBgYWRkYCArIGBzaW1pbGFyaXR5X3NlYXJjaGAg5pyA5bCP5qC35L6L44CCCi0gKirot5Hku4DkuYgqKu+8mueFp+agt+S+iyBhZGQg5Lik5p2h44CBc2VhcmNoIOS4gOasoe+8jOeci+ebuOS8vOW6puaOkuW6j+KAlOKAlOWFiOivgeaYjuWQkemHj+ajgOe0ouiDveeUqOOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIOWGmSBgc3RvcmUucHlg77yaY29sbGVjdGlvbiBgY2FzZXNg77yMYGFkZF9jYXNlKGNhc2VfaWQsdGV4dCxtZXRhZGF0YSlgIC8gYHNlYXJjaCh0ZXh0LGs9MyktPktub3dsZWRnZUhpdFtdYO+8iGVtYmVkZGluZyDotbAgYGdldF9lbWJlZGRpbmdzKClg77yMc2ltaWxhcml0eT0xLWRpc3RhbmNl77yM5qOA57Si5byC5bi46L+U5ZueIGBbXWAg5LiN6Zi75aGe77yJ77ybYGNhc2VzLnB5YCDmoYjkvosgTWFya2Rvd24g5qih5p2/77yI5ZCR6YeP5YyW5paH5pysPeeXh+eKtuaute+8ieOAggoKIyMjIPCflLQg56ysIDMg5q61IMK3IOiHqueglAotICoq5LuO56m65paH5Lu2KirlhpkgYGtub3dsZWRnZV9tYXRjaGDvvIjlkYrorabihpJzZWFyY2jihpJtYXRjaGVkX2Nhc2Vz77yJ44CBYGtub3dsZWRnZV91cGRhdGVg77yI6Zeo5qeb77yacGFzcyDkuJQgYXBwcm92ZWQg5omNIGFkZF9jYXNl77yM6amz5Zue5Y+q6JC9IE1hcmtkb3du77yJ77yb5b+r6YCf6Lev5b6E77yaYHRyaWFnZS5mYXN0X3BhdGhgIFRydWUg5pe2IGxlYWQg5rOo5YWlIuWAmemAieagueWboO+8jOS8mOWFiOacgOWwj+WPluivgemqjOivgSLjgIIKCioq6JC956yU6aG65bqPKioKMS4g5aSN5Yi7IGNocm9tYSDlrpjmlrkgYWRkL3NlYXJjaCDmoLfkvovjgIIKMi4g5pS56YCg5Ye6IHN0b3JlICsg5qGI5L6L5qih5p2/44CCCjMuIOWPkeivt+axgu+8mmtub3dsZWRnZV9tYXRjaCDlr7nmlrDlkYrorabmo4DntKLjgIIKNC4g6Ieq56CUIHVwZGF0ZSDpl6jmp5sgKyDlv6vpgJ/ot6/lvoTms6jlhaXjgIIKNS4g6aqM6K+B5LqM5qyh5ZCM57G75pWF6Zqc5q2l5pWw5LiL6ZmN44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOWQkemHj+WMlueahOaYryoq55eH54q2KirkuI3mmK/nu5PorrrvvIjmo4DntKLplK7mmK8i55yL5Yiw5LuA5LmIIu+8jOS4jeaYryLnu5PorrrmmK/ku4DkuYgi77yJ44CCCi0g5qOA57Si5byC5bi46L+U5Zue56m644CB5LiN6Zi75aGe5Li75rWB56iL44CCCi0g5Y+q5pyJIHBhc3MrYXBwcm92ZWQg5YWl5bqT77yM6Ziy6ZSZ6K+v5qGI5L6L5rGh5p+T55+l6K+G5bqT44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g5qOA57Si5LiN5YeG77ya56Gu6K6kIGVtYmVkZGluZyDmqKHlnovlj6/nlKjjgIHlkJHph4/ljJbnmoTmmK/nl4fnirbmrrXjgIIKLSDop4bpopHvvJp2aWRlby0xIFAxMTItMTE244CM5bWM5YWl5qih5Z6LwrflkJHph4/lupPCt01pbHZ1c+OAjeWFnOW6le+8iOacrOmhueebrueUqCBDaHJvbWHvvIzmpoLlv7XpgJrnlKjvvInjgIIKLSDpl64gQUnvvJrjgIxsYW5nY2hhaW4tY2hyb21hIOmHjOaIkeaDs+aMieahiOS+i+eXh+eKtuajgOe0ouebuOS8vOWOhuWPsuahiOS+i++8jG1ldGFkYXRhIOWtmOagueWboO+8jGFkZF9jYXNlIOWSjCBzZWFyY2gg5oCO5LmI57uE57uH77yf55u45Ly85bqm6ZiI5YC85oCO5LmI5a6aIGZhc3RfcGF0aO+8n+OAjQoKKirnnJ/lrp4gSFRUUCDpqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCiMg6aaW5qyh5rOo5YWl5p+Q5pWF6ZqcIOKGkiDlrozmlbTpl63njq8g4oaSIOiOt+aJueWFpeW6kwpjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAZmF1bHQtQS5qc29uICAgIyDpppbmrKHvvIzorrDmraXmlbAKIyDlho3mrKHms6jlhaXlkIznsbsg4oaSIOi1sOW/q+mAn+i3r+W+hApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAZmF1bHQtQS5qc29uICAgIyDkuozmrKEKIyDnvZHlhbPlrqHorqHlr7nmr5TmraXmlbAKc3FsaXRlMyB0b29sLWdhdGV3YXkvZGF0YS8qLmRiICJzZWxlY3QgaW5jaWRlbnRfaWQsY291bnQoKikgZnJvbSBhdWRpdF9sb2cgZ3JvdXAgYnkgaW5jaWRlbnRfaWQiICAjIOS6jOasoeaYvuiRl+S9juS6jummluasoQojIOW8guW4uOi3r+W+hO+8mumps+WbnueahCBpbmNpZGVudCDihpIg5LiN6L+b5ZCR6YeP5bqT44CB5Y+q6JC9IE1hcmtkb3duCmBgYArliKTlrprnibnlvoHvvJphZGTihpJzZWFyY2gg5ZG95Lit5LiU55u45Ly85bqm5o6S5bqP5q2j56Gu77yb5LqM5qyh5ZCM57G75q2l5pWw5LiL6ZmN77yb6amz5Zue5qGI5L6L5LiN5YWl5ZCR6YeP5bqT44CC5L6d6LWW55yf5a6e5pyN5Yqh77yaZW1iZWRkaW5n77yIRGFzaFNjb3Bl77yJ44CBTTIg572R5YWz44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGNocm9tYSBhZGQvc2VhcmNoIOagt+S+i+WkjeeOsO+8iOWkjeWIu+aute+8iQotIFsgXSDmoYjkvovmjInnl4fnirblkJHph4/ljJbjgIHmo4DntKLlkb3kuK3kuJTmjpLluo/mraPnoa4KLSBbIF0g5Y+q5pyJIHBhc3MrYXBwcm92ZWQg5YWl5bqT77yM6amz5Zue5Y+q6JC9IE1hcmtkb3duCi0gWyBdIOW/q+mAn+i3r+W+hOWRveS4reaXtuS6jOasoeatpeaVsOS4i+mZje+8iOiusOS4pOS4quaVsOWtl++8iQotIFsgXSDmo4DntKLlvILluLjov5Tlm57nqbrkuI3mipsKCi0tLQoq54mI5pysIEMg54m55b6B77ya55+l6K+G6Zet546v5YWo6Z2gIuWkjeWIu+WumOaWuSBTS0lMTC5tZC9jaHJvbWEg5qC35L6LIOKGkiDmlLnpgKDmiJDmnKzpobnnm64gU09QIOS4juahiOS+i+W6kyDihpIg6Ieq56CUIGxvYWRlci/pl6jmp5sv5b+r6YCf6Lev5b6EIuOAgioK</script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var article = document.getElementById("document-content");
+      var tocList = document.getElementById("toc-list");
+
+      article.querySelectorAll(".completion-checkbox").forEach(function (checkbox) {
+        var storageKey = checkbox.getAttribute("data-check-key");
+        try {
+          checkbox.checked = localStorage.getItem(storageKey) === "true";
+        } catch (_) {}
+        checkbox.addEventListener("change", function () {
+          try {
+            localStorage.setItem(storageKey, String(checkbox.checked));
+          } catch (_) {}
+        });
+      });
+
+      article.querySelectorAll(".copy-code").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var code = button.closest(".code-shell").querySelector("code").textContent;
+          navigator.clipboard.writeText(code).then(function () {
+            button.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>';
+            window.setTimeout(function () {
+              button.innerHTML =
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>';
+            }, 1400);
+          });
+        });
+      });
+
+      if (window.hljs) {
+        article.querySelectorAll("pre code").forEach(function (block) {
+          window.hljs.highlightElement(block);
+        });
+      }
+
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      article.querySelectorAll(".reveal").forEach(function (node) {
+        revealObserver.observe(node);
+      });
+
+      var tocLinks = Array.from(tocList.querySelectorAll("a"));
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (link) {
+            var current = link.getAttribute("href") === "#" + entry.target.id;
+            if (current) link.setAttribute("aria-current", "true");
+            else link.removeAttribute("aria-current");
+          });
+        });
+      }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+      tocLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute("href"));
+        if (section) sectionObserver.observe(section);
+      });
+    }());
+  </script>
+</body>
+</html>

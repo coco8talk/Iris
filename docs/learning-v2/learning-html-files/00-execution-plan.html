@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="source-sha256" content="14224eeb50f1d6d151810d8b8b582b6c628f4dd8ed5e5625ca9af6f2e0a30ba8">
+  <title>SRE Copilot 执行计划 v2（重写版 · 与学习计划 M0–M12 一一对应）</title>
+  <style>
+    :root {
+      --bg: oklch(0.9697 0.0153 7.48);
+      --surface: oklch(1.0000 0.0000 89.88 / 0.85);
+      --fg: oklch(0.3109 0.0222 355.11);
+      --muted: oklch(0.3808 0.0172 348.75);
+      --border: oklch(1.0000 0.0000 89.88 / 0.60);
+      --accent: oklch(0.7893 0.1284 5.11);
+      --accent-ink: oklch(0.4930 0.1280 4.50);
+      --highlight: oklch(0.9450 0.0360 55 / 0.78);
+      --soft-pink: oklch(0.9470 0.0248 2.08);
+      --shadow: oklch(0.6521 0.0908 1.39 / 0.15);
+      --tip: oklch(0.6140 0.1300 243);
+      --warn: oklch(0.7000 0.1450 75);
+      --danger: oklch(0.5900 0.1800 25);
+      --success: oklch(0.6200 0.1600 145);
+      --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-display: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+      --code-bg: #282C34;
+      --code-fg: #ABB2BF;
+      --code-comment: #5C6370;
+      --code-keyword: #C678DD;
+      --code-string: #98C379;
+      --code-function: #61AFEF;
+      --code-number: #D19A66;
+      --code-type: #E5C07B;
+      --code-operator: #56B6C2;
+      --code-error: #E06C75;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--muted);
+      background:
+        linear-gradient(160deg, #FFF1F3 0%, #FDE7EC 100%);
+      font-family: var(--font-body);
+      font-size: 17px;
+      font-weight: 400;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: var(--fg);
+      text-decoration-color: color-mix(in oklch, var(--muted) 42%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+      overflow-wrap: anywhere;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .ambient {
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(92px);
+      opacity: 0.56;
+      pointer-events: none;
+    }
+
+    .ambient-one {
+      width: 36vw;
+      height: 36vw;
+      top: -10vw;
+      left: -8vw;
+      background: oklch(0.8550 0.0850 3 / 0.55);
+    }
+
+    .ambient-two {
+      width: 34vw;
+      height: 34vw;
+      top: 30vh;
+      right: -12vw;
+      background: oklch(0.8700 0.0700 50 / 0.42);
+    }
+
+    .ambient-three {
+      width: 28vw;
+      height: 28vw;
+      bottom: -8vw;
+      left: 18vw;
+      background: oklch(0.8500 0.0600 315 / 0.38);
+    }
+
+    .page-shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .reader-layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 920px);
+      justify-content: center;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .reader-layout:has(.toc details:not([open])) {
+      grid-template-columns: 56px minmax(0, 920px);
+    }
+
+    .document {
+      grid-column: 2;
+      width: 100%;
+      max-width: 920px;
+      min-width: 0;
+    }
+
+    .glass-card {
+      position: relative;
+      padding: clamp(28px, 4vw, 44px);
+      margin: 0 0 28px;
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 32px rgba(190,120,140,0.15);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 38px rgba(190,120,140,0.19);
+    }
+
+    .hero {
+      overflow: hidden;
+      padding-top: clamp(36px, 6vw, 58px);
+      padding-bottom: clamp(34px, 5vw, 52px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 118px;
+      height: 4px;
+      left: clamp(28px, 4vw, 44px);
+      bottom: 25px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--fg);
+      font-family: var(--font-display);
+      font-weight: 650;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 17ch;
+      font-size: clamp(17px, 2.9vw, 26px);
+      line-height: 1.12;
+      letter-spacing: -0.025em;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(25px, 4vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+
+    h3 {
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-size: clamp(20px, 3vw, 23px);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 65ch;
+      margin: 0 0 16px;
+    }
+
+    strong {
+      color: var(--fg);
+      font-weight: 600;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+
+    em {
+      color: var(--fg);
+      font-style: italic;
+    }
+
+    mark {
+      color: inherit;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+    }
+
+    code:not(pre code) {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      color: oklch(0.4300 0.1350 12);
+      background: color-mix(in oklch, var(--accent) 22%, white);
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    ul, ol {
+      margin: 12px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    ul:not(.checklist) > li::before {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 0.72em;
+      border-radius: 50%;
+      background: var(--accent-ink);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent);
+    }
+
+    ol:not(.steps) {
+      counter-reset: ordered;
+    }
+
+    ol:not(.steps) > li {
+      counter-increment: ordered;
+      padding-left: 34px;
+    }
+
+    ol:not(.steps) > li::before {
+      content: counter(ordered) ".";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-ink);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      font-weight: 600;
+    }
+
+    .checklist > li {
+      padding-left: 0;
+    }
+
+    .completion-label {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+
+    .completion-checkbox {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .check-box {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      margin-top: 0.32em;
+      border: 1.5px solid color-mix(in oklch, var(--accent-ink) 68%, var(--border));
+      border-radius: 5px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .completion-checkbox:focus-visible + .check-box {
+      outline: 3px solid color-mix(in oklch, var(--success) 28%, transparent);
+      outline-offset: 3px;
+    }
+
+    .completion-checkbox:checked + .check-box {
+      border-color: var(--success);
+      background: var(--success);
+      transform: scale(1.04);
+    }
+
+    .completion-checkbox:checked + .check-box::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      left: 5px;
+      top: 1px;
+      border-right: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(45deg);
+    }
+
+    .steps {
+      position: relative;
+      margin-left: 2px;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 25px;
+      bottom: 25px;
+      width: 1px;
+      background: color-mix(in oklch, var(--accent) 48%, var(--border));
+    }
+
+    .steps > li {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 0;
+      margin: 12px 0;
+    }
+
+    .step-badge {
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid color-mix(in oklch, var(--accent-ink) 24%, white);
+      border-radius: 50%;
+      color: var(--accent-ink);
+      background: color-mix(in oklch, var(--soft-pink) 80%, white);
+      box-shadow: 0 4px 12px var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .step-card {
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+    }
+
+    blockquote {
+      margin: 24px 0 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--tip);
+      border-radius: 0 14px 14px 0;
+      color: var(--fg);
+      background: color-mix(in oklch, var(--tip) 7%, var(--surface));
+    }
+
+    blockquote p {
+      margin: 0;
+    }
+
+    .meta-strip {
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.35);
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-strip p {
+      margin: 0;
+    }
+
+    .code-shell {
+      position: relative;
+      margin: 20px 0 22px;
+      border-radius: 12px;
+      overflow: hidden;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    }
+
+    .code-toolbar {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .language-label {
+      color: color-mix(in srgb, var(--code-fg) 74%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .copy-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: var(--code-fg);
+      background: rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .copy-code:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .copy-code:active {
+      transform: translateY(2px);
+    }
+
+    .copy-code svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    pre {
+      margin: 0;
+      padding: 48px 18px 18px;
+      overflow: auto;
+      color: var(--code-fg);
+      background: #282C34;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font-family: inherit;
+      white-space: pre;
+    }
+
+    .hljs { color: var(--code-fg); background: transparent; }
+    .hljs-comment, .hljs-quote { color: var(--code-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--code-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: var(--code-string); }
+    .hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--code-function); }
+    .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--code-number); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-built_in { color: var(--code-type); }
+    .hljs-operator, .hljs-attr, .hljs-attribute { color: var(--code-operator); }
+    .hljs-deletion, .hljs-variable, .hljs-template-variable { color: var(--code-error); }
+
+    .closing-note {
+      color: var(--fg);
+      font-weight: 560;
+    }
+
+    .toc {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1;
+      top: 28px;
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      box-shadow: 0 8px 28px var(--shadow);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+
+    .toc details {
+      padding: 8px;
+    }
+
+    .toc summary {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .toc summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .toc details:not([open]) .toc-list {
+      display: none;
+    }
+
+    .toc summary svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .toc-list li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list li::before {
+      display: none;
+    }
+
+    .toc-list a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: color-mix(in oklch, var(--muted) 86%, transparent);
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .toc-list a:hover {
+      color: var(--fg);
+      background: rgba(255,255,255,0.42);
+    }
+
+    .toc-list a[aria-current="true"] {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 20%, white);
+      font-weight: 550;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 480ms ease, transform 480ms ease;
+    }
+
+    @media (max-width: 1240px) {
+      .page-shell {
+        width: min(980px, calc(100% - 40px));
+      }
+
+      .reader-layout,
+      .reader-layout:has(.toc details:not([open])) {
+        grid-template-columns: minmax(0, 920px);
+        gap: 18px;
+      }
+
+      .toc {
+        z-index: 10;
+        grid-column: 1;
+        top: 12px;
+        grid-row: 1;
+        max-height: min(62vh, 520px);
+      }
+
+      .toc summary {
+        display: flex;
+      }
+
+      .toc details:not([open]) .toc-list {
+        display: none;
+      }
+
+      .document {
+        grid-column: 1;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 16px;
+      }
+
+      .page-shell {
+        width: min(100% - 24px, 620px);
+        padding: 18px 0 64px;
+      }
+
+      .glass-card {
+        padding: 24px 20px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+      }
+
+      .hero {
+        padding-top: 32px;
+        padding-bottom: 42px;
+      }
+
+      .hero::after {
+        left: 20px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 7vw, 29px);
+      }
+
+      h3 {
+        margin-top: 28px;
+      }
+
+      .steps > li {
+        gap: 10px;
+      }
+
+      .step-card {
+        padding: 12px 13px;
+      }
+
+      pre {
+        padding: 48px 16px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media print {
+      @page { margin: 16mm; }
+
+      body {
+        color: #4A3F44;
+        background: white !important;
+        font-size: 12pt;
+      }
+
+      .ambient, .toc, .copy-code {
+        display: none !important;
+      }
+
+      .page-shell {
+        width: 100%;
+        padding: 0;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .glass-card {
+        break-inside: avoid;
+        padding: 0;
+        margin: 0 0 18pt;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .hero::after {
+        display: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .code-shell, pre {
+        break-inside: avoid;
+        color: #ABB2BF !important;
+        background: #282C34 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  
+
+    .table-wrap {
+      margin: 20px 0 22px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      font-size: 0.92em;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 14%, white);
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+</style>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="ambient ambient-three" aria-hidden="true"></div>
+
+  <main class="page-shell" data-od-id="page-shell">
+    <div class="reader-layout">
+      <article class="document" id="document-content" data-od-id="document-content">
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>SRE Copilot 执行计划 v2（重写版 · 与学习计划 M0–M12 一一对应）</h1></header>
+<blockquote>
+<p>本文是 D4 第二部分：对 <code>docs/superpowers/plans/2026-07-12-sre-copilot-execution-plan.md</code> 的重写。
+<strong>裁剪规则</strong>：只保留 ①开源检索评估 ②接口契约/数据模型/验收标准 ③纯真实 HTTP 的端到端(INT)验证。砍掉：单元测试要求、多角色对抗评审、前端测试层、全套标准化台账。
+<strong>一句话定位</strong>：production-minded 本地评估系统，单人学习/受控故障实验/作品演示，非生产系统。
+<strong>风险修复</strong>：正文每处 <code>[R#]</code> 对应 D4 风险清单的修复点。</p>
+</blockquote>
+<section class="glass-card reveal" id="section-0-现实基准-覆盖旧计划的-旧世界-假设" data-od-id="section-0-现实基准-覆盖旧计划的-旧世界-假设"><h2 data-od-id="section-0-现实基准-覆盖旧计划的-旧世界-假设">0. 现实基准（覆盖旧计划的"旧世界"假设）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>旧计划假设</th>
+<th>v2 现实基准</th>
+</tr>
+</thead>
+</table></div>
+<blockquote>
+<p><strong>⚠ greenfield 转向（用户决策）</strong>：忽略 iris 项目里所有现有代码（iris-tool-gateway / iris-agent-platform / agent-platform 一律当作不存在）。SRE Copilot 的实现（Java 工具网关 + Python Agent）<strong>全部从 0 新建</strong>。prunus-mume 不是 iris 代码、是外部被测系统，保留。<strong>R4（主干迁移/删重复层）整条作废</strong>——不存在"迁移"，只有"从 0 新建"。</p>
+</blockquote>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>旧计划假设</th>
+<th>v2 现实基准（greenfield）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>被测系统</td>
+<td>自建电商 patient-system（gateway/order/inventory/payment 4 服务）</td>
+<td><strong>prunus-mume</strong>（Spring Cloud Alibaba 刷题平台，pm-auth/user/question/interaction/payment/file-storage 6 服务）[R1]</td>
+</tr>
+<tr>
+<td>故障注入</td>
+<td>自建 ChaosRegistry + <code>POST /chaos/{fault}?enabled=</code></td>
+<td>prunus-mume <strong>自带</strong> <code>ChaosController</code>（<code>/chaos/register/{name}</code>、<code>/chaos/status</code>、<code>/chaos/isEnabled</code>）+ <strong>允许改其 Java 代码加钩子</strong> + 外部注入（docker/mysql/nacos/tc）[R2]</td>
+</tr>
+<tr>
+<td>Java 工具网关</td>
+<td><code>tool-gateway</code>（新建）</td>
+<td><strong>从 0 新建</strong>一个干净的 Spring Boot 工程（下称 <code>tool-gateway/</code>，现有 iris-tool-gateway 视为不存在）；5 工具 + raw 全部自己写</td>
+</tr>
+<tr>
+<td>Python Agent 工程</td>
+<td><code>agent-platform</code>（create_agent 单 Agent）</td>
+<td><strong>从 0 新建</strong>一个干净的 uv + LangGraph 工程（下称 <code>agent-platform/</code>，现有 iris-agent-platform / agent-platform 视为不存在），从官方 LangGraph starter 起手</td>
+</tr>
+<tr>
+<td>模型</td>
+<td>deepseek-chat / deepseek-reasoner / Anthropic</td>
+<td><strong>DashScope(Qwen)</strong> 主力 + <strong>OpenRouter</strong>（代理另一家族）；verify 跨家族 = Qwen × OpenRouter 某家族 [R5]</td>
+</tr>
+<tr>
+<td>服务名/端口</td>
+<td>硬编码 <code>application="order-service"</code>、静态 cmdb.yaml</td>
+<td>运行时从 <strong>Nacos/CMDB 动态解析</strong>；端口不硬编码 [R3]</td>
+</tr>
+<tr>
+<td>多 Agent 内层</td>
+<td>DeepAgents（决策拖到 Sprint 4）</td>
+<td><strong>M10 前置 spike</strong>：DeepAgents vs langgraph 原生 subgraph 对比后锁定 [R6][叉子②]</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>目录命名：<code>tool-gateway/</code> 与 <code>agent-platform/</code> 为本计划的干净新建目录名（若磁盘上有同名/近名旧目录，按用户指示"当作不存在"——另起干净目录或清空重建，由你定）。</p>
+</blockquote>
+<p><strong>§0 契约设计沿用（这些是好设计，从 0 写时照此实现）</strong>：响应信封、错误码、护栏数值、HMAC approval token 契约（§0.5）、证据台账目录约定（§0.6）。<strong>注意：是"照此契约从 0 实现"，不是"复用现有代码"。</strong></p>
+</section>
+<section class="glass-card reveal" id="section-1-模块-旧任务映射-风险修复索引" data-od-id="section-1-模块-旧任务映射-风险修复索引"><h2 data-od-id="section-1-模块-旧任务映射-风险修复索引">1. 模块 → 旧任务映射 + 风险修复索引</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>模块</th>
+<th>一句话</th>
+<th>替代/重组的旧任务</th>
+<th>关键风险修复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>M0</strong> 基建与骨架</td>
+<td>docker-compose 一键起全套 + 一条"注入→观测到信号"闭环</td>
+<td>T1–T3 + 旧 T2 中间件</td>
+<td>R9（就绪门/Nacos 探测）</td>
+</tr>
+<tr>
+<td><strong>M1</strong> 接入 prunus-mume + 可观测 + 故障能力勘察与设计</td>
+<td>T4–T12（<strong>不自建系统</strong>，改为接入+勘察+设计故障目录）</td>
+<td>R1/R2/R3（勘察 /chaos、对齐 label、设计故障目录）</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M2</strong> 工具层契约（Java 网关 5 只读工具 + raw）</td>
+<td>T13–T19</td>
+<td>R3（service 动态解析）/R12（重试语义）</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M3</strong> 第一个 StateGraph（从 0 建 Python 工程 + 起手线性图）</td>
+<td>T28/T30/T31（拆第一步）</td>
+<td>~~R4 作废~~ / R5（模型路由）/R16（拆分）</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M4</strong> 状态对象 + 记忆 + 条件边/回流 + 预算 guard</td>
+<td>T31（拆第二步）</td>
+<td>R8/R13/R14（guard 粒度、state 瘦身、Command 路由）</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M5</strong> webhook 入口 + 指纹去重</td>
+<td>T29</td>
+<td>用 Alertmanager <strong>自带 fingerprint</strong> 替代手搓 sha256</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M6</strong> 分诊节点 triage</td>
+<td>T32</td>
+<td>R5（triage 走 DashScope）</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M7</strong> 排查简版（单 Agent）+ 证据台账</td>
+<td>T33（= 消融 A2，现役代码已有雏形）</td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M8</strong> 报告节点 + 兜底 + FastAPI 出口</td>
+<td>T34</td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M9</strong> verify 跨家族验收</td>
+<td>T35</td>
+<td>R5（verify 走 OpenRouter 另一家族）</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M10</strong> 多 Agent（spike→lead+subagents）</td>
+<td>T38/T39</td>
+<td>R6/R7（spike 前置、内层可 checkpoint）/R11（护栏硬约束）</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M11</strong> Skills(SOP) + Chroma 知识库 + 快速路径</td>
+<td>T40/T41/T42/T43</td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>M12</strong> /actions 修复 + HMAC 审批 + HITL + 评估兜底</td>
+<td>T20/T21/T36/T37 + T44–T48（精简）</td>
+<td>R10（白名单/dataId 从实际 Nacos 推导）</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p>依赖主线：M0→M1→M2→M3→M4→{M5,M6,M7}→M8→M9→M10→M11→M12。M2 可与 M1 后半并行（网关用 WireMock 桩上游）。</p>
+</section>
+<section class="glass-card reveal" id="section-2-各模块技术基线-接口契约-数据模型-真实-http-验收" data-od-id="section-2-各模块技术基线-接口契约-数据模型-真实-http-验收"><h2 data-od-id="section-2-各模块技术基线-接口契约-数据模型-真实-http-验收">2. 各模块技术基线（接口契约 + 数据模型 + 真实 HTTP 验收）</h2>
+<blockquote>
+<p>每模块只给：<strong>目标 / 接口契约 / 数据模型 / 真实 HTTP 验收（含 ≥1 异常路径）/ 需核实</strong>。落笔顺序、讲解、Java 类比、卡住降级留给 D6 模块文档。</p>
+</blockquote>
+<h3 data-od-id="section-m0-基建与骨架-4" id="section-m0-基建与骨架-4">M0 · 基建与骨架</h3>
+<ul>
+<li><strong>目标</strong>：一份 <code>deploy/docker-compose.yml</code> 起 Nacos+MySQL+Redis+Prometheus+Alertmanager+Loki+Promtail+Grafana(+Tempo 或 Zipkin) + prunus-mume 6 服务 + iris-tool-gateway；打通"注入一个故障→Prometheus 看到指标变化"。</li>
+<li><strong>接口契约</strong>：<code>deploy/docker-compose.yml</code>（profiles/healthcheck/depends_on 就绪门 [R9]）；<code>deploy/scripts/check-env.sh</code>（PASS/FAIL 清单，含 Nacos 就绪 <code>curl .../nacos/v1/console/health/readiness</code>）。</li>
+<li><strong>数据模型</strong>：端口表（<strong>从各服务 Nacos 实际配置回填</strong>，不硬编码 [R3]）；中间件版本基线 <code>docs/dependency-baseline.md</code>（精确 tag，ARM64）。</li>
+<li><strong>真实 HTTP 验收</strong>：
+<ul>
+<li><code>docker compose ps</code> 全部服务 Up/healthy；</li>
+<li><code>curl -s localhost:9090/-/ready</code> → 200；<code>curl -s localhost:3100/ready</code> → 200；</li>
+<li><code>curl -s "localhost:8848/nacos/v1/console/health/readiness"</code> → 200；</li>
+<li>异常路径：故意停 Nacos（<code>docker stop nacos</code>）→ 任一 prunus-mume 服务健康检查转 unhealthy，check-env 报出该阻塞。</li>
+</ul>
+</li>
+<li><strong>需核实</strong>：prunus-mume 各服务在 Nacos 里的实际端口；MySQL/Redis 账号；prunus-mume 是否需要预置 Nacos 配置集才能启动。</li>
+</ul>
+<h3 data-od-id="section-m1-接入-prunus-mume-可观测接线-故障能力勘察与设计-5" id="section-m1-接入-prunus-mume-可观测接线-故障能力勘察与设计-5">M1 · 接入 prunus-mume + 可观测接线 + 故障能力勘察与设计</h3>
+<ul>
+<li><strong>目标</strong>：让 prunus-mume 6 服务产出 metrics/logs/traces 三路真实信号；勘察其 <code>/chaos</code> 现有能力；设计落到刷题域的故障目录。</li>
+<li><strong>接口契约</strong>：
+<ul>
+<li><strong>勘察</strong>（Phase 1 第一任务）：<code>curl -s localhost:&lt;port&gt;/chaos/status</code> 枚举每个服务已注册的 chaos flag；记录 <code>/chaos/register/{name}</code>、<code>/chaos/isEnabled</code> 的入参与语义（<strong>需核实鉴权/参数体</strong>）[R2]。</li>
+<li><strong>可观测接线</strong>：确认/补齐 prunus-mume 的 actuator + <code>micrometer-registry-prometheus</code>（<strong>需核实是否已接</strong>）；Promtail <code>docker_sd_configs</code> 采日志；tracing 到 Tempo/Zipkin；日志 pattern 含 traceId（这是 M2 query_logs 的契约）。</li>
+<li><strong>告警规则</strong>：<code>deploy/alert-rules.yaml</code>，label 对齐 prunus-mume <strong>真实 <code>application</code> 值</strong> [R3]。</li>
+</ul>
+</li>
+<li><strong>数据模型</strong>：<code>docs/fault-catalog.md</code>——按 prunus-mume 服务设计的故障目录（每条：fault_id / fault_class / root_service / 注入手段(自带chaos/新增钩子/外部) / expected_alerts / causal_chain / key_evidence）。故障类型覆盖 SRE 诊断要练的：慢查询(pm-question 题库查询)、线程池耗尽/下游超时(pm-payment 支付渠道)、缓存故障(Redis)、配置变更(Nacos 发布)、实例宕/CrashLoop、CPU/磁盘饱和、GC 压力、网络延迟。允许改 prunus-mume Java 代码加钩子 [叉子①]。</li>
+<li><strong>真实 HTTP 验收</strong>：
+<ul>
+<li>三路贯通：从某服务日志取一个 traceId → 在 Tempo/Zipkin <code>GET /api/v2/trace/{id}</code> 看到跨服务 span → 同 traceId 在 Loki <code>query_range</code> 查得到；</li>
+<li>注入一个故障 → ≤2min Alertmanager <code>/api/v2/alerts</code> 出现 expected_alert → revert → 告警 resolve；</li>
+<li>异常路径：一条"背景正常变更/瞬时尖峰"不触发告警（阴性对照素材）。</li>
+</ul>
+</li>
+<li><strong>需核实</strong>：prunus-mume 是否已内置 actuator/micrometer/tracing；其 <code>/chaos</code> 已注册哪些 flag；Nacos dataId/group 命名约定（M12 的 revert_config 依赖）。</li>
+</ul>
+<h3 data-od-id="section-m2-工具层契约-java-网关-5-只读工具-raw-通道-从-0-新建-6" id="section-m2-工具层契约-java-网关-5-只读工具-raw-通道-从-0-新建-6">M2 · 工具层契约（Java 网关 5 只读工具 + raw 通道）— <strong>从 0 新建</strong></h3>
+<ul>
+<li><strong>目标</strong>：从 0 建一个干净的 Spring Boot 工具网关，把 5 个只读工具（metrics/logs/trace/cmdb/changes）+ raw 通道打到真实 Prometheus/Loki/Tempo；service 动态解析。</li>
+<li><strong>接口契约</strong>（照 §0.3 信封/错误码/护栏<strong>从 0 实现</strong>）：
+<ul>
+<li><strong>从 0 建</strong>：网关骨架（鉴权拦截器 + 统一信封 + 错误码 + 审计表）+ <code>POST /api/v1/tools/query_metrics|query_logs|query_changes|query_cmdb</code>；</li>
+<li><code>query_trace</code>（find_slow/find_error/get_trace 三模板，span 树精简）、<code>raw/promql</code>、<code>raw/logql</code>（静态校验 + 独立预算 + 审计高亮）；</li>
+<li>service 参数<strong>运行时查 CMDB（从 Nacos 拉取）动态校验</strong>，不用静态常量集 [R3]；</li>
+<li>重试语义统一：只读工具在 Python GatewayClient 侧幂等重试 1 次 [R12]。</li>
+</ul>
+</li>
+<li><strong>数据模型</strong>：<code>ApiEnvelope{ok,degraded,degraded_reason,data,meta{elapsed_ms,truncated,budget_remaining}}</code>；audit_log 表（含 template_or_raw、agent_role）；per-incident 预算表（模板 40 / raw 5）。</li>
+<li><strong>真实 HTTP 验收</strong>（打真实网关 + 真实上游）：
+<ul>
+<li>5 工具各 <code>curl</code> 一次，返回信封字段齐全、data 有真实数据；</li>
+<li>degraded：<code>docker stop loki</code> → query_logs 返回 <code>degraded:true</code> 且 HTTP 200（非 5xx）；</li>
+<li>429：同一 <code>X-Incident-Id</code> 连打 41 次模板工具 → 第 41 次 <code>BUDGET_EXCEEDED</code>；</li>
+<li>400：window=12h → <code>RANGE_TOO_LARGE</code>；raw 无 label selector → 403 <code>NOT_WHITELISTED</code>。</li>
+</ul>
+</li>
+<li><strong>需核实</strong>：prunus-mume 的实际指标名（题库查询耗时、支付线程池、缓存计数）以确定 query_metrics 模板表达式。</li>
+</ul>
+<h3 data-od-id="section-m3-第一个-stategraph-从-0-建-python-工程-起手线性图-r16-第一步-7" id="section-m3-第一个-stategraph-从-0-建-python-工程-起手线性图-r16-第一步-7">M3 · 第一个 StateGraph（从 0 建 Python 工程 + 起手线性图）[R16 第一步]</h3>
+<ul>
+<li><strong>目标</strong>：从 0 起一个干净的 uv + LangGraph 工程（从官方 starter 起手）；配置 + 多模型路由；跑通"线性 StateGraph 单节点调 1 个真实工具"。</li>
+<li><strong>接口契约</strong>（全部<strong>从 0 新建</strong>）：
+<ul>
+<li><code>config.py</code> <code>Settings</code>（网关 base_url/token、4 角色模型名、阈值、消融开关）；</li>
+<li><code>models/router.py</code> <code>get_model(role: "triage"|"investigate"|"verify"|"report") -&gt; BaseChatModel</code> + <code>get_embeddings()</code>——<strong>走 DashScope + OpenRouter 官方 integration</strong> [R5]；</li>
+<li><code>tools/client.py</code> <code>GatewayClient(base_url,token,incident_id,agent_role).call(path,body)-&gt;Envelope</code>（429→<code>BudgetExceededError</code>）；<code>tools/definitions.py</code> <code>make_tools(client)</code>（7 个 @tool，Pydantic args_schema，degraded 透传）；</li>
+<li><code>graph.py</code> 起手：<code>StateGraph</code> 单节点 <code>investigate_once</code>→调 <code>query_metrics</code>→END。</li>
+</ul>
+</li>
+<li><strong>数据模型</strong>：<code>Envelope</code>（Pydantic 镜像网关信封）。</li>
+<li><strong>真实 HTTP 验收</strong>：
+<ul>
+<li><code>uv run python scripts/smoke_models.py</code> → DashScope 与 OpenRouter 各一次真实 invoke + structured_output 全 PASS（不 mock）；</li>
+<li><code>curl -XPOST localhost:8000/run -d '{alert fixture}'</code> → graph 调到真实 <code>query_metrics</code>，返回真实指标数据；</li>
+<li>异常路径：网关 token 错 → 工具层抛 <code>GatewayRequestError</code>，graph 优雅结束不崩。</li>
+</ul>
+</li>
+<li><strong>需核实</strong>：LangGraph 官方 starter（<code>langgraph new</code> 模板）的当前 <code>langgraph.json</code>/<code>graph.py</code> 约定；如何暴露 HTTP 触发（<code>langgraph dev</code> 自带 API vs 自挂 FastAPI）。</li>
+</ul>
+<h3 data-od-id="section-m4-状态对象-记忆-条件边-回流-预算-guard-r16-第二步-8" id="section-m4-状态对象-记忆-条件边-回流-预算-guard-r16-第二步-8">M4 · 状态对象 + 记忆 + 条件边/回流 + 预算 guard [R16 第二步]</h3>
+<ul>
+<li><strong>目标</strong>：把线性图升级为带状态对象、checkpointer、条件边回流、预算 guard 的骨架。</li>
+<li><strong>接口契约</strong>：
+<ul>
+<li><code>graph/state.py</code> 定义全套（见数据模型）；</li>
+<li><code>AsyncSqliteSaver</code> checkpointer，<code>thread_id=incident_id</code>；</li>
+<li>条件边：verify→pass→report；fail 且 <code>investigate_rounds&lt;2</code>→investigate（rounds+1）；fail 耗尽→report；</li>
+<li><code>graph/guard.py</code>：预算检查改为<strong>调用粒度</strong>——在 GatewayClient 回调/工具封装内累计 token 并在 agent 循环内检查（不只节点前置）[R8]；超限用 <strong><code>Command(goto="report")</code></strong> 显式路由 [R14]。</li>
+</ul>
+</li>
+<li><strong>数据模型</strong>（<code>IncidentState</code> TypedDict，<strong>大文本落盘、state 存引用</strong> [R13]）：
+<ul>
+<li><code>incident_id, alerts(引用 alert.json), fingerprint, matched_cases[], triage:TriageResult|None, investigate_rounds:int, verifier_feedback[], draft_report_ref(路径,非全文), verify_verdict:Verdict|None, budget:BudgetLedger, approval:ApprovalDecision|None, remediation_result:RemedyOutcome|None</code>；</li>
+<li>子模型：<code>TriageResult(severity,suspected_domains[],fast_path,candidate_root)</code>、<code>RcaReport(root_service,root_cause,root_detail,confidence,causal_chain[],summary_md,evidence_ids[],remediation?)</code>、<code>Verdict(verdict,objections[])</code>、<code>BudgetLedger(tokens_used,token_limit,deadline_ts,budget_exhausted)</code>。</li>
+</ul>
+</li>
+<li><strong>真实 HTTP 验收</strong>：
+<ul>
+<li>灌 fixture 告警 → 图从 ingest 走到 close，<code>checkpoints.db</code> 有该 thread；</li>
+<li>强制 verify 返回 fail → 回流 2 次后走 report（rounds 正确）；</li>
+<li>deadline 置过去 → guard 跳过 investigate 直达 report；</li>
+<li>异常路径：投毒使某节点抛异常 → 异常持久化到 incident 表可观察，进程不裸崩。</li>
+</ul>
+</li>
+</ul>
+<h3 data-od-id="section-m5-webhook-入口-指纹去重-9" id="section-m5-webhook-入口-指纹去重-9">M5 · webhook 入口 + 指纹去重</h3>
+<ul>
+<li><strong>接口契约</strong>：<code>POST /webhook/alertmanager</code>（AM v4 格式）；30min 内同指纹且 open→merge 返回 <code>{deduped:true}</code> 不启图；否则建 incident 异步启图；坏 payload 落 <code>runs/deadletter/</code>。</li>
+<li><strong>数据模型</strong>：<code>Alert(alertname,service,severity,status,starts_at,labels,annotations)</code>；<strong>指纹优先用 Alertmanager 自带 <code>fingerprint</code> 字段</strong>，回退才自算 <code>sha256(alertname+service+关键labels)[:16]</code>；<code>incident(incident_id PK,fingerprint,status,created_at,alerts_ref)</code>。</li>
+<li><strong>真实 HTTP 验收</strong>：<code>curl -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json</code> → 200 且 incidents.db 落记录；同指纹 31 分钟后新建、30 分钟内 deduped；坏 payload → 200（防 AM 重试风暴）且死信文件生成。</li>
+</ul>
+<h3 data-od-id="section-m6-分诊节点-triage-10" id="section-m6-分诊节点-triage-10">M6 · 分诊节点 triage</h3>
+<ul>
+<li><strong>接口契约</strong>：<code>graph/nodes/triage.py</code>——<code>get_model("triage").with_structured_output(TriageResult)</code>（DashScope 轻模型）；校验失败重试 1 次，再失败降级默认 <code>TriageResult(severity="P2",suspected_domains=全部,fast_path=False)</code>；<code>matched_cases[0].similarity&gt;=fast_path_similarity</code>→fast_path。</li>
+<li><strong>数据模型</strong>：<code>TriageResult</code>（见 M4）；疑似域枚举与 M11 Skills 预筛映射一致。</li>
+<li><strong>真实 HTTP 验收</strong>：对某故障真实告警 fixture 调<strong>真模型</strong>一次，<code>suspected_domains</code> 命中该故障对应域；异常路径：喂畸形告警 → 走默认值路径不崩。</li>
+</ul>
+<h3 data-od-id="section-m7-排查简版-单-agent-直连工具-证据台账-11" id="section-m7-排查简版-单-agent-直连工具-证据台账-11">M7 · 排查简版（单 Agent 直连工具）+ 证据台账</h3>
+<ul>
+<li><strong>接口契约</strong>：<code>agents/evidence.py</code> <code>EvidenceStore(incident_id)</code>：<code>new_id(kind)-&gt;EV-M-001</code>、<code>write(...)-&gt;Path</code>（§0.6 格式，防路径穿越）、<code>list_ids/read</code>；<code>agents/simple_investigator.py</code>：LangChain v1 <code>create_agent(model,tools,response_format=RcaReport)</code> + <code>record_evidence</code> 工具；结论必引 <code>[EV-*]</code>；token 累加进 budget。此实现<strong>永久保留为消融 A2</strong>。</li>
+<li><strong>数据模型</strong>：证据文件 frontmatter（evidence_id/source/agent_role/ts/degraded）+ 正文（≤3 句摘要 + 关键数据摘录）。</li>
+<li><strong>真实 HTTP 验收</strong>：注入某故障 → webhook → <code>runs/incidents/inc-*/</code> 生成 evidence/*.md 若干 + report_draft（链路通即可，root_service 不强求）；异常路径：网关 degraded 时证据仍带 degraded 标注落盘。</li>
+</ul>
+<h3 data-od-id="section-m8-报告节点-确定性兜底-fastapi-出口-12" id="section-m8-报告节点-确定性兜底-fastapi-出口-12">M8 · 报告节点 + 确定性兜底 + FastAPI 出口</h3>
+<ul>
+<li><strong>接口契约</strong>：<code>graph/nodes/report.py</code>——轻模型润色 <code>summary_md</code>，<strong>结构化字段原样保留不许 LLM 改写</strong>；LLM 失败→<code>report_template.render()</code> 兜底；落 <code>runs/incidents/{id}/report.md</code>；<code>GET /incidents/{id}</code> 出报告。</li>
+<li><strong>数据模型</strong>：<code>RcaReport</code>（见 M4）；模板骨架（结论/置信度/因果链/证据引用清单/修复建议/异议）。</li>
+<li><strong>真实 HTTP 验收</strong>：真实跑出 <code>report.md</code> 含全部 section 与 <code>[EV-*]</code>；<code>curl localhost:8000/incidents/{id}</code> 返回结构化字段；异常路径：断网 LLM → 走模板兜底仍出报告。</li>
+</ul>
+<h3 data-od-id="section-m9-verify-跨家族验收节点-r5-13" id="section-m9-verify-跨家族验收节点-r5-13">M9 · verify 跨家族验收节点 [R5]</h3>
+<ul>
+<li><strong>接口契约</strong>：<code>graph/nodes/verify.py</code> 两段式——①<strong>确定性预检</strong>：正则抽 <code>EV-[MLTS]-\d{3}</code>，文件不存在→直接 <code>Verdict(fail,["引用不存在"])</code> 不花 LLM；②<strong>LLM 跨家族核验</strong>：<code>get_model("verify")</code>（<strong>OpenRouter 某家族，与 investigate 的 DashScope 异厂商</strong>）；输入只有证据全文 + 草稿报告（不含主 Agent 推理，保独立性）；<code>with_structured_output(Verdict)</code>；消融 A3：<code>verifier_enabled=False</code>→恒 pass。</li>
+<li><strong>真实 HTTP 验收</strong>：篡改报告引用一个不存在的 EV → 确定性 fail（不调 LLM）；真实证据链跑一次跨家族核验得 Verdict；异常路径：verify 模型输出解析失败 → 记 <code>verifier_absent</code>，report 标注"验收缺席"。</li>
+</ul>
+<h3 data-od-id="section-m10-多-agent-spike-决策-lead-subagents-r6-r7-r11-叉子-14" id="section-m10-多-agent-spike-决策-lead-subagents-r6-r7-r11-叉子-14">M10 · 多 Agent（spike 决策 → lead + subagents）[R6][R7][R11][叉子②]</h3>
+<ul>
+<li><strong>前置 spike</strong>（M10 第一任务）：DeepAgents vs langgraph 原生 subgraph 各实现一个"lead 派 1 个 metrics subagent 取证"的最小样例，用真实网关跑一次；评估 checkpoint 可恢复性、代码量、API 稳定性；结论写 <code>docs/dependency-baseline.md</code>，锁定内层引擎。</li>
+<li><strong>接口契约</strong>（选定引擎后）：
+<ul>
+<li><code>agents/subagents.py</code>：<code>metrics-investigator</code>(仅 query_metrics)、<code>logs-investigator</code>(query_logs+raw_logql)、<code>trace-investigator</code>(仅 query_trace)，各带 record_evidence；<strong>最小权限</strong>，<code>X-Agent-Role</code> 按 subagent 注入；</li>
+<li><code>agents/lead.py</code>：lead 持 query_cmdb/query_changes + 调度；节奏：首轮并行广撒 → 汇总更新 hypotheses → 定向追查 → 写 report_draft；</li>
+<li><strong>offload 护栏做成工具层硬约束</strong> [R11]：lead 只暴露"读单个 evidence_id 摘要"工具，<strong>不提供批量读目录工具</strong>（而非仅写进 prompt）；</li>
+<li><strong>内层关键中间态</strong>（hypotheses、evidence 索引）落回 IncidentState 或 subgraph checkpoint，保证 resume 不丢 [R7]；</li>
+<li><code>graph/nodes/investigate.py</code>：<code>subagents_enabled</code> True→lead，False→simple_investigator（A2）。</li>
+</ul>
+</li>
+<li><strong>真实 HTTP 验收</strong>：注入某故障 → 完整跑 investigate → <code>plan.md/hypotheses.md/evidence/*/report_draft.md</code> 齐全，分层 trace（LangSmith 或日志）可见 lead→subagent；异常路径：审批挂起时 kill 进程重启 → resume 后内层进度不丢（验证 R7 修复）。</li>
+</ul>
+<h3 data-od-id="section-m11-skills-sop-chroma-知识库-快速路径-15" id="section-m11-skills-sop-chroma-知识库-快速路径-15">M11 · Skills(SOP) + Chroma 知识库 + 快速路径</h3>
+<ul>
+<li><strong>接口契约</strong>：
+<ul>
+<li><code>skills/loader.py</code>（自研）：扫 <code>skills/*/SKILL.md</code> 解析 frontmatter；<code>listing_for(domains)</code> 按疑似域预筛（映射表：db/threadpool/jvm/resource/container/config/cache→对应 skill；config-change-first 恒列）；<code>read_skill(name)</code> 全文≤600 token；采用 <strong>anthropics/skills 的 SKILL.md 三段式格式</strong>；</li>
+<li><code>knowledge/store.py</code>：<code>langchain-chroma</code> <code>PersistentClient</code>，<code>add_case/search(k=3)-&gt;KnowledgeHit[]</code>，检索异常返回 <code>[]</code> 不阻塞；</li>
+<li><code>knowledge_match</code>（告警→search→matched_cases）、<code>knowledge_update</code>（<strong>仅 verdict=pass 且 approval.approved 才入库</strong>，驳回只落 Markdown）；</li>
+<li>快速路径：<code>triage.fast_path</code> True→lead instructions 注入候选根因"优先最小取证验证"。</li>
+</ul>
+</li>
+<li><strong>数据模型</strong>：<code>KnowledgeHit(case_id,similarity,summary,root_service,root_cause)</code>；SKILL.md frontmatter(name/description/version)；案例 Markdown（症状/根因/证据/修复/人工备注），向量化文本=症状段（检索键是症状不是结论）。</li>
+<li><strong>真实 HTTP 验收</strong>：真实 embedding 下 add→search 命中且相似度排序正确；驳回案例不进向量库但 Markdown 落盘；快速路径二次注入同故障 → 网关审计 <code>count(*) where incident_id</code> 步数显著低于首次（记两个数字）；异常路径：Chroma 检索异常 → 返回空不抛。</li>
+</ul>
+<h3 data-od-id="section-m12-actions-修复-hmac-审批-hitl-评估兜底-r10-16" id="section-m12-actions-修复-hmac-审批-hitl-评估兜底-r10-16">M12 · /actions 修复 + HMAC 审批 + HITL + 评估兜底 [R10]</h3>
+<ul>
+<li><strong>接口契约（修复通道）</strong>：
+<ul>
+<li>网关 <code>POST /api/v1/actions/execute</code>（action 枚举 restart_container/kill_slow_query/revert_config/disable_chaos_flag；target 白名单<strong>从 prunus-mume 实际服务名 + redis 推导</strong> [R10]；dryRun=true 只需服务 token、返回预演；dryRun=false 需 approval token）；</li>
+<li><code>ApprovalTokenVerifier</code>（逐字 §0.5：ver/iss/aud/iat/exp/kid + nonce 一次性 + 常量时间比较）；</li>
+<li><code>revert_config</code> 的 Nacos dataId/group <strong>从 prunus-mume 实际约定映射</strong> [R10]（M1 已勘察）；</li>
+<li>Python 侧 <code>security/token.py</code>（<strong>itsdangerous 签名 + 自研 nonce 持久层</strong>）；<code>graph/nodes/approval.py</code>（<code>interrupt()</code> 挂起，进 interrupt 前先 dry-run 拿预演）；<code>graph/nodes/remediate.py</code>（带 token 执行 → 60s 后 query_metrics 复查恢复）；审批 API <code>GET /incidents/{id}/pending</code>、<code>POST /incidents/{id}/decision</code> + CLI <code>copilot approve/reject</code>。</li>
+</ul>
+</li>
+<li><strong>接口契约（评估兜底，精简）</strong>：<code>evals/scorer.py</code>（纯函数三级判分 svc/cls/anchor + 阴性）；<code>evals/runner.py</code>（注入→等告警→诊断→revert→判分，JSONL）；<code>make smoke</code>（5 例&lt;15min 门禁，acc@service 不回退）；A0–A3 消融开关。<strong>不写单元测试台账</strong>。</li>
+<li><strong>数据模型</strong>：approval token payload（§0.5）；<code>action_audit(id,ts,incident_id,action,target,dry_run,token_fingerprint,result,detail)</code>；<code>CaseScore(svc_hit,cls_hit,anchor_hit,negative_ok)</code>；真值 <code>eval-control/cases/*.yaml</code>（Agent 运行时不可读）。</li>
+<li><strong>真实 HTTP 验收</strong>（端到端 INT）：
+<ul>
+<li><strong>F09 类（配置变更）全流程</strong>：webhook→报告→CLI 审批→<code>revert_config</code> 真实执行→复查 recovered=True→案例入 Chroma；</li>
+<li>无 token <code>curl</code> execute → 403；伪造签名/过期 exp/重放 nonce → 403；dry-run 无 token → 200 且 action_audit 落 <code>dry_run=1</code>；</li>
+<li>审批挂起时 kill uvicorn 重启 → <code>copilot approve</code> 仍能 resume（checkpointer 实证）；</li>
+<li><code>make smoke</code> 一条命令 &lt;15min 退出码 0；把 baseline 改高 → 退出码 1（门禁生效）；</li>
+<li><strong>异常/纪律</strong>：慢查询类故障只输出"人工补索引/升级"建议，<strong>不得</strong>把 kill_slow_query 当根因修复、不得谎报 recovered=True。</li>
+</ul>
+</li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-3-端到端-int-真实-http-链路总验收-替代旧-cp0-cp6-纯真实链路" data-od-id="section-3-端到端-int-真实-http-链路总验收-替代旧-cp0-cp6-纯真实链路"><h2 data-od-id="section-3-端到端-int-真实-http-链路总验收-替代旧-cp0-cp6-纯真实链路">3. 端到端(INT)真实 HTTP 链路总验收（替代旧 CP0–CP6，纯真实链路）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>里程碑</th>
+<th>端到端真实验收（无 mock）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>环境就绪（M0–M1）</td>
+<td>compose 全 Up；三路 metrics/logs/trace 同 traceId 贯通；注入一故障→告警→revert→resolve</td>
+</tr>
+<tr>
+<td>数据面就绪（M2）</td>
+<td>5 工具 + raw 真实 curl 全过；degraded/429/400/403 四类异常路径演示</td>
+</tr>
+<tr>
+<td>骨架闭环（M3–M8）</td>
+<td>注入故障→webhook→图走完→<code>runs/incidents/*/</code> 出证据+报告（含 [EV-*]）</td>
+</tr>
+<tr>
+<td>智能闭环（M9–M11）</td>
+<td>篡改引用被 verify fail；多 Agent 分层 trace；相似案例快速路径步数下降</td>
+</tr>
+<tr>
+<td>全闭环（M12）</td>
+<td>F09 全链路 webhook→报告→审批→revert_config→复查恢复→入库；崩溃 resume；token 防伪防重放；make smoke 绿</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="glass-card reveal" id="section-4-out-of-scope-知情不做-沿用旧计划并对齐现实" data-od-id="section-4-out-of-scope-知情不做-沿用旧计划并对齐现实"><h2 data-od-id="section-4-out-of-scope-知情不做-沿用旧计划并对齐现实">4. Out-of-scope（知情不做，沿用旧计划并对齐现实）</h2>
+<p>多租户/SaaS/OAuth·接入真实生产·全自动跳过审批·消息队列/独立向量库服务·SkyWalking/ES·OPA/分布式限流·审批 Web UI·LLM judge 判分·压测框架·网关熔断框架。<strong>新增</strong>：不自建电商 patient-system（改用 prunus-mume）；不追求 prunus-mume 全业务功能正确（只需能产出故障信号）。</p>
+</section>
+<section class="glass-card reveal" id="section-5-遗留-需核实-清单-m0-m1-勘察任务的输出-不臆造" data-od-id="section-5-遗留-需核实-清单-m0-m1-勘察任务的输出-不臆造"><h2 data-od-id="section-5-遗留-需核实-清单-m0-m1-勘察任务的输出-不臆造">5. 遗留"需核实"清单（M0/M1 勘察任务的输出，不臆造）</h2>
+<ol>
+<li>prunus-mume 6 服务在 Nacos 的实际端口、MySQL/Redis 账号、启动所需预置配置集。</li>
+<li>prunus-mume 是否已接 actuator/micrometer/tracing；未接则 M1 需补接。</li>
+<li>prunus-mume <code>/chaos</code> 已注册哪些 flag、<code>/chaos/register</code> 入参与鉴权。</li>
+<li>prunus-mume 各服务真实指标名（题库查询耗时/支付线程池/缓存计数），决定 M2 query_metrics 模板。</li>
+<li>prunus-mume Nacos dataId/group 命名约定，决定 M12 revert_config 白名单映射。</li>
+<li>OpenRouter 实际可用模型家族清单（决定 verify 跨家族具体型号）、DashScope 可用模型 ID。</li>
+</ol>
+</section>
+      </article>
+      <aside class="toc" data-od-id="table-of-contents">
+        <details open>
+          <summary aria-label="展开或收起目录">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </summary>
+          <ol class="toc-list" id="toc-list">
+            <li><a href="#section-0-现实基准-覆盖旧计划的-旧世界-假设">0. 现实基准（覆盖旧计划的&quot;旧世界&quot;假设）</a></li>
+            <li><a href="#section-1-模块-旧任务映射-风险修复索引">1. 模块 → 旧任务映射 + 风险修复索引</a></li>
+            <li><a href="#section-2-各模块技术基线-接口契约-数据模型-真实-http-验收">2. 各模块技术基线（接口契约 + 数据模型 + 真实 HTTP 验收）</a></li>
+            <li><a href="#section-3-端到端-int-真实-http-链路总验收-替代旧-cp0-cp6-纯真实链路">3. 端到端(INT)真实 HTTP 链路总验收（替代旧 CP0–CP6，纯真实链路）</a></li>
+            <li><a href="#section-4-out-of-scope-知情不做-沿用旧计划并对齐现实">4. Out-of-scope（知情不做，沿用旧计划并对齐现实）</a></li>
+            <li><a href="#section-5-遗留-需核实-清单-m0-m1-勘察任务的输出-不臆造">5. 遗留&quot;需核实&quot;清单（M0/M1 勘察任务的输出，不臆造）</a></li>
+          </ol>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyBTUkUgQ29waWxvdCDmiafooYzorqHliJIgdjLvvIjph43lhpnniYggwrcg5LiO5a2m5Lmg6K6h5YiSIE0w4oCTTTEyIOS4gOS4gOWvueW6lO+8iQoKPiDmnKzmlofmmK8gRDQg56ys5LqM6YOo5YiG77ya5a+5IGBkb2NzL3N1cGVycG93ZXJzL3BsYW5zLzIwMjYtMDctMTItc3JlLWNvcGlsb3QtZXhlY3V0aW9uLXBsYW4ubWRgIOeahOmHjeWGmeOAggo+ICoq6KOB5Ymq6KeE5YiZKirvvJrlj6rkv53nlZkg4pGg5byA5rqQ5qOA57Si6K+E5LywIOKRoeaOpeWPo+Wlkee6pi/mlbDmja7mqKHlnosv6aqM5pS25qCH5YeGIOKRoue6r+ecn+WuniBIVFRQIOeahOerr+WIsOerryhJTlQp6aqM6K+B44CC56CN5o6J77ya5Y2V5YWD5rWL6K+V6KaB5rGC44CB5aSa6KeS6Imy5a+55oqX6K+E5a6h44CB5YmN56uv5rWL6K+V5bGC44CB5YWo5aWX5qCH5YeG5YyW5Y+w6LSm44CCCj4gKirkuIDlj6Xor53lrprkvY0qKu+8mnByb2R1Y3Rpb24tbWluZGVkIOacrOWcsOivhOS8sOezu+e7n++8jOWNleS6uuWtpuS5oC/lj5fmjqfmlYXpmpzlrp7pqowv5L2c5ZOB5ryU56S677yM6Z2e55Sf5Lqn57O757uf44CCCj4gKirpo47pmankv67lpI0qKu+8muato+aWh+avj+WkhCBgW1IjXWAg5a+55bqUIEQ0IOmjjumZqea4heWNleeahOS/ruWkjeeCueOAggoKLS0tCgojIyAwLiDnjrDlrp7ln7rlh4bvvIjopobnm5bml6forqHliJLnmoQi5pen5LiW55WMIuWBh+iuvu+8iQoKfCDnu7TluqYgfCDml6forqHliJLlgYforr4gfCB2MiDnjrDlrp7ln7rlh4YgfAp8LS0tfC0tLXwtLS18Cj4gKirimqAgZ3JlZW5maWVsZCDovazlkJHvvIjnlKjmiLflhrPnrZbvvIkqKu+8muW/veeVpSBpcmlzIOmhueebrumHjOaJgOacieeOsOacieS7o+egge+8iGlyaXMtdG9vbC1nYXRld2F5IC8gaXJpcy1hZ2VudC1wbGF0Zm9ybSAvIGFnZW50LXBsYXRmb3JtIOS4gOW+i+W9k+S9nOS4jeWtmOWcqO+8ieOAglNSRSBDb3BpbG90IOeahOWunueOsO+8iEphdmEg5bel5YW3572R5YWzICsgUHl0aG9uIEFnZW5077yJKirlhajpg6jku44gMCDmlrDlu7oqKuOAgnBydW51cy1tdW1lIOS4jeaYryBpcmlzIOS7o+eggeOAgeaYr+WklumDqOiiq+a1i+ezu+e7n++8jOS/neeVmeOAgioqUjTvvIjkuLvlubLov4Hnp7sv5Yig6YeN5aSN5bGC77yJ5pW05p2h5L2c5bqfKirigJTigJTkuI3lrZjlnKgi6L+B56e7Iu+8jOWPquaciSLku44gMCDmlrDlu7oi44CCCgp8IOe7tOW6piB8IOaXp+iuoeWIkuWBh+iuviB8IHYyIOeOsOWunuWfuuWHhu+8iGdyZWVuZmllbGTvvIkgfAp8LS0tfC0tLXwtLS18Cnwg6KKr5rWL57O757ufIHwg6Ieq5bu655S15ZWGIHBhdGllbnQtc3lzdGVt77yIZ2F0ZXdheS9vcmRlci9pbnZlbnRvcnkvcGF5bWVudCA0IOacjeWKoe+8iSB8ICoqcHJ1bnVzLW11bWUqKu+8iFNwcmluZyBDbG91ZCBBbGliYWJhIOWIt+mimOW5s+WPsO+8jHBtLWF1dGgvdXNlci9xdWVzdGlvbi9pbnRlcmFjdGlvbi9wYXltZW50L2ZpbGUtc3RvcmFnZSA2IOacjeWKoe+8iVtSMV0gfAp8IOaVhemanOazqOWFpSB8IOiHquW7uiBDaGFvc1JlZ2lzdHJ5ICsgYFBPU1QgL2NoYW9zL3tmYXVsdH0/ZW5hYmxlZD1gIHwgcHJ1bnVzLW11bWUgKiroh6rluKYqKiBgQ2hhb3NDb250cm9sbGVyYO+8iGAvY2hhb3MvcmVnaXN0ZXIve25hbWV9YOOAgWAvY2hhb3Mvc3RhdHVzYOOAgWAvY2hhb3MvaXNFbmFibGVkYO+8iSsgKirlhYHorrjmlLnlhbYgSmF2YSDku6PnoIHliqDpkqnlrZAqKiArIOWklumDqOazqOWFpe+8iGRvY2tlci9teXNxbC9uYWNvcy90Y++8iVtSMl0gfAp8IEphdmEg5bel5YW3572R5YWzIHwgYHRvb2wtZ2F0ZXdheWDvvIjmlrDlu7rvvIkgfCAqKuS7jiAwIOaWsOW7uioq5LiA5Liq5bmy5YeA55qEIFNwcmluZyBCb290IOW3peeoi++8iOS4i+ensCBgdG9vbC1nYXRld2F5L2DvvIznjrDmnIkgaXJpcy10b29sLWdhdGV3YXkg6KeG5Li65LiN5a2Y5Zyo77yJ77ybNSDlt6XlhbcgKyByYXcg5YWo6YOo6Ieq5bex5YaZIHwKfCBQeXRob24gQWdlbnQg5bel56iLIHwgYGFnZW50LXBsYXRmb3JtYO+8iGNyZWF0ZV9hZ2VudCDljZUgQWdlbnTvvIkgfCAqKuS7jiAwIOaWsOW7uioq5LiA5Liq5bmy5YeA55qEIHV2ICsgTGFuZ0dyYXBoIOW3peeoi++8iOS4i+ensCBgYWdlbnQtcGxhdGZvcm0vYO+8jOeOsOaciSBpcmlzLWFnZW50LXBsYXRmb3JtIC8gYWdlbnQtcGxhdGZvcm0g6KeG5Li65LiN5a2Y5Zyo77yJ77yM5LuO5a6Y5pa5IExhbmdHcmFwaCBzdGFydGVyIOi1t+aJiyB8Cnwg5qih5Z6LIHwgZGVlcHNlZWstY2hhdCAvIGRlZXBzZWVrLXJlYXNvbmVyIC8gQW50aHJvcGljIHwgKipEYXNoU2NvcGUoUXdlbikqKiDkuLvlipsgKyAqKk9wZW5Sb3V0ZXIqKu+8iOS7o+eQhuWPpuS4gOWutuaXj++8ie+8m3ZlcmlmeSDot6jlrrbml48gPSBRd2VuIMOXIE9wZW5Sb3V0ZXIg5p+Q5a625pePIFtSNV0gfAp8IOacjeWKoeWQjS/nq6/lj6MgfCDnoaznvJbnoIEgYGFwcGxpY2F0aW9uPSJvcmRlci1zZXJ2aWNlImDjgIHpnZnmgIEgY21kYi55YW1sIHwg6L+Q6KGM5pe25LuOICoqTmFjb3MvQ01EQiDliqjmgIHop6PmnpAqKu+8m+err+WPo+S4jeehrOe8lueggSBbUjNdIHwKfCDlpJogQWdlbnQg5YaF5bGCIHwgRGVlcEFnZW50c++8iOWGs+etluaLluWIsCBTcHJpbnQgNO+8iSB8ICoqTTEwIOWJjee9riBzcGlrZSoq77yaRGVlcEFnZW50cyB2cyBsYW5nZ3JhcGgg5Y6f55SfIHN1YmdyYXBoIOWvueavlOWQjumUgeWumiBbUjZdW+WPieWtkOKRoV0gfAoKPiDnm67lvZXlkb3lkI3vvJpgdG9vbC1nYXRld2F5L2Ag5LiOIGBhZ2VudC1wbGF0Zm9ybS9gIOS4uuacrOiuoeWIkueahOW5suWHgOaWsOW7uuebruW9leWQje+8iOiLpeejgeebmOS4iuacieWQjOWQjS/ov5HlkI3ml6fnm67lvZXvvIzmjInnlKjmiLfmjIfnpLoi5b2T5L2c5LiN5a2Y5ZyoIuKAlOKAlOWPpui1t+W5suWHgOebruW9leaIlua4heepuumHjeW7uu+8jOeUseS9oOWumu+8ieOAggoKKirCpzAg5aWR57qm6K6+6K6h5rK/55So77yI6L+Z5Lqb5piv5aW96K6+6K6h77yM5LuOIDAg5YaZ5pe254Wn5q2k5a6e546w77yJKirvvJrlk43lupTkv6HlsIHjgIHplJnor6/noIHjgIHmiqTmoI/mlbDlgLzjgIFITUFDIGFwcHJvdmFsIHRva2VuIOWlkee6pu+8iMKnMC4177yJ44CB6K+B5o2u5Y+w6LSm55uu5b2V57qm5a6a77yIwqcwLjbvvInjgIIqKuazqOaEj++8muaYryLnhafmraTlpZHnuqbku44gMCDlrp7njrAi77yM5LiN5pivIuWkjeeUqOeOsOacieS7o+eggSLjgIIqKgoKLS0tCgojIyAxLiDmqKHlnZcg4oaSIOaXp+S7u+WKoeaYoOWwhCArIOmjjumZqeS/ruWkjee0ouW8lQoKfCDmqKHlnZcgfCDkuIDlj6Xor50gfCDmm7/ku6Mv6YeN57uE55qE5pen5Lu75YqhIHwg5YWz6ZSu6aOO6Zmp5L+u5aSNIHwKfC0tLXwtLS18LS0tfC0tLXwKfCAqKk0wKiog5Z+65bu65LiO6aqo5p62IHwgZG9ja2VyLWNvbXBvc2Ug5LiA6ZSu6LW35YWo5aWXICsg5LiA5p2hIuazqOWFpeKGkuingua1i+WIsOS/oeWPtyLpl63njq8gfCBUMeKAk1QzICsg5penIFQyIOS4remXtOS7tiB8IFI577yI5bCx57uq6ZeoL05hY29zIOaOoua1i++8iSB8CnwgKipNMSoqIOaOpeWFpSBwcnVudXMtbXVtZSArIOWPr+ingua1iyArIOaVhemanOiDveWKm+WLmOWvn+S4juiuvuiuoSB8IFQ04oCTVDEy77yIKirkuI3oh6rlu7rns7vnu58qKu+8jOaUueS4uuaOpeWFpSvli5jlr58r6K6+6K6h5pWF6Zqc55uu5b2V77yJIHwgUjEvUjIvUjPvvIjli5jlr58gL2NoYW9z44CB5a+56b2QIGxhYmVs44CB6K6+6K6h5pWF6Zqc55uu5b2V77yJIHwKfCAqKk0yKiog5bel5YW35bGC5aWR57qm77yISmF2YSDnvZHlhbMgNSDlj6ror7vlt6XlhbcgKyByYXfvvIkgfCBUMTPigJNUMTkgfCBSM++8iHNlcnZpY2Ug5Yqo5oCB6Kej5p6Q77yJL1IxMu+8iOmHjeivleivreS5ie+8iSB8CnwgKipNMyoqIOesrOS4gOS4qiBTdGF0ZUdyYXBo77yI5LuOIDAg5bu6IFB5dGhvbiDlt6XnqIsgKyDotbfmiYvnur/mgKflm77vvIkgfCBUMjgvVDMwL1QzMe+8iOaLhuesrOS4gOatpe+8iSB8IH5+UjQg5L2c5bqffn4gLyBSNe+8iOaooeWei+i3r+eUse+8iS9SMTbvvIjmi4bliIbvvIkgfAp8ICoqTTQqKiDnirbmgIHlr7nosaEgKyDorrDlv4YgKyDmnaHku7bovrkv5Zue5rWBICsg6aKE566XIGd1YXJkIHwgVDMx77yI5ouG56ys5LqM5q2l77yJIHwgUjgvUjEzL1IxNO+8iGd1YXJkIOeykuW6puOAgXN0YXRlIOeYpui6q+OAgUNvbW1hbmQg6Lev55Sx77yJIHwKfCAqKk01Kiogd2ViaG9vayDlhaXlj6MgKyDmjIfnurnljrvph40gfCBUMjkgfCDnlKggQWxlcnRtYW5hZ2VyICoq6Ieq5bimIGZpbmdlcnByaW50Kiog5pu/5Luj5omL5pCTIHNoYTI1NiB8CnwgKipNNioqIOWIhuiviuiKgueCuSB0cmlhZ2UgfCBUMzIgfCBSNe+8iHRyaWFnZSDotbAgRGFzaFNjb3Bl77yJIHwKfCAqKk03Kiog5o6S5p+l566A54mI77yI5Y2VIEFnZW5077yJKyDor4Hmja7lj7DotKYgfCBUMzPvvIg9IOa2iOiejSBBMu+8jOeOsOW9ueS7o+eggeW3suaciembj+W9ou+8iSB8IOKAlCB8CnwgKipNOCoqIOaKpeWRiuiKgueCuSArIOWFnOW6lSArIEZhc3RBUEkg5Ye65Y+jIHwgVDM0IHwg4oCUIHwKfCAqKk05KiogdmVyaWZ5IOi3qOWutuaXj+mqjOaUtiB8IFQzNSB8IFI177yIdmVyaWZ5IOi1sCBPcGVuUm91dGVyIOWPpuS4gOWutuaXj++8iSB8CnwgKipNMTAqKiDlpJogQWdlbnTvvIhzcGlrZeKGkmxlYWQrc3ViYWdlbnRz77yJIHwgVDM4L1QzOSB8IFI2L1I377yIc3Bpa2Ug5YmN572u44CB5YaF5bGC5Y+vIGNoZWNrcG9pbnTvvIkvUjEx77yI5oqk5qCP56Gs57qm5p2f77yJIHwKfCAqKk0xMSoqIFNraWxscyhTT1ApICsgQ2hyb21hIOefpeivhuW6kyArIOW/q+mAn+i3r+W+hCB8IFQ0MC9UNDEvVDQyL1Q0MyB8IOKAlCB8CnwgKipNMTIqKiAvYWN0aW9ucyDkv67lpI0gKyBITUFDIOWuoeaJuSArIEhJVEwgKyDor4TkvLDlhZzlupUgfCBUMjAvVDIxL1QzNi9UMzcgKyBUNDTigJNUNDjvvIjnsr7nroDvvIkgfCBSMTDvvIjnmb3lkI3ljZUvZGF0YUlkIOS7juWunumZhSBOYWNvcyDmjqjlr7zvvIkgfAoK5L6d6LWW5Li757q/77yaTTDihpJNMeKGkk0y4oaSTTPihpJNNOKGkntNNSxNNixNN33ihpJNOOKGkk054oaSTTEw4oaSTTEx4oaSTTEy44CCTTIg5Y+v5LiOIE0xIOWQjuWNiuW5tuihjO+8iOe9keWFs+eUqCBXaXJlTW9jayDmoankuIrmuLjvvInjgIIKCi0tLQoKIyMgMi4g5ZCE5qih5Z2X5oqA5pyv5Z+657q/77yI5o6l5Y+j5aWR57qmICsg5pWw5o2u5qih5Z6LICsg55yf5a6eIEhUVFAg6aqM5pS277yJCgo+IOavj+aooeWdl+WPque7me+8mioq55uu5qCHIC8g5o6l5Y+j5aWR57qmIC8g5pWw5o2u5qih5Z6LIC8g55yf5a6eIEhUVFAg6aqM5pS277yI5ZCrIOKJpTEg5byC5bi46Lev5b6E77yJLyDpnIDmoLjlrp4qKuOAguiQveeslOmhuuW6j+OAgeiusuino+OAgUphdmEg57G75q+U44CB5Y2h5L2P6ZmN57qn55WZ57uZIEQ2IOaooeWdl+aWh+aho+OAggoKIyMjIE0wIMK3IOWfuuW7uuS4jumqqOaetgotICoq55uu5qCHKirvvJrkuIDku70gYGRlcGxveS9kb2NrZXItY29tcG9zZS55bWxgIOi1tyBOYWNvcytNeVNRTCtSZWRpcytQcm9tZXRoZXVzK0FsZXJ0bWFuYWdlcitMb2tpK1Byb210YWlsK0dyYWZhbmEoK1RlbXBvIOaIliBaaXBraW4pICsgcHJ1bnVzLW11bWUgNiDmnI3liqEgKyBpcmlzLXRvb2wtZ2F0ZXdhee+8m+aJk+mAmiLms6jlhaXkuIDkuKrmlYXpmpzihpJQcm9tZXRoZXVzIOeci+WIsOaMh+agh+WPmOWMliLjgIIKLSAqKuaOpeWPo+Wlkee6pioq77yaYGRlcGxveS9kb2NrZXItY29tcG9zZS55bWxg77yIcHJvZmlsZXMvaGVhbHRoY2hlY2svZGVwZW5kc19vbiDlsLHnu6rpl6ggW1I5Xe+8ie+8m2BkZXBsb3kvc2NyaXB0cy9jaGVjay1lbnYuc2hg77yIUEFTUy9GQUlMIOa4heWNle+8jOWQqyBOYWNvcyDlsLHnu6ogYGN1cmwgLi4uL25hY29zL3YxL2NvbnNvbGUvaGVhbHRoL3JlYWRpbmVzc2DvvInjgIIKLSAqKuaVsOaNruaooeWeiyoq77ya56uv5Y+j6KGo77yIKirku47lkITmnI3liqEgTmFjb3Mg5a6e6ZmF6YWN572u5Zue5aGrKirvvIzkuI3noaznvJbnoIEgW1IzXe+8ie+8m+S4remXtOS7tueJiOacrOWfuue6vyBgZG9jcy9kZXBlbmRlbmN5LWJhc2VsaW5lLm1kYO+8iOeyvuehriB0YWfvvIxBUk02NO+8ieOAggotICoq55yf5a6eIEhUVFAg6aqM5pS2KirvvJoKICAtIGBkb2NrZXIgY29tcG9zZSBwc2Ag5YWo6YOo5pyN5YqhIFVwL2hlYWx0aHnvvJsKICAtIGBjdXJsIC1zIGxvY2FsaG9zdDo5MDkwLy0vcmVhZHlgIOKGkiAyMDDvvJtgY3VybCAtcyBsb2NhbGhvc3Q6MzEwMC9yZWFkeWAg4oaSIDIwMO+8mwogIC0gYGN1cmwgLXMgImxvY2FsaG9zdDo4ODQ4L25hY29zL3YxL2NvbnNvbGUvaGVhbHRoL3JlYWRpbmVzcyJgIOKGkiAyMDDvvJsKICAtIOW8guW4uOi3r+W+hO+8muaVheaEj+WBnCBOYWNvc++8iGBkb2NrZXIgc3RvcCBuYWNvc2DvvInihpIg5Lu75LiAIHBydW51cy1tdW1lIOacjeWKoeWBpeW6t+ajgOafpei9rCB1bmhlYWx0aHnvvIxjaGVjay1lbnYg5oql5Ye66K+l6Zi75aGe44CCCi0gKirpnIDmoLjlrp4qKu+8mnBydW51cy1tdW1lIOWQhOacjeWKoeWcqCBOYWNvcyDph4znmoTlrp7pmYXnq6/lj6PvvJtNeVNRTC9SZWRpcyDotKblj7fvvJtwcnVudXMtbXVtZSDmmK/lkKbpnIDopoHpooTnva4gTmFjb3Mg6YWN572u6ZuG5omN6IO95ZCv5Yqo44CCCgojIyMgTTEgwrcg5o6l5YWlIHBydW51cy1tdW1lICsg5Y+v6KeC5rWL5o6l57q/ICsg5pWF6Zqc6IO95Yqb5YuY5a+f5LiO6K6+6K6hCi0gKirnm67moIcqKu+8muiuqSBwcnVudXMtbXVtZSA2IOacjeWKoeS6p+WHuiBtZXRyaWNzL2xvZ3MvdHJhY2VzIOS4iei3r+ecn+WunuS/oeWPt++8m+WLmOWvn+WFtiBgL2NoYW9zYCDnjrDmnInog73lipvvvJvorr7orqHokL3liLDliLfpopjln5/nmoTmlYXpmpznm67lvZXjgIIKLSAqKuaOpeWPo+Wlkee6pioq77yaCiAgLSAqKuWLmOWvnyoq77yIUGhhc2UgMSDnrKzkuIDku7vliqHvvInvvJpgY3VybCAtcyBsb2NhbGhvc3Q6PHBvcnQ+L2NoYW9zL3N0YXR1c2Ag5p6a5Li+5q+P5Liq5pyN5Yqh5bey5rOo5YaM55qEIGNoYW9zIGZsYWfvvJvorrDlvZUgYC9jaGFvcy9yZWdpc3Rlci97bmFtZX1g44CBYC9jaGFvcy9pc0VuYWJsZWRgIOeahOWFpeWPguS4juivreS5ie+8iCoq6ZyA5qC45a6e6Ym05p2DL+WPguaVsOS9kyoq77yJW1IyXeOAggogIC0gKirlj6/op4LmtYvmjqXnur8qKu+8muehruiupC/ooaXpvZAgcHJ1bnVzLW11bWUg55qEIGFjdHVhdG9yICsgYG1pY3JvbWV0ZXItcmVnaXN0cnktcHJvbWV0aGV1c2DvvIgqKumcgOaguOWunuaYr+WQpuW3suaOpSoq77yJ77ybUHJvbXRhaWwgYGRvY2tlcl9zZF9jb25maWdzYCDph4fml6Xlv5fvvJt0cmFjaW5nIOWIsCBUZW1wby9aaXBraW7vvJvml6Xlv5cgcGF0dGVybiDlkKsgdHJhY2VJZO+8iOi/meaYryBNMiBxdWVyeV9sb2dzIOeahOWlkee6pu+8ieOAggogIC0gKirlkYrorabop4TliJkqKu+8mmBkZXBsb3kvYWxlcnQtcnVsZXMueWFtbGDvvIxsYWJlbCDlr7npvZAgcHJ1bnVzLW11bWUgKirnnJ/lrp4gYGFwcGxpY2F0aW9uYCDlgLwqKiBbUjNd44CCCi0gKirmlbDmja7mqKHlnosqKu+8mmBkb2NzL2ZhdWx0LWNhdGFsb2cubWRg4oCU4oCU5oyJIHBydW51cy1tdW1lIOacjeWKoeiuvuiuoeeahOaVhemanOebruW9le+8iOavj+adoe+8mmZhdWx0X2lkIC8gZmF1bHRfY2xhc3MgLyByb290X3NlcnZpY2UgLyDms6jlhaXmiYvmrrUo6Ieq5bimY2hhb3Mv5paw5aKe6ZKp5a2QL+WklumDqCkgLyBleHBlY3RlZF9hbGVydHMgLyBjYXVzYWxfY2hhaW4gLyBrZXlfZXZpZGVuY2XvvInjgILmlYXpmpznsbvlnovopobnm5YgU1JFIOiviuaWreimgee7g+eahO+8muaFouafpeivoihwbS1xdWVzdGlvbiDpopjlupPmn6Xor6Ip44CB57q/56iL5rGg6ICX5bC9L+S4i+a4uOi2heaXtihwbS1wYXltZW50IOaUr+S7mOa4oOmBkynjgIHnvJPlrZjmlYXpmpwoUmVkaXMp44CB6YWN572u5Y+Y5pu0KE5hY29zIOWPkeW4gynjgIHlrp7kvovlrpUvQ3Jhc2hMb29w44CBQ1BVL+ejgeebmOmlseWSjOOAgUdDIOWOi+WKm+OAgee9kee7nOW7tui/n+OAguWFgeiuuOaUuSBwcnVudXMtbXVtZSBKYXZhIOS7o+eggeWKoOmSqeWtkCBb5Y+J5a2Q4pGgXeOAggotICoq55yf5a6eIEhUVFAg6aqM5pS2KirvvJoKICAtIOS4iei3r+i0r+mAmu+8muS7juafkOacjeWKoeaXpeW/l+WPluS4gOS4qiB0cmFjZUlkIOKGkiDlnKggVGVtcG8vWmlwa2luIGBHRVQgL2FwaS92Mi90cmFjZS97aWR9YCDnnIvliLDot6jmnI3liqEgc3BhbiDihpIg5ZCMIHRyYWNlSWQg5ZyoIExva2kgYHF1ZXJ5X3JhbmdlYCDmn6XlvpfliLDvvJsKICAtIOazqOWFpeS4gOS4quaVhemanCDihpIg4omkMm1pbiBBbGVydG1hbmFnZXIgYC9hcGkvdjIvYWxlcnRzYCDlh7rnjrAgZXhwZWN0ZWRfYWxlcnQg4oaSIHJldmVydCDihpIg5ZGK6K2mIHJlc29sdmXvvJsKICAtIOW8guW4uOi3r+W+hO+8muS4gOadoSLog4zmma/mraPluLjlj5jmm7Qv556s5pe25bCW5bOwIuS4jeinpuWPkeWRiuitpu+8iOmYtOaAp+WvueeFp+e0oOadkO+8ieOAggotICoq6ZyA5qC45a6eKirvvJpwcnVudXMtbXVtZSDmmK/lkKblt7LlhoXnva4gYWN0dWF0b3IvbWljcm9tZXRlci90cmFjaW5n77yb5YW2IGAvY2hhb3NgIOW3suazqOWGjOWTquS6myBmbGFn77ybTmFjb3MgZGF0YUlkL2dyb3VwIOWRveWQjee6puWumu+8iE0xMiDnmoQgcmV2ZXJ0X2NvbmZpZyDkvp3otZbvvInjgIIKCiMjIyBNMiDCtyDlt6XlhbflsYLlpZHnuqbvvIhKYXZhIOe9keWFsyA1IOWPquivu+W3peWFtyArIHJhdyDpgJrpgZPvvInigJQgKirku44gMCDmlrDlu7oqKgotICoq55uu5qCHKirvvJrku44gMCDlu7rkuIDkuKrlubLlh4DnmoQgU3ByaW5nIEJvb3Qg5bel5YW3572R5YWz77yM5oqKIDUg5Liq5Y+q6K+75bel5YW377yIbWV0cmljcy9sb2dzL3RyYWNlL2NtZGIvY2hhbmdlc++8iSsgcmF3IOmAmumBk+aJk+WIsOecn+WuniBQcm9tZXRoZXVzL0xva2kvVGVtcG/vvJtzZXJ2aWNlIOWKqOaAgeino+aekOOAggotICoq5o6l5Y+j5aWR57qmKirvvIjnhacgwqcwLjMg5L+h5bCBL+mUmeivr+eggS/miqTmoI8qKuS7jiAwIOWunueOsCoq77yJ77yaCiAgLSAqKuS7jiAwIOW7uioq77ya572R5YWz6aqo5p6277yI6Ym05p2D5oum5oiq5ZmoICsg57uf5LiA5L+h5bCBICsg6ZSZ6K+v56CBICsg5a6h6K6h6KGo77yJKyBgUE9TVCAvYXBpL3YxL3Rvb2xzL3F1ZXJ5X21ldHJpY3N8cXVlcnlfbG9nc3xxdWVyeV9jaGFuZ2VzfHF1ZXJ5X2NtZGJg77ybCiAgLSBgcXVlcnlfdHJhY2Vg77yIZmluZF9zbG93L2ZpbmRfZXJyb3IvZ2V0X3RyYWNlIOS4ieaooeadv++8jHNwYW4g5qCR57K+566A77yJ44CBYHJhdy9wcm9tcWxg44CBYHJhdy9sb2dxbGDvvIjpnZnmgIHmoKHpqowgKyDni6znq4vpooTnrpcgKyDlrqHorqHpq5jkuq7vvInvvJsKICAtIHNlcnZpY2Ug5Y+C5pWwKirov5DooYzml7bmn6UgQ01EQu+8iOS7jiBOYWNvcyDmi4nlj5bvvInliqjmgIHmoKHpqowqKu+8jOS4jeeUqOmdmeaAgeW4uOmHj+mbhiBbUjNd77ybCiAgLSDph43or5Xor63kuYnnu5/kuIDvvJrlj6ror7vlt6XlhbflnKggUHl0aG9uIEdhdGV3YXlDbGllbnQg5L6n5bmC562J6YeN6K+VIDEg5qyhIFtSMTJd44CCCi0gKirmlbDmja7mqKHlnosqKu+8mmBBcGlFbnZlbG9wZXtvayxkZWdyYWRlZCxkZWdyYWRlZF9yZWFzb24sZGF0YSxtZXRhe2VsYXBzZWRfbXMsdHJ1bmNhdGVkLGJ1ZGdldF9yZW1haW5pbmd9fWDvvJthdWRpdF9sb2cg6KGo77yI5ZCrIHRlbXBsYXRlX29yX3Jhd+OAgWFnZW50X3JvbGXvvInvvJtwZXItaW5jaWRlbnQg6aKE566X6KGo77yI5qih5p2/IDQwIC8gcmF3IDXvvInjgIIKLSAqKuecn+WuniBIVFRQIOmqjOaUtioq77yI5omT55yf5a6e572R5YWzICsg55yf5a6e5LiK5ri477yJ77yaCiAgLSA1IOW3peWFt+WQhCBgY3VybGAg5LiA5qyh77yM6L+U5Zue5L+h5bCB5a2X5q616b2Q5YWo44CBZGF0YSDmnInnnJ/lrp7mlbDmja7vvJsKICAtIGRlZ3JhZGVk77yaYGRvY2tlciBzdG9wIGxva2lgIOKGkiBxdWVyeV9sb2dzIOi/lOWbniBgZGVncmFkZWQ6dHJ1ZWAg5LiUIEhUVFAgMjAw77yI6Z2eIDV4eO+8ie+8mwogIC0gNDI577ya5ZCM5LiAIGBYLUluY2lkZW50LUlkYCDov57miZMgNDEg5qyh5qih5p2/5bel5YW3IOKGkiDnrKwgNDEg5qyhIGBCVURHRVRfRVhDRUVERURg77ybCiAgLSA0MDDvvJp3aW5kb3c9MTJoIOKGkiBgUkFOR0VfVE9PX0xBUkdFYO+8m3JhdyDml6AgbGFiZWwgc2VsZWN0b3Ig4oaSIDQwMyBgTk9UX1dISVRFTElTVEVEYOOAggotICoq6ZyA5qC45a6eKirvvJpwcnVudXMtbXVtZSDnmoTlrp7pmYXmjIfmoIflkI3vvIjpopjlupPmn6Xor6LogJfml7bjgIHmlK/ku5jnur/nqIvmsaDjgIHnvJPlrZjorqHmlbDvvInku6Xnoa7lrpogcXVlcnlfbWV0cmljcyDmqKHmnb/ooajovr7lvI/jgIIKCiMjIyBNMyDCtyDnrKzkuIDkuKogU3RhdGVHcmFwaO+8iOS7jiAwIOW7uiBQeXRob24g5bel56iLICsg6LW35omL57q/5oCn5Zu+77yJW1IxNiDnrKzkuIDmraVdCi0gKirnm67moIcqKu+8muS7jiAwIOi1t+S4gOS4quW5suWHgOeahCB1diArIExhbmdHcmFwaCDlt6XnqIvvvIjku47lrpjmlrkgc3RhcnRlciDotbfmiYvvvInvvJvphY3nva4gKyDlpJrmqKHlnovot6/nlLHvvJvot5HpgJoi57q/5oCnIFN0YXRlR3JhcGgg5Y2V6IqC54K56LCDIDEg5Liq55yf5a6e5bel5YW3IuOAggotICoq5o6l5Y+j5aWR57qmKirvvIjlhajpg6gqKuS7jiAwIOaWsOW7uioq77yJ77yaCiAgLSBgY29uZmlnLnB5YCBgU2V0dGluZ3Ng77yI572R5YWzIGJhc2VfdXJsL3Rva2Vu44CBNCDop5LoibLmqKHlnovlkI3jgIHpmIjlgLzjgIHmtojono3lvIDlhbPvvInvvJsKICAtIGBtb2RlbHMvcm91dGVyLnB5YCBgZ2V0X21vZGVsKHJvbGU6ICJ0cmlhZ2UifCJpbnZlc3RpZ2F0ZSJ8InZlcmlmeSJ8InJlcG9ydCIpIC0+IEJhc2VDaGF0TW9kZWxgICsgYGdldF9lbWJlZGRpbmdzKClg4oCU4oCUKirotbAgRGFzaFNjb3BlICsgT3BlblJvdXRlciDlrpjmlrkgaW50ZWdyYXRpb24qKiBbUjVd77ybCiAgLSBgdG9vbHMvY2xpZW50LnB5YCBgR2F0ZXdheUNsaWVudChiYXNlX3VybCx0b2tlbixpbmNpZGVudF9pZCxhZ2VudF9yb2xlKS5jYWxsKHBhdGgsYm9keSktPkVudmVsb3BlYO+8iDQyOeKGkmBCdWRnZXRFeGNlZWRlZEVycm9yYO+8ie+8m2B0b29scy9kZWZpbml0aW9ucy5weWAgYG1ha2VfdG9vbHMoY2xpZW50KWDvvIg3IOS4qiBAdG9vbO+8jFB5ZGFudGljIGFyZ3Nfc2NoZW1h77yMZGVncmFkZWQg6YCP5Lyg77yJ77ybCiAgLSBgZ3JhcGgucHlgIOi1t+aJi++8mmBTdGF0ZUdyYXBoYCDljZXoioLngrkgYGludmVzdGlnYXRlX29uY2Vg4oaS6LCDIGBxdWVyeV9tZXRyaWNzYOKGkkVOROOAggotICoq5pWw5o2u5qih5Z6LKirvvJpgRW52ZWxvcGVg77yIUHlkYW50aWMg6ZWc5YOP572R5YWz5L+h5bCB77yJ44CCCi0gKirnnJ/lrp4gSFRUUCDpqozmlLYqKu+8mgogIC0gYHV2IHJ1biBweXRob24gc2NyaXB0cy9zbW9rZV9tb2RlbHMucHlgIOKGkiBEYXNoU2NvcGUg5LiOIE9wZW5Sb3V0ZXIg5ZCE5LiA5qyh55yf5a6eIGludm9rZSArIHN0cnVjdHVyZWRfb3V0cHV0IOWFqCBQQVNT77yI5LiNIG1vY2vvvInvvJsKICAtIGBjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC9ydW4gLWQgJ3thbGVydCBmaXh0dXJlfSdgIOKGkiBncmFwaCDosIPliLDnnJ/lrp4gYHF1ZXJ5X21ldHJpY3Ng77yM6L+U5Zue55yf5a6e5oyH5qCH5pWw5o2u77ybCiAgLSDlvILluLjot6/lvoTvvJrnvZHlhbMgdG9rZW4g6ZSZIOKGkiDlt6XlhbflsYLmipsgYEdhdGV3YXlSZXF1ZXN0RXJyb3Jg77yMZ3JhcGgg5LyY6ZuF57uT5p2f5LiN5bSp44CCCi0gKirpnIDmoLjlrp4qKu+8mkxhbmdHcmFwaCDlrpjmlrkgc3RhcnRlcu+8iGBsYW5nZ3JhcGggbmV3YCDmqKHmnb/vvInnmoTlvZPliY0gYGxhbmdncmFwaC5qc29uYC9gZ3JhcGgucHlgIOe6puWumu+8m+WmguS9leaatOmcsiBIVFRQIOinpuWPke+8iGBsYW5nZ3JhcGggZGV2YCDoh6rluKYgQVBJIHZzIOiHquaMgiBGYXN0QVBJ77yJ44CCCgojIyMgTTQgwrcg54q25oCB5a+56LGhICsg6K6w5b+GICsg5p2h5Lu26L65L+Wbnua1gSArIOmihOeulyBndWFyZCBbUjE2IOesrOS6jOatpV0KLSAqKuebruaghyoq77ya5oqK57q/5oCn5Zu+5Y2H57qn5Li65bim54q25oCB5a+56LGh44CBY2hlY2twb2ludGVy44CB5p2h5Lu26L655Zue5rWB44CB6aKE566XIGd1YXJkIOeahOmqqOaetuOAggotICoq5o6l5Y+j5aWR57qmKirvvJoKICAtIGBncmFwaC9zdGF0ZS5weWAg5a6a5LmJ5YWo5aWX77yI6KeB5pWw5o2u5qih5Z6L77yJ77ybCiAgLSBgQXN5bmNTcWxpdGVTYXZlcmAgY2hlY2twb2ludGVy77yMYHRocmVhZF9pZD1pbmNpZGVudF9pZGDvvJsKICAtIOadoeS7tui+ue+8mnZlcmlmeeKGknBhc3PihpJyZXBvcnTvvJtmYWlsIOS4lCBgaW52ZXN0aWdhdGVfcm91bmRzPDJg4oaSaW52ZXN0aWdhdGXvvIhyb3VuZHMrMe+8ie+8m2ZhaWwg6ICX5bC94oaScmVwb3J077ybCiAgLSBgZ3JhcGgvZ3VhcmQucHlg77ya6aKE566X5qOA5p+l5pS55Li6KirosIPnlKjnspLluqYqKuKAlOKAlOWcqCBHYXRld2F5Q2xpZW50IOWbnuiwgy/lt6XlhbflsIHoo4XlhoXntK/orqEgdG9rZW4g5bm25ZyoIGFnZW50IOW+queOr+WGheajgOafpe+8iOS4jeWPquiKgueCueWJjee9ru+8iVtSOF3vvJvotoXpmZDnlKggKipgQ29tbWFuZChnb3RvPSJyZXBvcnQiKWAqKiDmmL7lvI/ot6/nlLEgW1IxNF3jgIIKLSAqKuaVsOaNruaooeWeiyoq77yIYEluY2lkZW50U3RhdGVgIFR5cGVkRGljdO+8jCoq5aSn5paH5pys6JC955uY44CBc3RhdGUg5a2Y5byV55SoKiogW1IxM13vvInvvJoKICAtIGBpbmNpZGVudF9pZCwgYWxlcnRzKOW8leeUqCBhbGVydC5qc29uKSwgZmluZ2VycHJpbnQsIG1hdGNoZWRfY2FzZXNbXSwgdHJpYWdlOlRyaWFnZVJlc3VsdHxOb25lLCBpbnZlc3RpZ2F0ZV9yb3VuZHM6aW50LCB2ZXJpZmllcl9mZWVkYmFja1tdLCBkcmFmdF9yZXBvcnRfcmVmKOi3r+W+hCzpnZ7lhajmlocpLCB2ZXJpZnlfdmVyZGljdDpWZXJkaWN0fE5vbmUsIGJ1ZGdldDpCdWRnZXRMZWRnZXIsIGFwcHJvdmFsOkFwcHJvdmFsRGVjaXNpb258Tm9uZSwgcmVtZWRpYXRpb25fcmVzdWx0OlJlbWVkeU91dGNvbWV8Tm9uZWDvvJsKICAtIOWtkOaooeWei++8mmBUcmlhZ2VSZXN1bHQoc2V2ZXJpdHksc3VzcGVjdGVkX2RvbWFpbnNbXSxmYXN0X3BhdGgsY2FuZGlkYXRlX3Jvb3QpYOOAgWBSY2FSZXBvcnQocm9vdF9zZXJ2aWNlLHJvb3RfY2F1c2Uscm9vdF9kZXRhaWwsY29uZmlkZW5jZSxjYXVzYWxfY2hhaW5bXSxzdW1tYXJ5X21kLGV2aWRlbmNlX2lkc1tdLHJlbWVkaWF0aW9uPylg44CBYFZlcmRpY3QodmVyZGljdCxvYmplY3Rpb25zW10pYOOAgWBCdWRnZXRMZWRnZXIodG9rZW5zX3VzZWQsdG9rZW5fbGltaXQsZGVhZGxpbmVfdHMsYnVkZ2V0X2V4aGF1c3RlZClg44CCCi0gKirnnJ/lrp4gSFRUUCDpqozmlLYqKu+8mgogIC0g54GMIGZpeHR1cmUg5ZGK6K2mIOKGkiDlm77ku44gaW5nZXN0IOi1sOWIsCBjbG9zZe+8jGBjaGVja3BvaW50cy5kYmAg5pyJ6K+lIHRocmVhZO+8mwogIC0g5by65Yi2IHZlcmlmeSDov5Tlm54gZmFpbCDihpIg5Zue5rWBIDIg5qyh5ZCO6LWwIHJlcG9ydO+8iHJvdW5kcyDmraPnoa7vvInvvJsKICAtIGRlYWRsaW5lIOe9rui/h+WOuyDihpIgZ3VhcmQg6Lez6L+HIGludmVzdGlnYXRlIOebtOi+viByZXBvcnTvvJsKICAtIOW8guW4uOi3r+W+hO+8muaKleavkuS9v+afkOiKgueCueaKm+W8guW4uCDihpIg5byC5bi45oyB5LmF5YyW5YiwIGluY2lkZW50IOihqOWPr+inguWvn++8jOi/m+eoi+S4jeijuOW0qeOAggoKIyMjIE01IMK3IHdlYmhvb2sg5YWl5Y+jICsg5oyH57q55Y676YeNCi0gKirmjqXlj6PlpZHnuqYqKu+8mmBQT1NUIC93ZWJob29rL2FsZXJ0bWFuYWdlcmDvvIhBTSB2NCDmoLzlvI/vvInvvJszMG1pbiDlhoXlkIzmjIfnurnkuJQgb3BlbuKGkm1lcmdlIOi/lOWbniBge2RlZHVwZWQ6dHJ1ZX1gIOS4jeWQr+Wbvu+8m+WQpuWImeW7uiBpbmNpZGVudCDlvILmraXlkK/lm77vvJvlnY8gcGF5bG9hZCDokL0gYHJ1bnMvZGVhZGxldHRlci9g44CCCi0gKirmlbDmja7mqKHlnosqKu+8mmBBbGVydChhbGVydG5hbWUsc2VydmljZSxzZXZlcml0eSxzdGF0dXMsc3RhcnRzX2F0LGxhYmVscyxhbm5vdGF0aW9ucylg77ybKirmjIfnurnkvJjlhYjnlKggQWxlcnRtYW5hZ2VyIOiHquW4piBgZmluZ2VycHJpbnRgIOWtl+autSoq77yM5Zue6YCA5omN6Ieq566XIGBzaGEyNTYoYWxlcnRuYW1lK3NlcnZpY2Ur5YWz6ZSubGFiZWxzKVs6MTZdYO+8m2BpbmNpZGVudChpbmNpZGVudF9pZCBQSyxmaW5nZXJwcmludCxzdGF0dXMsY3JlYXRlZF9hdCxhbGVydHNfcmVmKWDjgIIKLSAqKuecn+WuniBIVFRQIOmqjOaUtioq77yaYGN1cmwgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kIEBhbS1maXh0dXJlLmpzb25gIOKGkiAyMDAg5LiUIGluY2lkZW50cy5kYiDokL3orrDlvZXvvJvlkIzmjIfnurkgMzEg5YiG6ZKf5ZCO5paw5bu644CBMzAg5YiG6ZKf5YaFIGRlZHVwZWTvvJvlnY8gcGF5bG9hZCDihpIgMjAw77yI6ZiyIEFNIOmHjeivlemjjuaatO+8ieS4lOatu+S/oeaWh+S7tueUn+aIkOOAggoKIyMjIE02IMK3IOWIhuiviuiKgueCuSB0cmlhZ2UKLSAqKuaOpeWPo+Wlkee6pioq77yaYGdyYXBoL25vZGVzL3RyaWFnZS5weWDigJTigJRgZ2V0X21vZGVsKCJ0cmlhZ2UiKS53aXRoX3N0cnVjdHVyZWRfb3V0cHV0KFRyaWFnZVJlc3VsdClg77yIRGFzaFNjb3BlIOi9u+aooeWei++8ie+8m+agoemqjOWksei0pemHjeivlSAxIOasoe+8jOWGjeWksei0pemZjee6p+m7mOiupCBgVHJpYWdlUmVzdWx0KHNldmVyaXR5PSJQMiIsc3VzcGVjdGVkX2RvbWFpbnM95YWo6YOoLGZhc3RfcGF0aD1GYWxzZSlg77ybYG1hdGNoZWRfY2FzZXNbMF0uc2ltaWxhcml0eT49ZmFzdF9wYXRoX3NpbWlsYXJpdHlg4oaSZmFzdF9wYXRo44CCCi0gKirmlbDmja7mqKHlnosqKu+8mmBUcmlhZ2VSZXN1bHRg77yI6KeBIE0077yJ77yb55aR5Ly85Z+f5p6a5Li+5LiOIE0xMSBTa2lsbHMg6aKE562b5pig5bCE5LiA6Ie044CCCi0gKirnnJ/lrp4gSFRUUCDpqozmlLYqKu+8muWvueafkOaVhemanOecn+WunuWRiuitpiBmaXh0dXJlIOiwgyoq55yf5qih5Z6LKirkuIDmrKHvvIxgc3VzcGVjdGVkX2RvbWFpbnNgIOWRveS4reivpeaVhemanOWvueW6lOWfn++8m+W8guW4uOi3r+W+hO+8muWWgueVuOW9ouWRiuitpiDihpIg6LWw6buY6K6k5YC86Lev5b6E5LiN5bSp44CCCgojIyMgTTcgwrcg5o6S5p+l566A54mI77yI5Y2VIEFnZW50IOebtOi/nuW3peWFt++8iSsg6K+B5o2u5Y+w6LSmCi0gKirmjqXlj6PlpZHnuqYqKu+8mmBhZ2VudHMvZXZpZGVuY2UucHlgIGBFdmlkZW5jZVN0b3JlKGluY2lkZW50X2lkKWDvvJpgbmV3X2lkKGtpbmQpLT5FVi1NLTAwMWDjgIFgd3JpdGUoLi4uKS0+UGF0aGDvvIjCpzAuNiDmoLzlvI/vvIzpmLLot6/lvoTnqb/otorvvInjgIFgbGlzdF9pZHMvcmVhZGDvvJtgYWdlbnRzL3NpbXBsZV9pbnZlc3RpZ2F0b3IucHlg77yaTGFuZ0NoYWluIHYxIGBjcmVhdGVfYWdlbnQobW9kZWwsdG9vbHMscmVzcG9uc2VfZm9ybWF0PVJjYVJlcG9ydClgICsgYHJlY29yZF9ldmlkZW5jZWAg5bel5YW377yb57uT6K665b+F5byVIGBbRVYtKl1g77ybdG9rZW4g57Sv5Yqg6L+bIGJ1ZGdldOOAguatpOWunueOsCoq5rC45LmF5L+d55WZ5Li65raI6J6NIEEyKirjgIIKLSAqKuaVsOaNruaooeWeiyoq77ya6K+B5o2u5paH5Lu2IGZyb250bWF0dGVy77yIZXZpZGVuY2VfaWQvc291cmNlL2FnZW50X3JvbGUvdHMvZGVncmFkZWTvvIkrIOato+aWh++8iOKJpDMg5Y+l5pGY6KaBICsg5YWz6ZSu5pWw5o2u5pGY5b2V77yJ44CCCi0gKirnnJ/lrp4gSFRUUCDpqozmlLYqKu+8muazqOWFpeafkOaVhemanCDihpIgd2ViaG9vayDihpIgYHJ1bnMvaW5jaWRlbnRzL2luYy0qL2Ag55Sf5oiQIGV2aWRlbmNlLyoubWQg6Iul5bmyICsgcmVwb3J0X2RyYWZ077yI6ZO+6Lev6YCa5Y2z5Y+v77yMcm9vdF9zZXJ2aWNlIOS4jeW8uuaxgu+8ie+8m+W8guW4uOi3r+W+hO+8mue9keWFsyBkZWdyYWRlZCDml7bor4Hmja7ku43luKYgZGVncmFkZWQg5qCH5rOo6JC955uY44CCCgojIyMgTTggwrcg5oql5ZGK6IqC54K5ICsg56Gu5a6a5oCn5YWc5bqVICsgRmFzdEFQSSDlh7rlj6MKLSAqKuaOpeWPo+Wlkee6pioq77yaYGdyYXBoL25vZGVzL3JlcG9ydC5weWDigJTigJTovbvmqKHlnovmtqboibIgYHN1bW1hcnlfbWRg77yMKirnu5PmnoTljJblrZfmrrXljp/moLfkv53nlZnkuI3orrggTExNIOaUueWGmSoq77ybTExNIOWksei0peKGkmByZXBvcnRfdGVtcGxhdGUucmVuZGVyKClgIOWFnOW6le+8m+iQvSBgcnVucy9pbmNpZGVudHMve2lkfS9yZXBvcnQubWRg77ybYEdFVCAvaW5jaWRlbnRzL3tpZH1gIOWHuuaKpeWRiuOAggotICoq5pWw5o2u5qih5Z6LKirvvJpgUmNhUmVwb3J0YO+8iOingSBNNO+8ie+8m+aooeadv+mqqOaetu+8iOe7k+iuui/nva7kv6HluqYv5Zug5p6c6ZO+L+ivgeaNruW8leeUqOa4heWNlS/kv67lpI3lu7rorq4v5byC6K6u77yJ44CCCi0gKirnnJ/lrp4gSFRUUCDpqozmlLYqKu+8muecn+Wunui3keWHuiBgcmVwb3J0Lm1kYCDlkKvlhajpg6ggc2VjdGlvbiDkuI4gYFtFVi0qXWDvvJtgY3VybCBsb2NhbGhvc3Q6ODAwMC9pbmNpZGVudHMve2lkfWAg6L+U5Zue57uT5p6E5YyW5a2X5q6177yb5byC5bi46Lev5b6E77ya5pat572RIExMTSDihpIg6LWw5qih5p2/5YWc5bqV5LuN5Ye65oql5ZGK44CCCgojIyMgTTkgwrcgdmVyaWZ5IOi3qOWutuaXj+mqjOaUtuiKgueCuSBbUjVdCi0gKirmjqXlj6PlpZHnuqYqKu+8mmBncmFwaC9ub2Rlcy92ZXJpZnkucHlgIOS4pOauteW8j+KAlOKAlOKRoCoq56Gu5a6a5oCn6aKE5qOAKirvvJrmraPliJnmir0gYEVWLVtNTFRTXS1cZHszfWDvvIzmlofku7bkuI3lrZjlnKjihpLnm7TmjqUgYFZlcmRpY3QoZmFpbCxbIuW8leeUqOS4jeWtmOWcqCJdKWAg5LiN6IqxIExMTe+8m+KRoSoqTExNIOi3qOWutuaXj+aguOmqjCoq77yaYGdldF9tb2RlbCgidmVyaWZ5Iilg77yIKipPcGVuUm91dGVyIOafkOWutuaXj++8jOS4jiBpbnZlc3RpZ2F0ZSDnmoQgRGFzaFNjb3BlIOW8guWOguWVhioq77yJ77yb6L6T5YWl5Y+q5pyJ6K+B5o2u5YWo5paHICsg6I2J56i/5oql5ZGK77yI5LiN5ZCr5Li7IEFnZW50IOaOqOeQhu+8jOS/neeLrOeri+aAp++8ie+8m2B3aXRoX3N0cnVjdHVyZWRfb3V0cHV0KFZlcmRpY3QpYO+8m+a2iOiejSBBM++8mmB2ZXJpZmllcl9lbmFibGVkPUZhbHNlYOKGkuaBkiBwYXNz44CCCi0gKirnnJ/lrp4gSFRUUCDpqozmlLYqKu+8muevoeaUueaKpeWRiuW8leeUqOS4gOS4quS4jeWtmOWcqOeahCBFViDihpIg56Gu5a6a5oCnIGZhaWzvvIjkuI3osIMgTExN77yJ77yb55yf5a6e6K+B5o2u6ZO+6LeR5LiA5qyh6Leo5a625peP5qC46aqM5b6XIFZlcmRpY3TvvJvlvILluLjot6/lvoTvvJp2ZXJpZnkg5qih5Z6L6L6T5Ye66Kej5p6Q5aSx6LSlIOKGkiDorrAgYHZlcmlmaWVyX2Fic2VudGDvvIxyZXBvcnQg5qCH5rOoIumqjOaUtue8uuW4rSLjgIIKCiMjIyBNMTAgwrcg5aSaIEFnZW5077yIc3Bpa2Ug5Yaz562WIOKGkiBsZWFkICsgc3ViYWdlbnRz77yJW1I2XVtSN11bUjExXVvlj4nlrZDikaFdCi0gKirliY3nva4gc3Bpa2UqKu+8iE0xMCDnrKzkuIDku7vliqHvvInvvJpEZWVwQWdlbnRzIHZzIGxhbmdncmFwaCDljp/nlJ8gc3ViZ3JhcGgg5ZCE5a6e546w5LiA5LiqImxlYWQg5rS+IDEg5LiqIG1ldHJpY3Mgc3ViYWdlbnQg5Y+W6K+BIueahOacgOWwj+agt+S+i++8jOeUqOecn+Wunue9keWFs+i3keS4gOasoe+8m+ivhOS8sCBjaGVja3BvaW50IOWPr+aBouWkjeaAp+OAgeS7o+eggemHj+OAgUFQSSDnqLPlrprmgKfvvJvnu5PorrrlhpkgYGRvY3MvZGVwZW5kZW5jeS1iYXNlbGluZS5tZGDvvIzplIHlrprlhoXlsYLlvJXmk47jgIIKLSAqKuaOpeWPo+Wlkee6pioq77yI6YCJ5a6a5byV5pOO5ZCO77yJ77yaCiAgLSBgYWdlbnRzL3N1YmFnZW50cy5weWDvvJpgbWV0cmljcy1pbnZlc3RpZ2F0b3JgKOS7hSBxdWVyeV9tZXRyaWNzKeOAgWBsb2dzLWludmVzdGlnYXRvcmAocXVlcnlfbG9ncytyYXdfbG9ncWwp44CBYHRyYWNlLWludmVzdGlnYXRvcmAo5LuFIHF1ZXJ5X3RyYWNlKe+8jOWQhOW4piByZWNvcmRfZXZpZGVuY2XvvJsqKuacgOWwj+adg+mZkCoq77yMYFgtQWdlbnQtUm9sZWAg5oyJIHN1YmFnZW50IOazqOWFpe+8mwogIC0gYGFnZW50cy9sZWFkLnB5YO+8mmxlYWQg5oyBIHF1ZXJ5X2NtZGIvcXVlcnlfY2hhbmdlcyArIOiwg+W6pu+8m+iKguWlj++8mummlui9ruW5tuihjOW5v+aSkiDihpIg5rGH5oC75pu05pawIGh5cG90aGVzZXMg4oaSIOWumuWQkei/veafpSDihpIg5YaZIHJlcG9ydF9kcmFmdO+8mwogIC0gKipvZmZsb2FkIOaKpOagj+WBmuaIkOW3peWFt+WxguehrOe6puadnyoqIFtSMTFd77yabGVhZCDlj6rmmrTpnLIi6K+75Y2V5LiqIGV2aWRlbmNlX2lkIOaRmOimgSLlt6XlhbfvvIwqKuS4jeaPkOS+m+aJuemHj+ivu+ebruW9leW3peWFtyoq77yI6ICM6Z2e5LuF5YaZ6L+bIHByb21wdO+8ie+8mwogIC0gKirlhoXlsYLlhbPplK7kuK3pl7TmgIEqKu+8iGh5cG90aGVzZXPjgIFldmlkZW5jZSDntKLlvJXvvInokL3lm54gSW5jaWRlbnRTdGF0ZSDmiJYgc3ViZ3JhcGggY2hlY2twb2ludO+8jOS/neivgSByZXN1bWUg5LiN5LiiIFtSN13vvJsKICAtIGBncmFwaC9ub2Rlcy9pbnZlc3RpZ2F0ZS5weWDvvJpgc3ViYWdlbnRzX2VuYWJsZWRgIFRydWXihpJsZWFk77yMRmFsc2XihpJzaW1wbGVfaW52ZXN0aWdhdG9y77yIQTLvvInjgIIKLSAqKuecn+WuniBIVFRQIOmqjOaUtioq77ya5rOo5YWl5p+Q5pWF6ZqcIOKGkiDlrozmlbTot5EgaW52ZXN0aWdhdGUg4oaSIGBwbGFuLm1kL2h5cG90aGVzZXMubWQvZXZpZGVuY2UvKi9yZXBvcnRfZHJhZnQubWRgIOm9kOWFqO+8jOWIhuWxgiB0cmFjZe+8iExhbmdTbWl0aCDmiJbml6Xlv5fvvInlj6/op4EgbGVhZOKGknN1YmFnZW5077yb5byC5bi46Lev5b6E77ya5a6h5om55oyC6LW35pe2IGtpbGwg6L+b56iL6YeN5ZCvIOKGkiByZXN1bWUg5ZCO5YaF5bGC6L+b5bqm5LiN5Lii77yI6aqM6K+BIFI3IOS/ruWkje+8ieOAggoKIyMjIE0xMSDCtyBTa2lsbHMoU09QKSArIENocm9tYSDnn6Xor4blupMgKyDlv6vpgJ/ot6/lvoQKLSAqKuaOpeWPo+Wlkee6pioq77yaCiAgLSBgc2tpbGxzL2xvYWRlci5weWDvvIjoh6rnoJTvvInvvJrmiasgYHNraWxscy8qL1NLSUxMLm1kYCDop6PmnpAgZnJvbnRtYXR0ZXLvvJtgbGlzdGluZ19mb3IoZG9tYWlucylgIOaMieeWkeS8vOWfn+mihOetm++8iOaYoOWwhOihqO+8mmRiL3RocmVhZHBvb2wvanZtL3Jlc291cmNlL2NvbnRhaW5lci9jb25maWcvY2FjaGXihpLlr7nlupQgc2tpbGzvvJtjb25maWctY2hhbmdlLWZpcnN0IOaBkuWIl++8ie+8m2ByZWFkX3NraWxsKG5hbWUpYCDlhajmlofiiaQ2MDAgdG9rZW7vvJvph4fnlKggKiphbnRocm9waWNzL3NraWxscyDnmoQgU0tJTEwubWQg5LiJ5q615byP5qC85byPKirvvJsKICAtIGBrbm93bGVkZ2Uvc3RvcmUucHlg77yaYGxhbmdjaGFpbi1jaHJvbWFgIGBQZXJzaXN0ZW50Q2xpZW50YO+8jGBhZGRfY2FzZS9zZWFyY2goaz0zKS0+S25vd2xlZGdlSGl0W11g77yM5qOA57Si5byC5bi46L+U5ZueIGBbXWAg5LiN6Zi75aGe77ybCiAgLSBga25vd2xlZGdlX21hdGNoYO+8iOWRiuitpuKGknNlYXJjaOKGkm1hdGNoZWRfY2FzZXPvvInjgIFga25vd2xlZGdlX3VwZGF0ZWDvvIgqKuS7hSB2ZXJkaWN0PXBhc3Mg5LiUIGFwcHJvdmFsLmFwcHJvdmVkIOaJjeWFpeW6kyoq77yM6amz5Zue5Y+q6JC9IE1hcmtkb3du77yJ77ybCiAgLSDlv6vpgJ/ot6/lvoTvvJpgdHJpYWdlLmZhc3RfcGF0aGAgVHJ1ZeKGkmxlYWQgaW5zdHJ1Y3Rpb25zIOazqOWFpeWAmemAieagueWboCLkvJjlhYjmnIDlsI/lj5bor4Hpqozor4Ei44CCCi0gKirmlbDmja7mqKHlnosqKu+8mmBLbm93bGVkZ2VIaXQoY2FzZV9pZCxzaW1pbGFyaXR5LHN1bW1hcnkscm9vdF9zZXJ2aWNlLHJvb3RfY2F1c2UpYO+8m1NLSUxMLm1kIGZyb250bWF0dGVyKG5hbWUvZGVzY3JpcHRpb24vdmVyc2lvbinvvJvmoYjkvosgTWFya2Rvd27vvIjnl4fnirYv5qC55ZugL+ivgeaNri/kv67lpI0v5Lq65bel5aSH5rOo77yJ77yM5ZCR6YeP5YyW5paH5pysPeeXh+eKtuaute+8iOajgOe0oumUruaYr+eXh+eKtuS4jeaYr+e7k+iuuu+8ieOAggotICoq55yf5a6eIEhUVFAg6aqM5pS2KirvvJrnnJ/lrp4gZW1iZWRkaW5nIOS4iyBhZGTihpJzZWFyY2gg5ZG95Lit5LiU55u45Ly85bqm5o6S5bqP5q2j56Gu77yb6amz5Zue5qGI5L6L5LiN6L+b5ZCR6YeP5bqT5L2GIE1hcmtkb3duIOiQveebmO+8m+W/q+mAn+i3r+W+hOS6jOasoeazqOWFpeWQjOaVhemanCDihpIg572R5YWz5a6h6K6hIGBjb3VudCgqKSB3aGVyZSBpbmNpZGVudF9pZGAg5q2l5pWw5pi+6JGX5L2O5LqO6aaW5qyh77yI6K6w5Lik5Liq5pWw5a2X77yJ77yb5byC5bi46Lev5b6E77yaQ2hyb21hIOajgOe0ouW8guW4uCDihpIg6L+U5Zue56m65LiN5oqb44CCCgojIyMgTTEyIMK3IC9hY3Rpb25zIOS/ruWkjSArIEhNQUMg5a6h5om5ICsgSElUTCArIOivhOS8sOWFnOW6lSBbUjEwXQotICoq5o6l5Y+j5aWR57qm77yI5L+u5aSN6YCa6YGT77yJKirvvJoKICAtIOe9keWFsyBgUE9TVCAvYXBpL3YxL2FjdGlvbnMvZXhlY3V0ZWDvvIhhY3Rpb24g5p6a5Li+IHJlc3RhcnRfY29udGFpbmVyL2tpbGxfc2xvd19xdWVyeS9yZXZlcnRfY29uZmlnL2Rpc2FibGVfY2hhb3NfZmxhZ++8m3RhcmdldCDnmb3lkI3ljZUqKuS7jiBwcnVudXMtbXVtZSDlrp7pmYXmnI3liqHlkI0gKyByZWRpcyDmjqjlr7wqKiBbUjEwXe+8m2RyeVJ1bj10cnVlIOWPqumcgOacjeWKoSB0b2tlbuOAgei/lOWbnumihOa8lO+8m2RyeVJ1bj1mYWxzZSDpnIAgYXBwcm92YWwgdG9rZW7vvInvvJsKICAtIGBBcHByb3ZhbFRva2VuVmVyaWZpZXJg77yI6YCQ5a2XIMKnMC4177yadmVyL2lzcy9hdWQvaWF0L2V4cC9raWQgKyBub25jZSDkuIDmrKHmgKcgKyDluLjph4/ml7bpl7Tmr5TovoPvvInvvJsKICAtIGByZXZlcnRfY29uZmlnYCDnmoQgTmFjb3MgZGF0YUlkL2dyb3VwICoq5LuOIHBydW51cy1tdW1lIOWunumZhee6puWumuaYoOWwhCoqIFtSMTBd77yITTEg5bey5YuY5a+f77yJ77ybCiAgLSBQeXRob24g5L6nIGBzZWN1cml0eS90b2tlbi5weWDvvIgqKml0c2Rhbmdlcm91cyDnrb7lkI0gKyDoh6rnoJQgbm9uY2Ug5oyB5LmF5bGCKirvvInvvJtgZ3JhcGgvbm9kZXMvYXBwcm92YWwucHlg77yIYGludGVycnVwdCgpYCDmjILotbfvvIzov5sgaW50ZXJydXB0IOWJjeWFiCBkcnktcnVuIOaLv+mihOa8lO+8ie+8m2BncmFwaC9ub2Rlcy9yZW1lZGlhdGUucHlg77yI5bimIHRva2VuIOaJp+ihjCDihpIgNjBzIOWQjiBxdWVyeV9tZXRyaWNzIOWkjeafpeaBouWkje+8ie+8m+WuoeaJuSBBUEkgYEdFVCAvaW5jaWRlbnRzL3tpZH0vcGVuZGluZ2DjgIFgUE9TVCAvaW5jaWRlbnRzL3tpZH0vZGVjaXNpb25gICsgQ0xJIGBjb3BpbG90IGFwcHJvdmUvcmVqZWN0YOOAggotICoq5o6l5Y+j5aWR57qm77yI6K+E5Lyw5YWc5bqV77yM57K+566A77yJKirvvJpgZXZhbHMvc2NvcmVyLnB5YO+8iOe6r+WHveaVsOS4iee6p+WIpOWIhiBzdmMvY2xzL2FuY2hvciArIOmYtOaAp++8ie+8m2BldmFscy9ydW5uZXIucHlg77yI5rOo5YWl4oaS562J5ZGK6K2m4oaS6K+K5pat4oaScmV2ZXJ04oaS5Yik5YiG77yMSlNPTkzvvInvvJtgbWFrZSBzbW9rZWDvvIg1IOS+izwxNW1pbiDpl6jnpoHvvIxhY2NAc2VydmljZSDkuI3lm57pgIDvvInvvJtBMOKAk0EzIOa2iOiejeW8gOWFs+OAgioq5LiN5YaZ5Y2V5YWD5rWL6K+V5Y+w6LSmKirjgIIKLSAqKuaVsOaNruaooeWeiyoq77yaYXBwcm92YWwgdG9rZW4gcGF5bG9hZO+8iMKnMC4177yJ77ybYGFjdGlvbl9hdWRpdChpZCx0cyxpbmNpZGVudF9pZCxhY3Rpb24sdGFyZ2V0LGRyeV9ydW4sdG9rZW5fZmluZ2VycHJpbnQscmVzdWx0LGRldGFpbClg77ybYENhc2VTY29yZShzdmNfaGl0LGNsc19oaXQsYW5jaG9yX2hpdCxuZWdhdGl2ZV9vaylg77yb55yf5YC8IGBldmFsLWNvbnRyb2wvY2FzZXMvKi55YW1sYO+8iEFnZW50IOi/kOihjOaXtuS4jeWPr+ivu++8ieOAggotICoq55yf5a6eIEhUVFAg6aqM5pS2KirvvIjnq6/liLDnq68gSU5U77yJ77yaCiAgLSAqKkYwOSDnsbvvvIjphY3nva7lj5jmm7TvvInlhajmtYHnqIsqKu+8mndlYmhvb2vihpLmiqXlkYrihpJDTEkg5a6h5om54oaSYHJldmVydF9jb25maWdgIOecn+WunuaJp+ihjOKGkuWkjeafpSByZWNvdmVyZWQ9VHJ1ZeKGkuahiOS+i+WFpSBDaHJvbWHvvJsKICAtIOaXoCB0b2tlbiBgY3VybGAgZXhlY3V0ZSDihpIgNDAz77yb5Lyq6YCg562+5ZCNL+i/h+acnyBleHAv6YeN5pS+IG5vbmNlIOKGkiA0MDPvvJtkcnktcnVuIOaXoCB0b2tlbiDihpIgMjAwIOS4lCBhY3Rpb25fYXVkaXQg6JC9IGBkcnlfcnVuPTFg77ybCiAgLSDlrqHmibnmjILotbfml7Yga2lsbCB1dmljb3JuIOmHjeWQryDihpIgYGNvcGlsb3QgYXBwcm92ZWAg5LuN6IO9IHJlc3VtZe+8iGNoZWNrcG9pbnRlciDlrp7or4HvvInvvJsKICAtIGBtYWtlIHNtb2tlYCDkuIDmnaHlkb3ku6QgPDE1bWluIOmAgOWHuueggSAw77yb5oqKIGJhc2VsaW5lIOaUuemrmCDihpIg6YCA5Ye656CBIDHvvIjpl6jnpoHnlJ/mlYjvvInvvJsKICAtICoq5byC5bi4L+e6quW+iyoq77ya5oWi5p+l6K+i57G75pWF6Zqc5Y+q6L6T5Ye6IuS6uuW3peihpee0ouW8lS/ljYfnuqci5bu66K6u77yMKirkuI3lvpcqKuaKiiBraWxsX3Nsb3dfcXVlcnkg5b2T5qC55Zug5L+u5aSN44CB5LiN5b6X6LCO5oqlIHJlY292ZXJlZD1UcnVl44CCCgotLS0KCiMjIDMuIOerr+WIsOerryhJTlQp55yf5a6eIEhUVFAg6ZO+6Lev5oC76aqM5pS277yI5pu/5Luj5penIENQMOKAk0NQNu+8jOe6r+ecn+WunumTvui3r++8iQoKfCDph4znqIvnopEgfCDnq6/liLDnq6/nnJ/lrp7pqozmlLbvvIjml6AgbW9ja++8iSB8CnwtLS18LS0tfAp8IOeOr+Wig+Wwsee7qu+8iE0w4oCTTTHvvIkgfCBjb21wb3NlIOWFqCBVcO+8m+S4iei3ryBtZXRyaWNzL2xvZ3MvdHJhY2Ug5ZCMIHRyYWNlSWQg6LSv6YCa77yb5rOo5YWl5LiA5pWF6Zqc4oaS5ZGK6K2m4oaScmV2ZXJ04oaScmVzb2x2ZSB8Cnwg5pWw5o2u6Z2i5bCx57uq77yITTLvvIkgfCA1IOW3peWFtyArIHJhdyDnnJ/lrp4gY3VybCDlhajov4fvvJtkZWdyYWRlZC80MjkvNDAwLzQwMyDlm5vnsbvlvILluLjot6/lvoTmvJTnpLogfAp8IOmqqOaetumXreeOr++8iE0z4oCTTTjvvIkgfCDms6jlhaXmlYXpmpzihpJ3ZWJob29r4oaS5Zu+6LWw5a6M4oaSYHJ1bnMvaW5jaWRlbnRzLyovYCDlh7ror4Hmja4r5oql5ZGK77yI5ZCrIFtFVi0qXe+8iSB8Cnwg5pm66IO96Zet546v77yITTnigJNNMTHvvIkgfCDnr6HmlLnlvJXnlKjooqsgdmVyaWZ5IGZhaWzvvJvlpJogQWdlbnQg5YiG5bGCIHRyYWNl77yb55u45Ly85qGI5L6L5b+r6YCf6Lev5b6E5q2l5pWw5LiL6ZmNIHwKfCDlhajpl63njq/vvIhNMTLvvIkgfCBGMDkg5YWo6ZO+6LevIHdlYmhvb2vihpLmiqXlkYrihpLlrqHmibnihpJyZXZlcnRfY29uZmln4oaS5aSN5p+l5oGi5aSN4oaS5YWl5bqT77yb5bSp5rqDIHJlc3VtZe+8m3Rva2VuIOmYsuS8qumYsumHjeaUvu+8m21ha2Ugc21va2Ug57u/IHwKCi0tLQoKIyMgNC4gT3V0LW9mLXNjb3Bl77yI55+l5oOF5LiN5YGa77yM5rK/55So5pen6K6h5YiS5bm25a+56b2Q546w5a6e77yJCuWkmuenn+aIty9TYWFTL09BdXRowrfmjqXlhaXnnJ/lrp7nlJ/kuqfCt+WFqOiHquWKqOi3s+i/h+WuoeaJucK35raI5oGv6Zif5YiXL+eLrOeri+WQkemHj+W6k+acjeWKocK3U2t5V2Fsa2luZy9FU8K3T1BBL+WIhuW4g+W8j+mZkOa1gcK35a6h5om5IFdlYiBVScK3TExNIGp1ZGdlIOWIpOWIhsK35Y6L5rWL5qGG5p62wrfnvZHlhbPnhpTmlq3moYbmnrbjgIIqKuaWsOWinioq77ya5LiN6Ieq5bu655S15ZWGIHBhdGllbnQtc3lzdGVt77yI5pS555SoIHBydW51cy1tdW1l77yJ77yb5LiN6L+95rGCIHBydW51cy1tdW1lIOWFqOS4muWKoeWKn+iDveato+ehru+8iOWPqumcgOiDveS6p+WHuuaVhemanOS/oeWPt++8ieOAggoKLS0tCgojIyA1LiDpgZfnlZki6ZyA5qC45a6eIua4heWNle+8iE0wL00xIOWLmOWvn+S7u+WKoeeahOi+k+WHuu+8jOS4jeiHhumAoO+8iQoxLiBwcnVudXMtbXVtZSA2IOacjeWKoeWcqCBOYWNvcyDnmoTlrp7pmYXnq6/lj6PjgIFNeVNRTC9SZWRpcyDotKblj7fjgIHlkK/liqjmiYDpnIDpooTnva7phY3nva7pm4bjgIIKMi4gcHJ1bnVzLW11bWUg5piv5ZCm5bey5o6lIGFjdHVhdG9yL21pY3JvbWV0ZXIvdHJhY2luZ++8m+acquaOpeWImSBNMSDpnIDooaXmjqXjgIIKMy4gcHJ1bnVzLW11bWUgYC9jaGFvc2Ag5bey5rOo5YaM5ZOq5LqbIGZsYWfjgIFgL2NoYW9zL3JlZ2lzdGVyYCDlhaXlj4LkuI7pibTmnYPjgIIKNC4gcHJ1bnVzLW11bWUg5ZCE5pyN5Yqh55yf5a6e5oyH5qCH5ZCN77yI6aKY5bqT5p+l6K+i6ICX5pe2L+aUr+S7mOe6v+eoi+axoC/nvJPlrZjorqHmlbDvvInvvIzlhrPlrpogTTIgcXVlcnlfbWV0cmljcyDmqKHmnb/jgIIKNS4gcHJ1bnVzLW11bWUgTmFjb3MgZGF0YUlkL2dyb3VwIOWRveWQjee6puWumu+8jOWGs+WumiBNMTIgcmV2ZXJ0X2NvbmZpZyDnmb3lkI3ljZXmmKDlsITjgIIKNi4gT3BlblJvdXRlciDlrp7pmYXlj6/nlKjmqKHlnovlrrbml4/muIXljZXvvIjlhrPlrpogdmVyaWZ5IOi3qOWutuaXj+WFt+S9k+Wei+WPt++8ieOAgURhc2hTY29wZSDlj6/nlKjmqKHlnosgSUTjgIIK</script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var article = document.getElementById("document-content");
+      var tocList = document.getElementById("toc-list");
+
+      article.querySelectorAll(".completion-checkbox").forEach(function (checkbox) {
+        var storageKey = checkbox.getAttribute("data-check-key");
+        try {
+          checkbox.checked = localStorage.getItem(storageKey) === "true";
+        } catch (_) {}
+        checkbox.addEventListener("change", function () {
+          try {
+            localStorage.setItem(storageKey, String(checkbox.checked));
+          } catch (_) {}
+        });
+      });
+
+      article.querySelectorAll(".copy-code").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var code = button.closest(".code-shell").querySelector("code").textContent;
+          navigator.clipboard.writeText(code).then(function () {
+            button.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>';
+            window.setTimeout(function () {
+              button.innerHTML =
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>';
+            }, 1400);
+          });
+        });
+      });
+
+      if (window.hljs) {
+        article.querySelectorAll("pre code").forEach(function (block) {
+          window.hljs.highlightElement(block);
+        });
+      }
+
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      article.querySelectorAll(".reveal").forEach(function (node) {
+        revealObserver.observe(node);
+      });
+
+      var tocLinks = Array.from(tocList.querySelectorAll("a"));
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (link) {
+            var current = link.getAttribute("href") === "#" + entry.target.id;
+            if (current) link.setAttribute("aria-current", "true");
+            else link.removeAttribute("aria-current");
+          });
+        });
+      }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+      tocLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute("href"));
+        if (section) sectionObserver.observe(section);
+      });
+    }());
+  </script>
+</body>
+</html>

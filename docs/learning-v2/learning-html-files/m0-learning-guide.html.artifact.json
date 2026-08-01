@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "m0-learning-guide.html",
+  "entry": "m0-learning-guide.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-07-29T14:16:56.624Z",
+  "updatedAt": "2026-07-29T14:16:56.624Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

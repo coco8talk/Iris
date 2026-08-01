@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="source-sha256" content="0abd3a055bd7ca3cf0ce94d2f69b1dd0bf78314921cb33b7a305d4a8a9181c72">
+  <title>模块 5 · webhook 入口 + 指纹去重 — 版本 C</title>
+  <style>
+    :root {
+      --bg: oklch(0.9697 0.0153 7.48);
+      --surface: oklch(1.0000 0.0000 89.88 / 0.85);
+      --fg: oklch(0.3109 0.0222 355.11);
+      --muted: oklch(0.3808 0.0172 348.75);
+      --border: oklch(1.0000 0.0000 89.88 / 0.60);
+      --accent: oklch(0.7893 0.1284 5.11);
+      --accent-ink: oklch(0.4930 0.1280 4.50);
+      --highlight: oklch(0.9450 0.0360 55 / 0.78);
+      --soft-pink: oklch(0.9470 0.0248 2.08);
+      --shadow: oklch(0.6521 0.0908 1.39 / 0.15);
+      --tip: oklch(0.6140 0.1300 243);
+      --warn: oklch(0.7000 0.1450 75);
+      --danger: oklch(0.5900 0.1800 25);
+      --success: oklch(0.6200 0.1600 145);
+      --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-display: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+      --code-bg: #282C34;
+      --code-fg: #ABB2BF;
+      --code-comment: #5C6370;
+      --code-keyword: #C678DD;
+      --code-string: #98C379;
+      --code-function: #61AFEF;
+      --code-number: #D19A66;
+      --code-type: #E5C07B;
+      --code-operator: #56B6C2;
+      --code-error: #E06C75;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--muted);
+      background:
+        linear-gradient(160deg, #FFF1F3 0%, #FDE7EC 100%);
+      font-family: var(--font-body);
+      font-size: 17px;
+      font-weight: 400;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: var(--fg);
+      text-decoration-color: color-mix(in oklch, var(--muted) 42%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+      overflow-wrap: anywhere;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .ambient {
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(92px);
+      opacity: 0.56;
+      pointer-events: none;
+    }
+
+    .ambient-one {
+      width: 36vw;
+      height: 36vw;
+      top: -10vw;
+      left: -8vw;
+      background: oklch(0.8550 0.0850 3 / 0.55);
+    }
+
+    .ambient-two {
+      width: 34vw;
+      height: 34vw;
+      top: 30vh;
+      right: -12vw;
+      background: oklch(0.8700 0.0700 50 / 0.42);
+    }
+
+    .ambient-three {
+      width: 28vw;
+      height: 28vw;
+      bottom: -8vw;
+      left: 18vw;
+      background: oklch(0.8500 0.0600 315 / 0.38);
+    }
+
+    .page-shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .reader-layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 920px);
+      justify-content: center;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .reader-layout:has(.toc details:not([open])) {
+      grid-template-columns: 56px minmax(0, 920px);
+    }
+
+    .document {
+      grid-column: 2;
+      width: 100%;
+      max-width: 920px;
+      min-width: 0;
+    }
+
+    .glass-card {
+      position: relative;
+      padding: clamp(28px, 4vw, 44px);
+      margin: 0 0 28px;
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 32px rgba(190,120,140,0.15);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 38px rgba(190,120,140,0.19);
+    }
+
+    .hero {
+      overflow: hidden;
+      padding-top: clamp(36px, 6vw, 58px);
+      padding-bottom: clamp(34px, 5vw, 52px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 118px;
+      height: 4px;
+      left: clamp(28px, 4vw, 44px);
+      bottom: 25px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--fg);
+      font-family: var(--font-display);
+      font-weight: 650;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 17ch;
+      font-size: clamp(17px, 2.9vw, 26px);
+      line-height: 1.12;
+      letter-spacing: -0.025em;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(25px, 4vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+
+    h3 {
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-size: clamp(20px, 3vw, 23px);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 65ch;
+      margin: 0 0 16px;
+    }
+
+    strong {
+      color: var(--fg);
+      font-weight: 600;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+
+    em {
+      color: var(--fg);
+      font-style: italic;
+    }
+
+    mark {
+      color: inherit;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+    }
+
+    code:not(pre code) {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      color: oklch(0.4300 0.1350 12);
+      background: color-mix(in oklch, var(--accent) 22%, white);
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    ul, ol {
+      margin: 12px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    ul:not(.checklist) > li::before {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 0.72em;
+      border-radius: 50%;
+      background: var(--accent-ink);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent);
+    }
+
+    ol:not(.steps) {
+      counter-reset: ordered;
+    }
+
+    ol:not(.steps) > li {
+      counter-increment: ordered;
+      padding-left: 34px;
+    }
+
+    ol:not(.steps) > li::before {
+      content: counter(ordered) ".";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-ink);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      font-weight: 600;
+    }
+
+    .checklist > li {
+      padding-left: 0;
+    }
+
+    .completion-label {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+
+    .completion-checkbox {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .check-box {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      margin-top: 0.32em;
+      border: 1.5px solid color-mix(in oklch, var(--accent-ink) 68%, var(--border));
+      border-radius: 5px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .completion-checkbox:focus-visible + .check-box {
+      outline: 3px solid color-mix(in oklch, var(--success) 28%, transparent);
+      outline-offset: 3px;
+    }
+
+    .completion-checkbox:checked + .check-box {
+      border-color: var(--success);
+      background: var(--success);
+      transform: scale(1.04);
+    }
+
+    .completion-checkbox:checked + .check-box::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      left: 5px;
+      top: 1px;
+      border-right: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(45deg);
+    }
+
+    .steps {
+      position: relative;
+      margin-left: 2px;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 25px;
+      bottom: 25px;
+      width: 1px;
+      background: color-mix(in oklch, var(--accent) 48%, var(--border));
+    }
+
+    .steps > li {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 0;
+      margin: 12px 0;
+    }
+
+    .step-badge {
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid color-mix(in oklch, var(--accent-ink) 24%, white);
+      border-radius: 50%;
+      color: var(--accent-ink);
+      background: color-mix(in oklch, var(--soft-pink) 80%, white);
+      box-shadow: 0 4px 12px var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .step-card {
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+    }
+
+    blockquote {
+      margin: 24px 0 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--tip);
+      border-radius: 0 14px 14px 0;
+      color: var(--fg);
+      background: color-mix(in oklch, var(--tip) 7%, var(--surface));
+    }
+
+    blockquote p {
+      margin: 0;
+    }
+
+    .meta-strip {
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.35);
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-strip p {
+      margin: 0;
+    }
+
+    .code-shell {
+      position: relative;
+      margin: 20px 0 22px;
+      border-radius: 12px;
+      overflow: hidden;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    }
+
+    .code-toolbar {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .language-label {
+      color: color-mix(in srgb, var(--code-fg) 74%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .copy-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: var(--code-fg);
+      background: rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .copy-code:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .copy-code:active {
+      transform: translateY(2px);
+    }
+
+    .copy-code svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    pre {
+      margin: 0;
+      padding: 48px 18px 18px;
+      overflow: auto;
+      color: var(--code-fg);
+      background: #282C34;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font-family: inherit;
+      white-space: pre;
+    }
+
+    .hljs { color: var(--code-fg); background: transparent; }
+    .hljs-comment, .hljs-quote { color: var(--code-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--code-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: var(--code-string); }
+    .hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--code-function); }
+    .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--code-number); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-built_in { color: var(--code-type); }
+    .hljs-operator, .hljs-attr, .hljs-attribute { color: var(--code-operator); }
+    .hljs-deletion, .hljs-variable, .hljs-template-variable { color: var(--code-error); }
+
+    .closing-note {
+      color: var(--fg);
+      font-weight: 560;
+    }
+
+    .toc {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1;
+      top: 28px;
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      box-shadow: 0 8px 28px var(--shadow);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+
+    .toc details {
+      padding: 8px;
+    }
+
+    .toc summary {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .toc summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .toc details:not([open]) .toc-list {
+      display: none;
+    }
+
+    .toc summary svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .toc-list li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list li::before {
+      display: none;
+    }
+
+    .toc-list a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: color-mix(in oklch, var(--muted) 86%, transparent);
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .toc-list a:hover {
+      color: var(--fg);
+      background: rgba(255,255,255,0.42);
+    }
+
+    .toc-list a[aria-current="true"] {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 20%, white);
+      font-weight: 550;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 480ms ease, transform 480ms ease;
+    }
+
+    @media (max-width: 1240px) {
+      .page-shell {
+        width: min(980px, calc(100% - 40px));
+      }
+
+      .reader-layout,
+      .reader-layout:has(.toc details:not([open])) {
+        grid-template-columns: minmax(0, 920px);
+        gap: 18px;
+      }
+
+      .toc {
+        z-index: 10;
+        grid-column: 1;
+        top: 12px;
+        grid-row: 1;
+        max-height: min(62vh, 520px);
+      }
+
+      .toc summary {
+        display: flex;
+      }
+
+      .toc details:not([open]) .toc-list {
+        display: none;
+      }
+
+      .document {
+        grid-column: 1;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 16px;
+      }
+
+      .page-shell {
+        width: min(100% - 24px, 620px);
+        padding: 18px 0 64px;
+      }
+
+      .glass-card {
+        padding: 24px 20px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+      }
+
+      .hero {
+        padding-top: 32px;
+        padding-bottom: 42px;
+      }
+
+      .hero::after {
+        left: 20px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 7vw, 29px);
+      }
+
+      h3 {
+        margin-top: 28px;
+      }
+
+      .steps > li {
+        gap: 10px;
+      }
+
+      .step-card {
+        padding: 12px 13px;
+      }
+
+      pre {
+        padding: 48px 16px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media print {
+      @page { margin: 16mm; }
+
+      body {
+        color: #4A3F44;
+        background: white !important;
+        font-size: 12pt;
+      }
+
+      .ambient, .toc, .copy-code {
+        display: none !important;
+      }
+
+      .page-shell {
+        width: 100%;
+        padding: 0;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .glass-card {
+        break-inside: avoid;
+        padding: 0;
+        margin: 0 0 18pt;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .hero::after {
+        display: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .code-shell, pre {
+        break-inside: avoid;
+        color: #ABB2BF !important;
+        background: #282C34 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  
+
+    .table-wrap {
+      margin: 20px 0 22px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      font-size: 0.92em;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 14%, white);
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+</style>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="ambient ambient-three" aria-hidden="true"></div>
+
+  <main class="page-shell" data-od-id="page-shell">
+    <div class="reader-layout">
+      <article class="document" id="document-content" data-od-id="document-content">
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 5 · webhook 入口 + 指纹去重 — 版本 C</h1></header>
+<blockquote>
+<p>编排理念：🟢复刻真实 Alertmanager payload 解析 → 🟡改造成去重逻辑 → 🔴自研死信兜底。<strong>这是整个系统唯一的入口。</strong></p>
+</blockquote>
+<section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
+<ol>
+<li>解析真实 Alertmanager webhook 负载，抽出 alertname/service/labels。</li>
+<li>用告警指纹在 30 分钟窗口内去重——同一场事故的重复告警不会重复启动诊断。</li>
+<li>坏负载不丢、不让 Alertmanager 重试风暴：落死信文件并返回 200。</li>
+</ol>
+</section>
+<section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<ul>
+<li><code>src/.../webhook/models.py</code>（Alert 模型）</li>
+<li><code>src/.../webhook/ingest.py</code>（parse + fingerprint + new_incident_id）</li>
+<li><code>src/.../store/incidents.py</code>（incident 表 + find_active）</li>
+<li><code>src/.../webhook/router.py</code>（<code>POST /webhook/alertmanager</code>）</li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t5-1-解析-webhook-指纹去重" data-od-id="section-任务-t5-1-解析-webhook-指纹去重"><h2 data-od-id="section-任务-t5-1-解析-webhook-指纹去重">任务 T5.1 · 解析 webhook + 指纹去重</h2>
+<div class="meta-strip"><p><strong>id</strong>：T5.1 ｜ <strong>所属模块</strong>：M5 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：把 Alertmanager 的 JSON 解析成 Alert 列表，并按指纹在 30 分钟内去重。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>Alertmanager webhook 格式 + 自带 fingerprint</strong>：AM v4 负载里 <code>alerts[*].labels.alertname/service</code>，且每条 alert <strong>自带 <code>fingerprint</code> 字段</strong>，去重直接用它。<em>Java 类比</em>：像收支付回调，<code>fingerprint</code> 就是天然的幂等键，不用自己算 hash。📖 <a href="https://prometheus.io/docs/alerting/latest/configuration/#webhook_config" rel="noreferrer" target="_blank">https://prometheus.io/docs/alerting/latest/configuration/#webhook_config</a> （webhook 负载，需核实锚点）</li>
+<li><strong>指纹去重窗口</strong>：30 分钟内同指纹且 open 的事故 → merge 不新建。<em>Java 类比</em>：像幂等表 + 时间窗，重复请求命中已有记录就合并。📖（自研；参考 Alertmanager 分组/抑制思想）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：一份真实 Alertmanager webhook JSON 样例（M1 注入故障时 debug 抓一份，或官方文档示例）。</li>
+<li><strong>跑什么</strong>：写个最小解析把 <code>alerts[*].labels</code> 打印出来，先证明字段路径对。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
+<ul>
+<li><code>Alert(alertname,service,severity,status,starts_at,labels,annotations)</code>；<code>fingerprint(alerts)</code> <strong>优先取 AM 自带字段</strong>，回退才自算 <code>sha256(...)[:16]</code>；<code>new_incident_id()</code> = <code>inc-YYYYMMDD-NNN</code>。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写 <code>store/incidents.py</code>：SQLite <code>incident(incident_id PK,fingerprint,status,created_at,alerts_ref)</code>；<code>find_active(fingerprint, within=30min)-&gt;id|None</code>；<code>merge_alert(id, alert)</code>。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：抓真实 AM JSON，解析打印字段。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造：写 Alert 模型 + fingerprint。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：<code>curl</code> 打 webhook fixture，看解析对不对。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 incident 存储 + find_active。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">再请求两次同指纹，验证第二次 deduped。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>指纹别把时间戳类 label 算进去，否则每条都"不同"永远去不掉重。</li>
+<li>先用 AM 自带 fingerprint，稳定且省事。</li>
+<li>incident_id 与 M4 的 thread_id 是同一个，命名保持一致。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>字段取不到：把整个 payload <code>json.dumps</code> 打出来对字段路径，别猜结构。</li>
+<li>视频：webhook 解析无对口视频；以 Alertmanager 官方 webhook 文档为主。</li>
+<li>问 AI：「这是一份 Alertmanager webhook JSON（贴出），我要抽 alertname/service 并用自带 fingerprint 去重，Pydantic 模型和 fingerprint 函数怎么写？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">curl -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json    # 200，incidents.db 落一行
+curl -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json    # 30min 内同指纹 → {"deduped":true}
+# 异常路径：改 fixture 的 starts_at 但保持核心 label 不变 → 仍去重（指纹对时间不敏感）
+</code></pre></div>
+<p>判定特征：首次建 incident；30 分钟内同指纹 deduped；指纹对时间戳不敏感。依赖真实服务：无（纯确定性，但可用 M1 真实告警做 fixture）。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>真实 AM JSON 能解析出正确字段（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>fingerprint 优先用 AM 自带字段</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>30 分钟内同指纹去重、31 分钟后新建</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>incident_id 与 M4 thread_id 命名一致</span></label></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t5-2-异步启图-死信兜底" data-od-id="section-任务-t5-2-异步启图-死信兜底"><h2 data-od-id="section-任务-t5-2-异步启图-死信兜底">任务 T5.2 · 异步启图 + 死信兜底</h2>
+<div class="meta-strip"><p><strong>id</strong>：T5.2 ｜ <strong>所属模块</strong>：M5 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：新事故异步启动诊断图，坏负载落死信并返回 200。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>异步后台启图</strong>：webhook 收到后不能阻塞等诊断跑完，要异步触发图并立刻回 200。<em>Java 类比</em>：像 <code>@Async</code> 或投递到线程池后立即返回，但异常必须被托管、不能裸 <code>create_task</code> 丢异常。📖 <a href="https://docs.langchain.com/oss/python/langgraph" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langgraph</a> （ainvoke，需核实锚点）</li>
+<li><strong>死信（dead letter）</strong>：解析失败的负载存盘不丢，返回 200 防重试风暴。<em>Java 类比</em>：MQ 消费失败进死信队列。</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-8" id="section-第-1-段-复刻-8">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：M3/M4 已编译的图的 <code>graph.ainvoke(state, config)</code> 调用方式。</li>
+<li><strong>跑什么</strong>：在 webhook 里同步调一次图跑通（先不异步）。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-9" id="section-第-2-段-改造-9">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>改成受应用生命周期管理的后台执行器调 <code>ainvoke</code>；任务状态/异常持久化到 incident 表；进程退出时停收新任务并等待/取消在途任务。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-10" id="section-第-3-段-自研-10">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写死信逻辑：解析异常时把原始 payload 写 <code>runs/deadletter/&lt;ts&gt;.json</code> 并返回 200。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：webhook 里同步 ainvoke 跑通。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成异步后台执行 + 异常持久化。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次坏 payload：看是否落死信 + 返回 200。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研死信目录 + 恢复排查说明。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证坏负载不触发 AM 重试。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>别裸 <code>asyncio.create_task</code> 后丢异常——异常要落 incident 表可观察。</li>
+<li>坏负载返回 200 是故意的（防 AM 重试风暴），但必须落死信可追。</li>
+<li>进程退出要优雅：停收新任务、处理在途。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>异步任务悄悄失败：给后台任务包 try/except 把异常写库并打日志。</li>
+<li>视频：video-2 P66「异步+并发执行工具类」讲异步执行思路（可参考）。</li>
+<li>问 AI：「FastAPI 里我想收到 webhook 后异步启动一个 LangGraph 图并立即返回 200，但异步任务的异常要能查到，正确写法是什么？给结构不要整段实现。」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">curl -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json   # 200，后台图启动，incidents.db 状态推进
+curl -XPOST localhost:8000/webhook/alertmanager -d '{"bad":"payload"}' # 200，runs/deadletter/ 落一份
+ls runs/deadletter/    # 有坏负载文件
+</code></pre></div>
+<p>判定特征：正常负载异步启图；坏负载落死信 + 200；后台异常可在 incident 表/日志查到。依赖真实服务：网关、LLM（图内会真实调用）。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>webhook 异步启图、立即返回 200</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>后台任务异常持久化到 incident 表、可观察</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>坏 payload 落死信文件并返回 200</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>进程退出优雅处理在途任务</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：入口全靠"复刻真实 AM 负载/ainvoke 调用 → 改造成去重与异步启图 → 自研死信兜底"。</em></p>
+</section>
+      </article>
+      <aside class="toc" data-od-id="table-of-contents">
+        <details open>
+          <summary aria-label="展开或收起目录">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </summary>
+          <ol class="toc-list" id="toc-list">
+            <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
+            <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
+            <li><a href="#section-任务-t5-1-解析-webhook-指纹去重">任务 T5.1 · 解析 webhook + 指纹去重</a></li>
+            <li><a href="#section-任务-t5-2-异步启图-死信兜底">任务 T5.2 · 异步启图 + 死信兜底</a></li>
+          </ol>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNSDCtyB3ZWJob29rIOWFpeWPoyArIOaMh+e6ueWOu+mHjSDigJQg54mI5pysIEMKCj4g57yW5o6S55CG5b+177ya8J+fouWkjeWIu+ecn+WuniBBbGVydG1hbmFnZXIgcGF5bG9hZCDop6PmnpAg4oaSIPCfn6HmlLnpgKDmiJDljrvph43pgLvovpEg4oaSIPCflLToh6rnoJTmrbvkv6HlhZzlupXjgIIqKui/meaYr+aVtOS4quezu+e7n+WUr+S4gOeahOWFpeWPo+OAgioqCgojIyDlrablrozmnKzmqKHlnZfkvaDog73lgZrliLDnmoQgMyDku7bkuosKMS4g6Kej5p6Q55yf5a6eIEFsZXJ0bWFuYWdlciB3ZWJob29rIOi0n+i9ve+8jOaKveWHuiBhbGVydG5hbWUvc2VydmljZS9sYWJlbHPjgIIKMi4g55So5ZGK6K2m5oyH57q55ZyoIDMwIOWIhumSn+eql+WPo+WGheWOu+mHjeKAlOKAlOWQjOS4gOWcuuS6i+aVheeahOmHjeWkjeWRiuitpuS4jeS8mumHjeWkjeWQr+WKqOiviuaWreOAggozLiDlnY/otJ/ovb3kuI3kuKLjgIHkuI3orqkgQWxlcnRtYW5hZ2VyIOmHjeivlemjjuaatO+8muiQveatu+S/oeaWh+S7tuW5tui/lOWbniAyMDDjgIIKCiMjIOacrOaooeWdl+S6pOS7mOeJqea4heWNle+8iOaWh+S7tui3r+W+hOe6p++8iQotIGBzcmMvLi4uL3dlYmhvb2svbW9kZWxzLnB5YO+8iEFsZXJ0IOaooeWei++8iQotIGBzcmMvLi4uL3dlYmhvb2svaW5nZXN0LnB5YO+8iHBhcnNlICsgZmluZ2VycHJpbnQgKyBuZXdfaW5jaWRlbnRfaWTvvIkKLSBgc3JjLy4uLi9zdG9yZS9pbmNpZGVudHMucHlg77yIaW5jaWRlbnQg6KGoICsgZmluZF9hY3RpdmXvvIkKLSBgc3JjLy4uLi93ZWJob29rL3JvdXRlci5weWDvvIhgUE9TVCAvd2ViaG9vay9hbGVydG1hbmFnZXJg77yJCgotLS0KCiMjIOS7u+WKoSBUNS4xIMK3IOino+aekCB3ZWJob29rICsg5oyH57q55Y676YeNCgoqKmlkKirvvJpUNS4xIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTUg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8muaKiiBBbGVydG1hbmFnZXIg55qEIEpTT04g6Kej5p6Q5oiQIEFsZXJ0IOWIl+ihqO+8jOW5tuaMieaMh+e6ueWcqCAzMCDliIbpkp/lhoXljrvph43jgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoqQWxlcnRtYW5hZ2VyIHdlYmhvb2sg5qC85byPICsg6Ieq5bimIGZpbmdlcnByaW50KirvvJpBTSB2NCDotJ/ovb3ph4wgYGFsZXJ0c1sqXS5sYWJlbHMuYWxlcnRuYW1lL3NlcnZpY2Vg77yM5LiU5q+P5p2hIGFsZXJ0ICoq6Ieq5bimIGBmaW5nZXJwcmludGAg5a2X5q61KirvvIzljrvph43nm7TmjqXnlKjlroPjgIIqSmF2YSDnsbvmr5Qq77ya5YOP5pS25pSv5LuY5Zue6LCD77yMYGZpbmdlcnByaW50YCDlsLHmmK/lpKnnhLbnmoTluYLnrYnplK7vvIzkuI3nlKjoh6rlt7HnrpcgaGFzaOOAgvCfk5YgaHR0cHM6Ly9wcm9tZXRoZXVzLmlvL2RvY3MvYWxlcnRpbmcvbGF0ZXN0L2NvbmZpZ3VyYXRpb24vI3dlYmhvb2tfY29uZmlnIO+8iHdlYmhvb2sg6LSf6L2977yM6ZyA5qC45a6e6ZSa54K577yJCi0gKirmjIfnurnljrvph43nqpflj6MqKu+8mjMwIOWIhumSn+WGheWQjOaMh+e6ueS4lCBvcGVuIOeahOS6i+aVhSDihpIgbWVyZ2Ug5LiN5paw5bu644CCKkphdmEg57G75q+UKu+8muWDj+W5guetieihqCArIOaXtumXtOeql++8jOmHjeWkjeivt+axguWRveS4reW3suacieiusOW9leWwseWQiOW5tuOAgvCfk5bvvIjoh6rnoJTvvJvlj4LogIMgQWxlcnRtYW5hZ2VyIOWIhue7hC/mipHliLbmgJ3mg7PvvIkKCiMjIyDwn5+iIOesrCAxIOautSDCtyDlpI3liLsKLSAqKuivu+S7gOS5iCoq77ya5LiA5Lu955yf5a6eIEFsZXJ0bWFuYWdlciB3ZWJob29rIEpTT04g5qC35L6L77yITTEg5rOo5YWl5pWF6Zqc5pe2IGRlYnVnIOaKk+S4gOS7ve+8jOaIluWumOaWueaWh+aho+ekuuS+i++8ieOAggotICoq6LeR5LuA5LmIKirvvJrlhpnkuKrmnIDlsI/op6PmnpDmioogYGFsZXJ0c1sqXS5sYWJlbHNgIOaJk+WNsOWHuuadpe+8jOWFiOivgeaYjuWtl+autei3r+W+hOWvueOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIGBBbGVydChhbGVydG5hbWUsc2VydmljZSxzZXZlcml0eSxzdGF0dXMsc3RhcnRzX2F0LGxhYmVscyxhbm5vdGF0aW9ucylg77ybYGZpbmdlcnByaW50KGFsZXJ0cylgICoq5LyY5YWI5Y+WIEFNIOiHquW4puWtl+autSoq77yM5Zue6YCA5omN6Ieq566XIGBzaGEyNTYoLi4uKVs6MTZdYO+8m2BuZXdfaW5jaWRlbnRfaWQoKWAgPSBgaW5jLVlZWVlNTURELU5OTmDjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJQKLSAqKuS7juepuuaWh+S7tioq5YaZIGBzdG9yZS9pbmNpZGVudHMucHlg77yaU1FMaXRlIGBpbmNpZGVudChpbmNpZGVudF9pZCBQSyxmaW5nZXJwcmludCxzdGF0dXMsY3JlYXRlZF9hdCxhbGVydHNfcmVmKWDvvJtgZmluZF9hY3RpdmUoZmluZ2VycHJpbnQsIHdpdGhpbj0zMG1pbiktPmlkfE5vbmVg77ybYG1lcmdlX2FsZXJ0KGlkLCBhbGVydClg44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWkjeWIu++8muaKk+ecn+WuniBBTSBKU09O77yM6Kej5p6Q5omT5Y2w5a2X5q6144CCCjIuIOaUuemAoO+8muWGmSBBbGVydCDmqKHlnosgKyBmaW5nZXJwcmludOOAggozLiDlj5HkuIDmrKHor7fmsYLvvJpgY3VybGAg5omTIHdlYmhvb2sgZml4dHVyZe+8jOeci+ino+aekOWvueS4jeWvueOAggo0LiDoh6rnoJQgaW5jaWRlbnQg5a2Y5YKoICsgZmluZF9hY3RpdmXjgIIKNS4g5YaN6K+35rGC5Lik5qyh5ZCM5oyH57q577yM6aqM6K+B56ys5LqM5qyhIGRlZHVwZWTjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g5oyH57q55Yir5oqK5pe26Ze05oiz57G7IGxhYmVsIOeul+i/m+WOu++8jOWQpuWImeavj+adoemDvSLkuI3lkIwi5rC46L+c5Y675LiN5o6J6YeN44CCCi0g5YWI55SoIEFNIOiHquW4piBmaW5nZXJwcmludO+8jOeos+WumuS4lOecgeS6i+OAggotIGluY2lkZW50X2lkIOS4jiBNNCDnmoQgdGhyZWFkX2lkIOaYr+WQjOS4gOS4qu+8jOWRveWQjeS/neaMgeS4gOiHtOOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOWtl+auteWPluS4jeWIsO+8muaKiuaVtOS4qiBwYXlsb2FkIGBqc29uLmR1bXBzYCDmiZPlh7rmnaXlr7nlrZfmrrXot6/lvoTvvIzliKvnjJznu5PmnoTjgIIKLSDop4bpopHvvJp3ZWJob29rIOino+aekOaXoOWvueWPo+inhumike+8m+S7pSBBbGVydG1hbmFnZXIg5a6Y5pa5IHdlYmhvb2sg5paH5qGj5Li65Li744CCCi0g6ZeuIEFJ77ya44CM6L+Z5piv5LiA5Lu9IEFsZXJ0bWFuYWdlciB3ZWJob29rIEpTT07vvIjotLTlh7rvvInvvIzmiJHopoHmir0gYWxlcnRuYW1lL3NlcnZpY2Ug5bm255So6Ieq5bimIGZpbmdlcnByaW50IOWOu+mHje+8jFB5ZGFudGljIOaooeWei+WSjCBmaW5nZXJwcmludCDlh73mlbDmgI7kuYjlhpnvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICAgICMgMjAw77yMaW5jaWRlbnRzLmRiIOiQveS4gOihjApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICAgICMgMzBtaW4g5YaF5ZCM5oyH57q5IOKGkiB7ImRlZHVwZWQiOnRydWV9CiMg5byC5bi46Lev5b6E77ya5pS5IGZpeHR1cmUg55qEIHN0YXJ0c19hdCDkvYbkv53mjIHmoLjlv4MgbGFiZWwg5LiN5Y+YIOKGkiDku43ljrvph43vvIjmjIfnurnlr7nml7bpl7TkuI3mlY/mhJ/vvIkKYGBgCuWIpOWumueJueW+ge+8mummluasoeW7uiBpbmNpZGVudO+8mzMwIOWIhumSn+WGheWQjOaMh+e6uSBkZWR1cGVk77yb5oyH57q55a+55pe26Ze05oiz5LiN5pWP5oSf44CC5L6d6LWW55yf5a6e5pyN5Yqh77ya5peg77yI57qv56Gu5a6a5oCn77yM5L2G5Y+v55SoIE0xIOecn+WunuWRiuitpuWBmiBmaXh0dXJl77yJ44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIOecn+WuniBBTSBKU09OIOiDveino+aekOWHuuato+ehruWtl+aute+8iOWkjeWIu+aute+8iQotIFsgXSBmaW5nZXJwcmludCDkvJjlhYjnlKggQU0g6Ieq5bim5a2X5q61Ci0gWyBdIDMwIOWIhumSn+WGheWQjOaMh+e6ueWOu+mHjeOAgTMxIOWIhumSn+WQjuaWsOW7ugotIFsgXSBpbmNpZGVudF9pZCDkuI4gTTQgdGhyZWFkX2lkIOWRveWQjeS4gOiHtAoKLS0tCgojIyDku7vliqEgVDUuMiDCtyDlvILmraXlkK/lm74gKyDmrbvkv6HlhZzlupUKCioqaWQqKu+8mlQ1LjIg772cICoq5omA5bGe5qih5Z2XKirvvJpNNSDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5paw5LqL5pWF5byC5q2l5ZCv5Yqo6K+K5pat5Zu+77yM5Z2P6LSf6L296JC95q275L+h5bm26L+U5ZueIDIwMOOAggoKKirliY3nva7nn6Xor4bvvIjiiaQyIOaWsOamguW/te+8iSoqCi0gKirlvILmraXlkI7lj7DlkK/lm74qKu+8mndlYmhvb2sg5pS25Yiw5ZCO5LiN6IO96Zi75aGe562J6K+K5pat6LeR5a6M77yM6KaB5byC5q2l6Kem5Y+R5Zu+5bm256uL5Yi75ZueIDIwMOOAgipKYXZhIOexu+avlCrvvJrlg48gYEBBc3luY2Ag5oiW5oqV6YCS5Yiw57q/56iL5rGg5ZCO56uL5Y2z6L+U5Zue77yM5L2G5byC5bi45b+F6aG76KKr5omY566h44CB5LiN6IO96KO4IGBjcmVhdGVfdGFza2Ag5Lii5byC5bi444CC8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdncmFwaCDvvIhhaW52b2tl77yM6ZyA5qC45a6e6ZSa54K577yJCi0gKirmrbvkv6HvvIhkZWFkIGxldHRlcu+8iSoq77ya6Kej5p6Q5aSx6LSl55qE6LSf6L295a2Y55uY5LiN5Lii77yM6L+U5ZueIDIwMCDpmLLph43or5Xpo47mmrTjgIIqSmF2YSDnsbvmr5Qq77yaTVEg5raI6LS55aSx6LSl6L+b5q275L+h6Zif5YiX44CCCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mk0zL000IOW3sue8luivkeeahOWbvueahCBgZ3JhcGguYWludm9rZShzdGF0ZSwgY29uZmlnKWAg6LCD55So5pa55byP44CCCi0gKirot5Hku4DkuYgqKu+8muWcqCB3ZWJob29rIOmHjOWQjOatpeiwg+S4gOasoeWbvui3kemAmu+8iOWFiOS4jeW8guatpe+8ieOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIOaUueaIkOWPl+W6lOeUqOeUn+WRveWRqOacn+euoeeQhueahOWQjuWPsOaJp+ihjOWZqOiwgyBgYWludm9rZWDvvJvku7vliqHnirbmgIEv5byC5bi45oyB5LmF5YyW5YiwIGluY2lkZW50IOihqO+8m+i/m+eoi+mAgOWHuuaXtuWBnOaUtuaWsOS7u+WKoeW5tuetieW+hS/lj5bmtojlnKjpgJTku7vliqHjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJQKLSAqKuS7juepuuaWh+S7tioq5YaZ5q275L+h6YC76L6R77ya6Kej5p6Q5byC5bi45pe25oqK5Y6f5aeLIHBheWxvYWQg5YaZIGBydW5zL2RlYWRsZXR0ZXIvPHRzPi5qc29uYCDlubbov5Tlm54gMjAw44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWkjeWIu++8mndlYmhvb2sg6YeM5ZCM5q2lIGFpbnZva2Ug6LeR6YCa44CCCjIuIOaUuemAoOaIkOW8guatpeWQjuWPsOaJp+ihjCArIOW8guW4uOaMgeS5heWMluOAggozLiDlj5HkuIDmrKHlnY8gcGF5bG9hZO+8mueci+aYr+WQpuiQveatu+S/oSArIOi/lOWbniAyMDDjgIIKNC4g6Ieq56CU5q275L+h55uu5b2VICsg5oGi5aSN5o6S5p+l6K+05piO44CCCjUuIOmqjOivgeWdj+i0n+i9veS4jeinpuWPkSBBTSDph43or5XjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g5Yir6KO4IGBhc3luY2lvLmNyZWF0ZV90YXNrYCDlkI7kuKLlvILluLjigJTigJTlvILluLjopoHokL0gaW5jaWRlbnQg6KGo5Y+v6KeC5a+f44CCCi0g5Z2P6LSf6L296L+U5ZueIDIwMCDmmK/mlYXmhI/nmoTvvIjpmLIgQU0g6YeN6K+V6aOO5pq077yJ77yM5L2G5b+F6aG76JC95q275L+h5Y+v6L+944CCCi0g6L+b56iL6YCA5Ye66KaB5LyY6ZuF77ya5YGc5pS25paw5Lu75Yqh44CB5aSE55CG5Zyo6YCU44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g5byC5q2l5Lu75Yqh5oKE5oKE5aSx6LSl77ya57uZ5ZCO5Y+w5Lu75Yqh5YyFIHRyeS9leGNlcHQg5oqK5byC5bi45YaZ5bqT5bm25omT5pel5b+X44CCCi0g6KeG6aKR77yadmlkZW8tMiBQNjbjgIzlvILmraUr5bm25Y+R5omn6KGM5bel5YW357G744CN6K6y5byC5q2l5omn6KGM5oCd6Lev77yI5Y+v5Y+C6ICD77yJ44CCCi0g6ZeuIEFJ77ya44CMRmFzdEFQSSDph4zmiJHmg7PmlLbliLAgd2ViaG9vayDlkI7lvILmraXlkK/liqjkuIDkuKogTGFuZ0dyYXBoIOWbvuW5tueri+WNs+i/lOWbniAyMDDvvIzkvYblvILmraXku7vliqHnmoTlvILluLjopoHog73mn6XliLDvvIzmraPnoa7lhpnms5XmmK/ku4DkuYjvvJ/nu5nnu5PmnoTkuI3opoHmlbTmrrXlrp7njrDjgILjgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICAgIyAyMDDvvIzlkI7lj7Dlm77lkK/liqjvvIxpbmNpZGVudHMuZGIg54q25oCB5o6o6L+bCmN1cmwgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kICd7ImJhZCI6InBheWxvYWQifScgIyAyMDDvvIxydW5zL2RlYWRsZXR0ZXIvIOiQveS4gOS7vQpscyBydW5zL2RlYWRsZXR0ZXIvICAgICMg5pyJ5Z2P6LSf6L295paH5Lu2CmBgYArliKTlrprnibnlvoHvvJrmraPluLjotJ/ovb3lvILmraXlkK/lm77vvJvlnY/otJ/ovb3okL3mrbvkv6EgKyAyMDDvvJvlkI7lj7DlvILluLjlj6/lnKggaW5jaWRlbnQg6KGoL+aXpeW/l+afpeWIsOOAguS+nei1luecn+WunuacjeWKoe+8mue9keWFs+OAgUxMTe+8iOWbvuWGheS8muecn+Wunuiwg+eUqO+8ieOAggoKKirlrozmiJDliKTlrpoqKgotIFsgXSB3ZWJob29rIOW8guatpeWQr+WbvuOAgeeri+WNs+i/lOWbniAyMDAKLSBbIF0g5ZCO5Y+w5Lu75Yqh5byC5bi45oyB5LmF5YyW5YiwIGluY2lkZW50IOihqOOAgeWPr+inguWvnwotIFsgXSDlnY8gcGF5bG9hZCDokL3mrbvkv6Hmlofku7blubbov5Tlm54gMjAwCi0gWyBdIOi/m+eoi+mAgOWHuuS8mOmbheWkhOeQhuWcqOmAlOS7u+WKoQoKLS0tCirniYjmnKwgQyDnibnlvoHvvJrlhaXlj6PlhajpnaAi5aSN5Yi755yf5a6eIEFNIOi0n+i9vS9haW52b2tlIOiwg+eUqCDihpIg5pS56YCg5oiQ5Y676YeN5LiO5byC5q2l5ZCv5Zu+IOKGkiDoh6rnoJTmrbvkv6HlhZzlupUi44CCKgo=</script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var article = document.getElementById("document-content");
+      var tocList = document.getElementById("toc-list");
+
+      article.querySelectorAll(".completion-checkbox").forEach(function (checkbox) {
+        var storageKey = checkbox.getAttribute("data-check-key");
+        try {
+          checkbox.checked = localStorage.getItem(storageKey) === "true";
+        } catch (_) {}
+        checkbox.addEventListener("change", function () {
+          try {
+            localStorage.setItem(storageKey, String(checkbox.checked));
+          } catch (_) {}
+        });
+      });
+
+      article.querySelectorAll(".copy-code").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var code = button.closest(".code-shell").querySelector("code").textContent;
+          navigator.clipboard.writeText(code).then(function () {
+            button.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>';
+            window.setTimeout(function () {
+              button.innerHTML =
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>';
+            }, 1400);
+          });
+        });
+      });
+
+      if (window.hljs) {
+        article.querySelectorAll("pre code").forEach(function (block) {
+          window.hljs.highlightElement(block);
+        });
+      }
+
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      article.querySelectorAll(".reveal").forEach(function (node) {
+        revealObserver.observe(node);
+      });
+
+      var tocLinks = Array.from(tocList.querySelectorAll("a"));
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (link) {
+            var current = link.getAttribute("href") === "#" + entry.target.id;
+            if (current) link.setAttribute("aria-current", "true");
+            else link.removeAttribute("aria-current");
+          });
+        });
+      }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+      tocLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute("href"));
+        if (section) sectionObserver.observe(section);
+      });
+    }());
+  </script>
+</body>
+</html>
