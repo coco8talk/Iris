@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="source-sha256" content="a56b17c3fb23f50547c03e3250c29fd525f50b7d22426be934dcc920c82de00f">
+  <title>模块 3 · 第一个 StateGraph（从 0 建 Python 工程 + 起手线性图）— 版本 C</title>
+  <style>
+    :root {
+      --bg: oklch(0.9697 0.0153 7.48);
+      --surface: oklch(1.0000 0.0000 89.88 / 0.85);
+      --fg: oklch(0.3109 0.0222 355.11);
+      --muted: oklch(0.3808 0.0172 348.75);
+      --border: oklch(1.0000 0.0000 89.88 / 0.60);
+      --accent: oklch(0.7893 0.1284 5.11);
+      --accent-ink: oklch(0.4930 0.1280 4.50);
+      --highlight: oklch(0.9450 0.0360 55 / 0.78);
+      --soft-pink: oklch(0.9470 0.0248 2.08);
+      --shadow: oklch(0.6521 0.0908 1.39 / 0.15);
+      --tip: oklch(0.6140 0.1300 243);
+      --warn: oklch(0.7000 0.1450 75);
+      --danger: oklch(0.5900 0.1800 25);
+      --success: oklch(0.6200 0.1600 145);
+      --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-display: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+      --code-bg: #282C34;
+      --code-fg: #ABB2BF;
+      --code-comment: #5C6370;
+      --code-keyword: #C678DD;
+      --code-string: #98C379;
+      --code-function: #61AFEF;
+      --code-number: #D19A66;
+      --code-type: #E5C07B;
+      --code-operator: #56B6C2;
+      --code-error: #E06C75;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--muted);
+      background:
+        linear-gradient(160deg, #FFF1F3 0%, #FDE7EC 100%);
+      font-family: var(--font-body);
+      font-size: 17px;
+      font-weight: 400;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: var(--fg);
+      text-decoration-color: color-mix(in oklch, var(--muted) 42%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+      overflow-wrap: anywhere;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .ambient {
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(92px);
+      opacity: 0.56;
+      pointer-events: none;
+    }
+
+    .ambient-one {
+      width: 36vw;
+      height: 36vw;
+      top: -10vw;
+      left: -8vw;
+      background: oklch(0.8550 0.0850 3 / 0.55);
+    }
+
+    .ambient-two {
+      width: 34vw;
+      height: 34vw;
+      top: 30vh;
+      right: -12vw;
+      background: oklch(0.8700 0.0700 50 / 0.42);
+    }
+
+    .ambient-three {
+      width: 28vw;
+      height: 28vw;
+      bottom: -8vw;
+      left: 18vw;
+      background: oklch(0.8500 0.0600 315 / 0.38);
+    }
+
+    .page-shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .reader-layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 920px);
+      justify-content: center;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .reader-layout:has(.toc details:not([open])) {
+      grid-template-columns: 56px minmax(0, 920px);
+    }
+
+    .document {
+      grid-column: 2;
+      width: 100%;
+      max-width: 920px;
+      min-width: 0;
+    }
+
+    .glass-card {
+      position: relative;
+      padding: clamp(28px, 4vw, 44px);
+      margin: 0 0 28px;
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 32px rgba(190,120,140,0.15);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 38px rgba(190,120,140,0.19);
+    }
+
+    .hero {
+      overflow: hidden;
+      padding-top: clamp(36px, 6vw, 58px);
+      padding-bottom: clamp(34px, 5vw, 52px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 118px;
+      height: 4px;
+      left: clamp(28px, 4vw, 44px);
+      bottom: 25px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--fg);
+      font-family: var(--font-display);
+      font-weight: 650;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 17ch;
+      font-size: clamp(17px, 2.9vw, 26px);
+      line-height: 1.12;
+      letter-spacing: -0.025em;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(25px, 4vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+
+    h3 {
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-size: clamp(20px, 3vw, 23px);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 65ch;
+      margin: 0 0 16px;
+    }
+
+    strong {
+      color: var(--fg);
+      font-weight: 600;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+
+    em {
+      color: var(--fg);
+      font-style: italic;
+    }
+
+    mark {
+      color: inherit;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+    }
+
+    code:not(pre code) {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      color: oklch(0.4300 0.1350 12);
+      background: color-mix(in oklch, var(--accent) 22%, white);
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    ul, ol {
+      margin: 12px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    ul:not(.checklist) > li::before {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 0.72em;
+      border-radius: 50%;
+      background: var(--accent-ink);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent);
+    }
+
+    ol:not(.steps) {
+      counter-reset: ordered;
+    }
+
+    ol:not(.steps) > li {
+      counter-increment: ordered;
+      padding-left: 34px;
+    }
+
+    ol:not(.steps) > li::before {
+      content: counter(ordered) ".";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-ink);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      font-weight: 600;
+    }
+
+    .checklist > li {
+      padding-left: 0;
+    }
+
+    .completion-label {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+
+    .completion-checkbox {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .check-box {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      margin-top: 0.32em;
+      border: 1.5px solid color-mix(in oklch, var(--accent-ink) 68%, var(--border));
+      border-radius: 5px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .completion-checkbox:focus-visible + .check-box {
+      outline: 3px solid color-mix(in oklch, var(--success) 28%, transparent);
+      outline-offset: 3px;
+    }
+
+    .completion-checkbox:checked + .check-box {
+      border-color: var(--success);
+      background: var(--success);
+      transform: scale(1.04);
+    }
+
+    .completion-checkbox:checked + .check-box::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      left: 5px;
+      top: 1px;
+      border-right: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(45deg);
+    }
+
+    .steps {
+      position: relative;
+      margin-left: 2px;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 25px;
+      bottom: 25px;
+      width: 1px;
+      background: color-mix(in oklch, var(--accent) 48%, var(--border));
+    }
+
+    .steps > li {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 0;
+      margin: 12px 0;
+    }
+
+    .step-badge {
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid color-mix(in oklch, var(--accent-ink) 24%, white);
+      border-radius: 50%;
+      color: var(--accent-ink);
+      background: color-mix(in oklch, var(--soft-pink) 80%, white);
+      box-shadow: 0 4px 12px var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .step-card {
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+    }
+
+    blockquote {
+      margin: 24px 0 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--tip);
+      border-radius: 0 14px 14px 0;
+      color: var(--fg);
+      background: color-mix(in oklch, var(--tip) 7%, var(--surface));
+    }
+
+    blockquote p {
+      margin: 0;
+    }
+
+    .meta-strip {
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.35);
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-strip p {
+      margin: 0;
+    }
+
+    .code-shell {
+      position: relative;
+      margin: 20px 0 22px;
+      border-radius: 12px;
+      overflow: hidden;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    }
+
+    .code-toolbar {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .language-label {
+      color: color-mix(in srgb, var(--code-fg) 74%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .copy-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: var(--code-fg);
+      background: rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .copy-code:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .copy-code:active {
+      transform: translateY(2px);
+    }
+
+    .copy-code svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    pre {
+      margin: 0;
+      padding: 48px 18px 18px;
+      overflow: auto;
+      color: var(--code-fg);
+      background: #282C34;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font-family: inherit;
+      white-space: pre;
+    }
+
+    .hljs { color: var(--code-fg); background: transparent; }
+    .hljs-comment, .hljs-quote { color: var(--code-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--code-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: var(--code-string); }
+    .hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--code-function); }
+    .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--code-number); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-built_in { color: var(--code-type); }
+    .hljs-operator, .hljs-attr, .hljs-attribute { color: var(--code-operator); }
+    .hljs-deletion, .hljs-variable, .hljs-template-variable { color: var(--code-error); }
+
+    .closing-note {
+      color: var(--fg);
+      font-weight: 560;
+    }
+
+    .toc {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1;
+      top: 28px;
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      box-shadow: 0 8px 28px var(--shadow);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+
+    .toc details {
+      padding: 8px;
+    }
+
+    .toc summary {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .toc summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .toc details:not([open]) .toc-list {
+      display: none;
+    }
+
+    .toc summary svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .toc-list li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list li::before {
+      display: none;
+    }
+
+    .toc-list a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: color-mix(in oklch, var(--muted) 86%, transparent);
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .toc-list a:hover {
+      color: var(--fg);
+      background: rgba(255,255,255,0.42);
+    }
+
+    .toc-list a[aria-current="true"] {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 20%, white);
+      font-weight: 550;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 480ms ease, transform 480ms ease;
+    }
+
+    @media (max-width: 1240px) {
+      .page-shell {
+        width: min(980px, calc(100% - 40px));
+      }
+
+      .reader-layout,
+      .reader-layout:has(.toc details:not([open])) {
+        grid-template-columns: minmax(0, 920px);
+        gap: 18px;
+      }
+
+      .toc {
+        z-index: 10;
+        grid-column: 1;
+        top: 12px;
+        grid-row: 1;
+        max-height: min(62vh, 520px);
+      }
+
+      .toc summary {
+        display: flex;
+      }
+
+      .toc details:not([open]) .toc-list {
+        display: none;
+      }
+
+      .document {
+        grid-column: 1;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 16px;
+      }
+
+      .page-shell {
+        width: min(100% - 24px, 620px);
+        padding: 18px 0 64px;
+      }
+
+      .glass-card {
+        padding: 24px 20px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+      }
+
+      .hero {
+        padding-top: 32px;
+        padding-bottom: 42px;
+      }
+
+      .hero::after {
+        left: 20px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 7vw, 29px);
+      }
+
+      h3 {
+        margin-top: 28px;
+      }
+
+      .steps > li {
+        gap: 10px;
+      }
+
+      .step-card {
+        padding: 12px 13px;
+      }
+
+      pre {
+        padding: 48px 16px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media print {
+      @page { margin: 16mm; }
+
+      body {
+        color: #4A3F44;
+        background: white !important;
+        font-size: 12pt;
+      }
+
+      .ambient, .toc, .copy-code {
+        display: none !important;
+      }
+
+      .page-shell {
+        width: 100%;
+        padding: 0;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .glass-card {
+        break-inside: avoid;
+        padding: 0;
+        margin: 0 0 18pt;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .hero::after {
+        display: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .code-shell, pre {
+        break-inside: avoid;
+        color: #ABB2BF !important;
+        background: #282C34 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  
+
+    .table-wrap {
+      margin: 20px 0 22px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      font-size: 0.92em;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 14%, white);
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+</style>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="ambient ambient-three" aria-hidden="true"></div>
+
+  <main class="page-shell" data-od-id="page-shell">
+    <div class="reader-layout">
+      <article class="document" id="document-content" data-od-id="document-content">
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 3 · 第一个 StateGraph（从 0 建 Python 工程 + 起手线性图）— 版本 C</h1></header>
+<blockquote>
+<p>greenfield：忽略任何现有 Python 工程，<strong>从空目录用 uv + LangGraph 官方 starter 起手</strong>。🟢复刻官方 starter 跑通 → 🟡改造成接真实模型+工具 → 🔴自研工具薄封装。<strong>这是你第一次真正碰 LangGraph。</strong></p>
+</blockquote>
+<section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
+<ol>
+<li>从零建一个干净的 uv + LangGraph 工程，把 config/多模型路由接好，用真实 LLM（DashScope + OpenRouter）跑通一次结构化输出。</li>
+<li>说清 <code>StateGraph</code>、节点、边是什么，并让一个单节点图真实调用一次 query_metrics 拿到真数据。</li>
+<li>用 <code>get_model("triage"|"investigate"|"verify"|"report")</code> 按角色取到不同模型，为后面所有节点铺路。</li>
+</ol>
+</section>
+<section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<ul>
+<li><code>agent-platform/</code>（<strong>新建</strong> uv 工程）：<code>pyproject.toml</code>、<code>langgraph.json</code>、<code>.env.example</code></li>
+<li><code>src/.../config.py</code>（Settings）、<code>src/.../models/router.py</code>（<code>get_model(role)</code> + <code>get_embeddings()</code>）</li>
+<li><code>src/.../tools/client.py</code>（GatewayClient + Envelope）、<code>src/.../tools/definitions.py</code>（@tool）</li>
+<li><code>src/.../graph.py</code>（单节点图调工具）、<code>scripts/smoke_models.py</code></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t3-1-从-0-建工程-config-多模型路由" data-od-id="section-任务-t3-1-从-0-建工程-config-多模型路由"><h2 data-od-id="section-任务-t3-1-从-0-建工程-config-多模型路由">任务 T3.1 · 从 0 建工程 + config + 多模型路由</h2>
+<div class="meta-strip"><p><strong>id</strong>：T3.1 ｜ <strong>所属模块</strong>：M3 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：从空目录建出能按角色取真实模型、能读配置的 LangGraph 工程骨架。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>LangGraph 工程结构（langgraph.json / graph.py）</strong>：LangGraph 应用靠 <code>langgraph.json</code> 声明图入口，<code>graph.py</code> 导出编译好的图，<code>langgraph dev</code> 起本地服务自带 API。<em>Java 类比</em>：<code>langgraph.json</code> 像 <code>application.yml</code> 指定启动入口，<code>graph.py</code> 像 <code>@Configuration</code> 装配。📖 <a href="https://docs.langchain.com/oss/python/langgraph" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langgraph</a> （工程结构/langgraph.json，需核实锚点）· video-2 P27-31「安装/启动 LangGraph 本地服务·调用 API」</li>
+<li><strong>多模型路由 get_model(role)</strong>：不同节点用不同模型，集中在一个工厂按角色返回。<em>Java 类比</em>：一个 <code>ModelFactory</code>，按枚举返回不同 <code>@Bean</code>，型号/密钥全从配置注入。📖 <a href="https://docs.langchain.com/oss/python/langchain/models" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/models</a> （需核实锚点）· video-2 P5-9「调用大模型·结构化输出」</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-用官方-starter-起一个空图并跑通-4" id="section-第-1-段-复刻-用官方-starter-起一个空图并跑通-4">🟢 第 1 段 · 复刻（用官方 starter 起一个空图并跑通）</h3>
+<ul>
+<li><strong>读什么</strong>：LangGraph 官方入门——<code>uv init</code> 建工程后，用 <code>langgraph new</code>（或 <code>pip install "langgraph-cli[inmem]"</code> 后的 create-app 模板）生成 starter，读它自带的 <code>langgraph.json</code> + <code>src/agent/graph.py</code>（那个返回固定值的单节点）。</li>
+<li><strong>跑什么</strong>：<code>langgraph dev</code> 启动，让 starter 原样跑出它的默认返回——<strong>先证明这套壳在你机器上能转</strong>（复刻官方样例，一行不改）。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-接真实模型-5" id="section-第-2-段-改造-接真实模型-5">🟡 第 2 段 · 改造（接真实模型）</h3>
+<ul>
+<li>新建 <code>config.py</code>（<code>Settings(BaseSettings)</code>：网关 base_url/token、4 角色模型名、阈值）与 <code>models/router.py</code>（<code>get_model(role)</code> 走 <strong>DashScope + OpenRouter 官方 integration</strong>，型号/密钥全从 Settings 注入 [R5]）。</li>
+<li><code>.env.example</code> 只列变量名 + 安全占位符，真 key 不入库。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-写冒烟脚本-6" id="section-第-3-段-自研-写冒烟脚本-6">🔴 第 3 段 · 自研（写冒烟脚本）</h3>
+<ul>
+<li><strong>从空文件</strong>写 <code>scripts/smoke_models.py</code>：对每个启用的 provider 各做一次真实 <code>invoke</code> + 一次 <code>with_structured_output</code>，打印 provider/model/耗时/PASS-FAIL，<strong>不打印 key</strong>。任一运行时角色未连通就不许进 T3.2。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：<code>langgraph new</code> 生成 starter，<code>langgraph dev</code> 原样跑通。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造：写 config + router，<code>.env</code> 填真实 key/base_url/model。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求看报错：跑 smoke_models，看哪个 provider 没连通。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">填逻辑：修 base_url/model 直到全 PASS。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">自研补全 smoke 脚本的结构化输出分支。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>模型接入全走 langchain 官方 integration 包，<strong>别自写 HTTP 客户端</strong>。</li>
+<li><code>.env</code> 真 key 不入库；<code>.env.example</code> 只放变量名。</li>
+<li>OpenRouter 一把 key 可代理多家族——verify 的"另一家族"就靠它（M9 用）。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li><code>langgraph dev</code> 起不来：确认 <code>langgraph-cli[inmem]</code> 装了、<code>langgraph.json</code> 的 graph 路径对。</li>
+<li>structured_output 报错：先确认该模型支持工具调用/JSON 模式（DashScope 与 OpenRouter 模型能力不同）。</li>
+<li>视频：video-1 P16「init_chat_model」是最直接的模型初始化兜底讲解。</li>
+<li>问 AI：「我用 <code>langgraph new</code> 建了工程，<code>langgraph dev</code> 报找不到 graph，我的 langgraph.json 这样（贴出），哪里错了？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">langgraph dev        # 官方 starter 原样起来（复刻段验收）
+uv run python scripts/smoke_models.py     # 每个 provider：invoke + structured_output 均 PASS
+# 异常路径：把 DASHSCOPE_API_KEY 改错一位 → 该 provider 打印 FAIL 且不泄露 key
+</code></pre></div>
+<p>判定特征：starter 能起；smoke 全 PASS（真实调用，非 mock）；错 key 时该 provider FAIL。依赖真实服务：DashScope、OpenRouter。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>langgraph new</code> starter 能原样跑通（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>get_model(role)</code> 四角色各返回正确的真实模型</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>smoke_models.py</code> 对 DashScope + OpenRouter 真实 invoke + 结构化输出全 PASS</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>工程是全新 uv 工程，未引用任何旧代码</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>.env.example</code> 只有变量名，无真实 key</span></label></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t3-2-第一个-stategraph-单节点调真实工具" data-od-id="section-任务-t3-2-第一个-stategraph-单节点调真实工具"><h2 data-od-id="section-任务-t3-2-第一个-stategraph-单节点调真实工具">任务 T3.2 · 第一个 StateGraph 单节点调真实工具</h2>
+<div class="meta-strip"><p><strong>id</strong>：T3.2 ｜ <strong>所属模块</strong>：M3 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：把 starter 的默认节点改成"真实调一次 query_metrics 并把结果放进 state"，理解 StateGraph 三要素。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>StateGraph = 状态 + 节点 + 边</strong>：状态是节点间传递的字典，节点是函数（读 state→改 state），边决定下一步去哪。<em>Java 类比</em>：一个显式画出来的状态机/流程图（BPMN），节点是方法，state 是流转的上下文对象。📖 <a href="https://docs.langchain.com/oss/python/langgraph" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langgraph</a> （StateGraph 概念，需核实锚点）· video-2 P58-60「State&amp;Reducer·节点&amp;路由」</li>
+<li><strong>@tool + GatewayClient 薄封装</strong>：把网关 HTTP 调用包成 LangChain 工具供节点调。<em>Java 类比</em>：给远程接口写一个 Feign client，只是带 args_schema 让 LLM 看得懂参数。📖 <a href="https://docs.langchain.com/oss/python/langchain/tools" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/tools</a> （需核实锚点）· video-2 P12-16「智能体中定义工具」</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-读-starter-的图结构-8" id="section-第-1-段-复刻-读-starter-的图结构-8">🟢 第 1 段 · 复刻（读 starter 的图结构）</h3>
+<ul>
+<li><strong>读什么</strong>：starter <code>graph.py</code> 里 <code>StateGraph(State)</code> → <code>add_node(...)</code> → <code>add_edge(START, ...)</code> → <code>compile()</code> 的骨架。</li>
+<li><strong>跑什么</strong>：原样跑一次，观察 state 怎么进、怎么出。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-把节点改成调工具-9" id="section-第-2-段-改造-把节点改成调工具-9">🟡 第 2 段 · 改造（把节点改成调工具）</h3>
+<ul>
+<li>把默认节点改成 <code>investigate_once</code>：读 state 里的 service → 调 <code>query_metrics</code> 工具（经 GatewayClient）→ 把返回的信封摘要写回 state → END。</li>
+<li>state 里加字段承载工具结果。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-写-gatewayclient-10" id="section-第-3-段-自研-写-gatewayclient-10">🔴 第 3 段 · 自研（写 GatewayClient）</h3>
+<ul>
+<li><strong>从空文件</strong>写 <code>tools/client.py</code>：<code>GatewayClient(base_url,token,incident_id,agent_role).call(path,body)-&gt;Envelope</code>；429 抛 <code>BudgetExceededError</code>；其余 4xx 抛 <code>GatewayRequestError</code>。<code>tools/definitions.py</code> 用 Pydantic args_schema 包 7 个 @tool，degraded 透传。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻读 starter 图三要素。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造：节点先返回固定假值，让图从 START 走到 END 通。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求看报错：<code>curl</code> 触发图 → 节点里 GatewayClient 还没写→报错。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">填逻辑：写 GatewayClient，节点真实调 query_metrics（打 M2 的网关）。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">再请求：看到 state 里出现真实指标数据。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>先让"空节点跑通图"再填工具调用——别一步到位。</li>
+<li>degraded 是一等信号，必须从工具透传进 state（H3），不能吞掉。</li>
+<li>这个单节点图是 M4 状态机的种子，state 字段起名要能复用。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>图跑不动：先确认 <code>compile()</code> 成功、START/END 边接对；看 LangGraph 报的节点名。</li>
+<li>视频：video-2 P25-26「LangGraph 介绍·Agent&amp;WorkFlow」建立"图 vs Agent"的直觉。</li>
+<li>问 AI：「我在 LangGraph starter 基础上把节点改成调一个 HTTP 工具，图能编译但节点拿不到 state 的 service 字段，我的 State 定义和节点签名这样（贴出），问题在哪？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">curl -XPOST localhost:8000/... -d '{"service":"&lt;pm-svc&gt;","template":"error_rate","window":"30m"}'
+# 期望：返回体里看到来自真实 Prometheus 的指标数据（经 M2 网关的 query_metrics）
+# 异常路径：把网关 token 改错 → 节点抛 GatewayRequestError，图优雅结束不崩、返回可读错误
+</code></pre></div>
+<p>判定特征：图调到真实 query_metrics 返回真数据；错 token 时优雅报错不崩。依赖真实服务：M2 网关、Prometheus。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>starter 图能原样跑通（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>单节点图真实调用 query_metrics 并把结果写回 state</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>GatewayClient</code> 429→BudgetExceededError、degraded 透传</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>错 token 异常路径：图不崩、返回可读错误</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m3-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>state 字段命名为 M4 状态机预留复用空间</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：LangGraph 从 0 上手全靠"复刻官方 starter → 改造节点调真实工具 → 自研工具封装"，把陌生框架从空工程一层层长出来。</em></p>
+</section>
+      </article>
+      <aside class="toc" data-od-id="table-of-contents">
+        <details open>
+          <summary aria-label="展开或收起目录">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </summary>
+          <ol class="toc-list" id="toc-list">
+            <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
+            <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
+            <li><a href="#section-任务-t3-1-从-0-建工程-config-多模型路由">任务 T3.1 · 从 0 建工程 + config + 多模型路由</a></li>
+            <li><a href="#section-任务-t3-2-第一个-stategraph-单节点调真实工具">任务 T3.2 · 第一个 StateGraph 单节点调真实工具</a></li>
+          </ol>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgMyDCtyDnrKzkuIDkuKogU3RhdGVHcmFwaO+8iOS7jiAwIOW7uiBQeXRob24g5bel56iLICsg6LW35omL57q/5oCn5Zu+77yJ4oCUIOeJiOacrCBDCgo+IGdyZWVuZmllbGTvvJrlv73nlaXku7vkvZXnjrDmnIkgUHl0aG9uIOW3peeoi++8jCoq5LuO56m655uu5b2V55SoIHV2ICsgTGFuZ0dyYXBoIOWumOaWuSBzdGFydGVyIOi1t+aJiyoq44CC8J+fouWkjeWIu+WumOaWuSBzdGFydGVyIOi3kemAmiDihpIg8J+foeaUuemAoOaIkOaOpeecn+WunuaooeWeiyvlt6Xlhbcg4oaSIPCflLToh6rnoJTlt6XlhbfoloTlsIHoo4XjgIIqKui/meaYr+S9oOesrOS4gOasoeecn+ato+eisCBMYW5nR3JhcGjjgIIqKgoKIyMg5a2m5a6M5pys5qih5Z2X5L2g6IO95YGa5Yiw55qEIDMg5Lu25LqLCjEuIOS7jumbtuW7uuS4gOS4quW5suWHgOeahCB1diArIExhbmdHcmFwaCDlt6XnqIvvvIzmioogY29uZmlnL+WkmuaooeWei+i3r+eUseaOpeWlve+8jOeUqOecn+WuniBMTE3vvIhEYXNoU2NvcGUgKyBPcGVuUm91dGVy77yJ6LeR6YCa5LiA5qyh57uT5p6E5YyW6L6T5Ye644CCCjIuIOivtOa4hSBgU3RhdGVHcmFwaGDjgIHoioLngrnjgIHovrnmmK/ku4DkuYjvvIzlubborqnkuIDkuKrljZXoioLngrnlm77nnJ/lrp7osIPnlKjkuIDmrKEgcXVlcnlfbWV0cmljcyDmi7/liLDnnJ/mlbDmja7jgIIKMy4g55SoIGBnZXRfbW9kZWwoInRyaWFnZSJ8ImludmVzdGlnYXRlInwidmVyaWZ5InwicmVwb3J0IilgIOaMieinkuiJsuWPluWIsOS4jeWQjOaooeWei++8jOS4uuWQjumdouaJgOacieiKgueCuemTuui3r+OAggoKIyMg5pys5qih5Z2X5Lqk5LuY54mp5riF5Y2V77yI5paH5Lu26Lev5b6E57qn77yJCi0gYGFnZW50LXBsYXRmb3JtL2DvvIgqKuaWsOW7uioqIHV2IOW3peeoi++8ie+8mmBweXByb2plY3QudG9tbGDjgIFgbGFuZ2dyYXBoLmpzb25g44CBYC5lbnYuZXhhbXBsZWAKLSBgc3JjLy4uLi9jb25maWcucHlg77yIU2V0dGluZ3PvvInjgIFgc3JjLy4uLi9tb2RlbHMvcm91dGVyLnB5YO+8iGBnZXRfbW9kZWwocm9sZSlgICsgYGdldF9lbWJlZGRpbmdzKClg77yJCi0gYHNyYy8uLi4vdG9vbHMvY2xpZW50LnB5YO+8iEdhdGV3YXlDbGllbnQgKyBFbnZlbG9wZe+8ieOAgWBzcmMvLi4uL3Rvb2xzL2RlZmluaXRpb25zLnB5YO+8iEB0b29s77yJCi0gYHNyYy8uLi4vZ3JhcGgucHlg77yI5Y2V6IqC54K55Zu+6LCD5bel5YW377yJ44CBYHNjcmlwdHMvc21va2VfbW9kZWxzLnB5YAoKLS0tCgojIyDku7vliqEgVDMuMSDCtyDku44gMCDlu7rlt6XnqIsgKyBjb25maWcgKyDlpJrmqKHlnovot6/nlLEKCioqaWQqKu+8mlQzLjEg772cICoq5omA5bGe5qih5Z2XKirvvJpNMyDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5LuO56m655uu5b2V5bu65Ye66IO95oyJ6KeS6Imy5Y+W55yf5a6e5qih5Z6L44CB6IO96K+76YWN572u55qEIExhbmdHcmFwaCDlt6XnqIvpqqjmnrbjgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoqTGFuZ0dyYXBoIOW3peeoi+e7k+aehO+8iGxhbmdncmFwaC5qc29uIC8gZ3JhcGgucHnvvIkqKu+8mkxhbmdHcmFwaCDlupTnlKjpnaAgYGxhbmdncmFwaC5qc29uYCDlo7DmmI7lm77lhaXlj6PvvIxgZ3JhcGgucHlgIOWvvOWHuue8luivkeWlveeahOWbvu+8jGBsYW5nZ3JhcGggZGV2YCDotbfmnKzlnLDmnI3liqHoh6rluKYgQVBJ44CCKkphdmEg57G75q+UKu+8mmBsYW5nZ3JhcGguanNvbmAg5YOPIGBhcHBsaWNhdGlvbi55bWxgIOaMh+WumuWQr+WKqOWFpeWPo++8jGBncmFwaC5weWAg5YOPIGBAQ29uZmlndXJhdGlvbmAg6KOF6YWN44CC8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdncmFwaCDvvIjlt6XnqIvnu5PmnoQvbGFuZ2dyYXBoLmpzb27vvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFAyNy0zMeOAjOWuieijhS/lkK/liqggTGFuZ0dyYXBoIOacrOWcsOacjeWKocK36LCD55SoIEFQSeOAjQotICoq5aSa5qih5Z6L6Lev55SxIGdldF9tb2RlbChyb2xlKSoq77ya5LiN5ZCM6IqC54K555So5LiN5ZCM5qih5Z6L77yM6ZuG5Lit5Zyo5LiA5Liq5bel5Y6C5oyJ6KeS6Imy6L+U5Zue44CCKkphdmEg57G75q+UKu+8muS4gOS4qiBgTW9kZWxGYWN0b3J5YO+8jOaMieaemuS4vui/lOWbnuS4jeWQjCBgQEJlYW5g77yM5Z6L5Y+3L+WvhumSpeWFqOS7jumFjee9ruazqOWFpeOAgvCfk5YgaHR0cHM6Ly9kb2NzLmxhbmdjaGFpbi5jb20vb3NzL3B5dGhvbi9sYW5nY2hhaW4vbW9kZWxzIO+8iOmcgOaguOWunumUmueCue+8icK3IHZpZGVvLTIgUDUtOeOAjOiwg+eUqOWkp+aooeWei8K357uT5p6E5YyW6L6T5Ye644CNCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi777yI55So5a6Y5pa5IHN0YXJ0ZXIg6LW35LiA5Liq56m65Zu+5bm26LeR6YCa77yJCi0gKiror7vku4DkuYgqKu+8mkxhbmdHcmFwaCDlrpjmlrnlhaXpl6jigJTigJRgdXYgaW5pdGAg5bu65bel56iL5ZCO77yM55SoIGBsYW5nZ3JhcGggbmV3YO+8iOaIliBgcGlwIGluc3RhbGwgImxhbmdncmFwaC1jbGlbaW5tZW1dImAg5ZCO55qEIGNyZWF0ZS1hcHAg5qih5p2/77yJ55Sf5oiQIHN0YXJ0ZXLvvIzor7vlroPoh6rluKbnmoQgYGxhbmdncmFwaC5qc29uYCArIGBzcmMvYWdlbnQvZ3JhcGgucHlg77yI6YKj5Liq6L+U5Zue5Zu65a6a5YC855qE5Y2V6IqC54K577yJ44CCCi0gKirot5Hku4DkuYgqKu+8mmBsYW5nZ3JhcGggZGV2YCDlkK/liqjvvIzorqkgc3RhcnRlciDljp/moLfot5Hlh7rlroPnmoTpu5jorqTov5Tlm57igJTigJQqKuWFiOivgeaYjui/meWll+Wjs+WcqOS9oOacuuWZqOS4iuiDvei9rCoq77yI5aSN5Yi75a6Y5pa55qC35L6L77yM5LiA6KGM5LiN5pS577yJ44CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCg77yI5o6l55yf5a6e5qih5Z6L77yJCi0g5paw5bu6IGBjb25maWcucHlg77yIYFNldHRpbmdzKEJhc2VTZXR0aW5ncylg77ya572R5YWzIGJhc2VfdXJsL3Rva2Vu44CBNCDop5LoibLmqKHlnovlkI3jgIHpmIjlgLzvvInkuI4gYG1vZGVscy9yb3V0ZXIucHlg77yIYGdldF9tb2RlbChyb2xlKWAg6LWwICoqRGFzaFNjb3BlICsgT3BlblJvdXRlciDlrpjmlrkgaW50ZWdyYXRpb24qKu+8jOWei+WPty/lr4bpkqXlhajku44gU2V0dGluZ3Mg5rOo5YWlIFtSNV3vvInjgIIKLSBgLmVudi5leGFtcGxlYCDlj6rliJflj5jph4/lkI0gKyDlronlhajljaDkvY3nrKbvvIznnJ8ga2V5IOS4jeWFpeW6k+OAggoKIyMjIPCflLQg56ysIDMg5q61IMK3IOiHqueglO+8iOWGmeWGkueDn+iEmuacrO+8iQotICoq5LuO56m65paH5Lu2KirlhpkgYHNjcmlwdHMvc21va2VfbW9kZWxzLnB5YO+8muWvueavj+S4quWQr+eUqOeahCBwcm92aWRlciDlkITlgZrkuIDmrKHnnJ/lrp4gYGludm9rZWAgKyDkuIDmrKEgYHdpdGhfc3RydWN0dXJlZF9vdXRwdXRg77yM5omT5Y2wIHByb3ZpZGVyL21vZGVsL+iAl+aXti9QQVNTLUZBSUzvvIwqKuS4jeaJk+WNsCBrZXkqKuOAguS7u+S4gOi/kOihjOaXtuinkuiJsuacqui/numAmuWwseS4jeiuuOi/myBUMy4y44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWkjeWIu++8mmBsYW5nZ3JhcGggbmV3YCDnlJ/miJAgc3RhcnRlcu+8jGBsYW5nZ3JhcGggZGV2YCDljp/moLfot5HpgJrjgIIKMi4g5pS56YCg77ya5YaZIGNvbmZpZyArIHJvdXRlcu+8jGAuZW52YCDloavnnJ/lrp4ga2V5L2Jhc2VfdXJsL21vZGVs44CCCjMuIOWPkeS4gOasoeivt+axgueci+aKpemUme+8mui3kSBzbW9rZV9tb2RlbHPvvIznnIvlk6rkuKogcHJvdmlkZXIg5rKh6L+e6YCa44CCCjQuIOWhq+mAu+i+ke+8muS/riBiYXNlX3VybC9tb2RlbCDnm7TliLDlhaggUEFTU+OAggo1LiDoh6rnoJTooaXlhaggc21va2Ug6ISa5pys55qE57uT5p6E5YyW6L6T5Ye65YiG5pSv44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOaooeWei+aOpeWFpeWFqOi1sCBsYW5nY2hhaW4g5a6Y5pa5IGludGVncmF0aW9uIOWMhe+8jCoq5Yir6Ieq5YaZIEhUVFAg5a6i5oi356uvKirjgIIKLSBgLmVudmAg55yfIGtleSDkuI3lhaXlupPvvJtgLmVudi5leGFtcGxlYCDlj6rmlL7lj5jph4/lkI3jgIIKLSBPcGVuUm91dGVyIOS4gOaKiiBrZXkg5Y+v5Luj55CG5aSa5a625peP4oCU4oCUdmVyaWZ5IOeahCLlj6bkuIDlrrbml48i5bCx6Z2g5a6D77yITTkg55So77yJ44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0gYGxhbmdncmFwaCBkZXZgIOi1t+S4jeadpe+8muehruiupCBgbGFuZ2dyYXBoLWNsaVtpbm1lbV1gIOijheS6huOAgWBsYW5nZ3JhcGguanNvbmAg55qEIGdyYXBoIOi3r+W+hOWvueOAggotIHN0cnVjdHVyZWRfb3V0cHV0IOaKpemUme+8muWFiOehruiupOivpeaooeWei+aUr+aMgeW3peWFt+iwg+eUqC9KU09OIOaooeW8j++8iERhc2hTY29wZSDkuI4gT3BlblJvdXRlciDmqKHlnovog73lipvkuI3lkIzvvInjgIIKLSDop4bpopHvvJp2aWRlby0xIFAxNuOAjGluaXRfY2hhdF9tb2RlbOOAjeaYr+acgOebtOaOpeeahOaooeWei+WIneWni+WMluWFnOW6leiusuino+OAggotIOmXriBBSe+8muOAjOaIkeeUqCBgbGFuZ2dyYXBoIG5ld2Ag5bu65LqG5bel56iL77yMYGxhbmdncmFwaCBkZXZgIOaKpeaJvuS4jeWIsCBncmFwaO+8jOaIkeeahCBsYW5nZ3JhcGguanNvbiDov5nmoLfvvIjotLTlh7rvvInvvIzlk6rph4zplJnkuobvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaApsYW5nZ3JhcGggZGV2ICAgICAgICAjIOWumOaWuSBzdGFydGVyIOWOn+agt+i1t+adpe+8iOWkjeWIu+autemqjOaUtu+8iQp1diBydW4gcHl0aG9uIHNjcmlwdHMvc21va2VfbW9kZWxzLnB5ICAgICAjIOavj+S4qiBwcm92aWRlcu+8mmludm9rZSArIHN0cnVjdHVyZWRfb3V0cHV0IOWdhyBQQVNTCiMg5byC5bi46Lev5b6E77ya5oqKIERBU0hTQ09QRV9BUElfS0VZIOaUuemUmeS4gOS9jSDihpIg6K+lIHByb3ZpZGVyIOaJk+WNsCBGQUlMIOS4lOS4jeazhOmcsiBrZXkKYGBgCuWIpOWumueJueW+ge+8mnN0YXJ0ZXIg6IO96LW377ybc21va2Ug5YWoIFBBU1PvvIjnnJ/lrp7osIPnlKjvvIzpnZ4gbW9ja++8ie+8m+mUmSBrZXkg5pe26K+lIHByb3ZpZGVyIEZBSUzjgILkvp3otZbnnJ/lrp7mnI3liqHvvJpEYXNoU2NvcGXjgIFPcGVuUm91dGVy44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGBsYW5nZ3JhcGggbmV3YCBzdGFydGVyIOiDveWOn+agt+i3kemAmu+8iOWkjeWIu+aute+8iQotIFsgXSBgZ2V0X21vZGVsKHJvbGUpYCDlm5vop5LoibLlkITov5Tlm57mraPnoa7nmoTnnJ/lrp7mqKHlnosKLSBbIF0gYHNtb2tlX21vZGVscy5weWAg5a+5IERhc2hTY29wZSArIE9wZW5Sb3V0ZXIg55yf5a6eIGludm9rZSArIOe7k+aehOWMlui+k+WHuuWFqCBQQVNTCi0gWyBdIOW3peeoi+aYr+WFqOaWsCB1diDlt6XnqIvvvIzmnKrlvJXnlKjku7vkvZXml6fku6PnoIEKLSBbIF0gYC5lbnYuZXhhbXBsZWAg5Y+q5pyJ5Y+Y6YeP5ZCN77yM5peg55yf5a6eIGtleQoKLS0tCgojIyDku7vliqEgVDMuMiDCtyDnrKzkuIDkuKogU3RhdGVHcmFwaCDljZXoioLngrnosIPnnJ/lrp7lt6XlhbcKCioqaWQqKu+8mlQzLjIg772cICoq5omA5bGe5qih5Z2XKirvvJpNMyDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5oqKIHN0YXJ0ZXIg55qE6buY6K6k6IqC54K55pS55oiQIuecn+Wunuiwg+S4gOasoSBxdWVyeV9tZXRyaWNzIOW5tuaKiue7k+aenOaUvui/myBzdGF0ZSLvvIznkIbop6MgU3RhdGVHcmFwaCDkuInopoHntKDjgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoqU3RhdGVHcmFwaCA9IOeKtuaAgSArIOiKgueCuSArIOi+uSoq77ya54q25oCB5piv6IqC54K56Ze05Lyg6YCS55qE5a2X5YW477yM6IqC54K55piv5Ye95pWw77yI6K+7IHN0YXRl4oaS5pS5IHN0YXRl77yJ77yM6L655Yaz5a6a5LiL5LiA5q2l5Y675ZOq44CCKkphdmEg57G75q+UKu+8muS4gOS4quaYvuW8j+eUu+WHuuadpeeahOeKtuaAgeacui/mtYHnqIvlm77vvIhCUE1O77yJ77yM6IqC54K55piv5pa55rOV77yMc3RhdGUg5piv5rWB6L2s55qE5LiK5LiL5paH5a+56LGh44CC8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdncmFwaCDvvIhTdGF0ZUdyYXBoIOamguW/te+8jOmcgOaguOWunumUmueCue+8icK3IHZpZGVvLTIgUDU4LTYw44CMU3RhdGUmUmVkdWNlcsK36IqC54K5Jui3r+eUseOAjQotICoqQHRvb2wgKyBHYXRld2F5Q2xpZW50IOiWhOWwgeijhSoq77ya5oqK572R5YWzIEhUVFAg6LCD55So5YyF5oiQIExhbmdDaGFpbiDlt6XlhbfkvpvoioLngrnosIPjgIIqSmF2YSDnsbvmr5Qq77ya57uZ6L+c56iL5o6l5Y+j5YaZ5LiA5LiqIEZlaWduIGNsaWVudO+8jOWPquaYr+W4piBhcmdzX3NjaGVtYSDorqkgTExNIOeci+W+l+aHguWPguaVsOOAgvCfk5YgaHR0cHM6Ly9kb2NzLmxhbmdjaGFpbi5jb20vb3NzL3B5dGhvbi9sYW5nY2hhaW4vdG9vbHMg77yI6ZyA5qC45a6e6ZSa54K577yJwrcgdmlkZW8tMiBQMTItMTbjgIzmmbrog73kvZPkuK3lrprkuYnlt6XlhbfjgI0KCiMjIyDwn5+iIOesrCAxIOautSDCtyDlpI3liLvvvIjor7sgc3RhcnRlciDnmoTlm77nu5PmnoTvvIkKLSAqKuivu+S7gOS5iCoq77yac3RhcnRlciBgZ3JhcGgucHlgIOmHjCBgU3RhdGVHcmFwaChTdGF0ZSlgIOKGkiBgYWRkX25vZGUoLi4uKWAg4oaSIGBhZGRfZWRnZShTVEFSVCwgLi4uKWAg4oaSIGBjb21waWxlKClgIOeahOmqqOaetuOAggotICoq6LeR5LuA5LmIKirvvJrljp/moLfot5HkuIDmrKHvvIzop4Llr58gc3RhdGUg5oCO5LmI6L+b44CB5oCO5LmI5Ye644CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCg77yI5oqK6IqC54K55pS55oiQ6LCD5bel5YW377yJCi0g5oqK6buY6K6k6IqC54K55pS55oiQIGBpbnZlc3RpZ2F0ZV9vbmNlYO+8muivuyBzdGF0ZSDph4znmoQgc2VydmljZSDihpIg6LCDIGBxdWVyeV9tZXRyaWNzYCDlt6XlhbfvvIjnu48gR2F0ZXdheUNsaWVudO+8ieKGkiDmiorov5Tlm57nmoTkv6HlsIHmkZjopoHlhpnlm54gc3RhdGUg4oaSIEVOROOAggotIHN0YXRlIOmHjOWKoOWtl+auteaJv+i9veW3peWFt+e7k+aenOOAggoKIyMjIPCflLQg56ysIDMg5q61IMK3IOiHqueglO+8iOWGmSBHYXRld2F5Q2xpZW5077yJCi0gKirku47nqbrmlofku7YqKuWGmSBgdG9vbHMvY2xpZW50LnB5YO+8mmBHYXRld2F5Q2xpZW50KGJhc2VfdXJsLHRva2VuLGluY2lkZW50X2lkLGFnZW50X3JvbGUpLmNhbGwocGF0aCxib2R5KS0+RW52ZWxvcGVg77ybNDI5IOaKmyBgQnVkZ2V0RXhjZWVkZWRFcnJvcmDvvJvlhbbkvZkgNHh4IOaKmyBgR2F0ZXdheVJlcXVlc3RFcnJvcmDjgIJgdG9vbHMvZGVmaW5pdGlvbnMucHlgIOeUqCBQeWRhbnRpYyBhcmdzX3NjaGVtYSDljIUgNyDkuKogQHRvb2zvvIxkZWdyYWRlZCDpgI/kvKDjgIIKCioq6JC956yU6aG65bqPKioKMS4g5aSN5Yi76K+7IHN0YXJ0ZXIg5Zu+5LiJ6KaB57Sg44CCCjIuIOaUuemAoO+8muiKgueCueWFiOi/lOWbnuWbuuWumuWBh+WAvO+8jOiuqeWbvuS7jiBTVEFSVCDotbDliLAgRU5EIOmAmuOAggozLiDlj5HkuIDmrKHor7fmsYLnnIvmiqXplJnvvJpgY3VybGAg6Kem5Y+R5Zu+IOKGkiDoioLngrnph4wgR2F0ZXdheUNsaWVudCDov5jmsqHlhpnihpLmiqXplJnjgIIKNC4g5aGr6YC76L6R77ya5YaZIEdhdGV3YXlDbGllbnTvvIzoioLngrnnnJ/lrp7osIMgcXVlcnlfbWV0cmljc++8iOaJkyBNMiDnmoTnvZHlhbPvvInjgIIKNS4g5YaN6K+35rGC77ya55yL5YiwIHN0YXRlIOmHjOWHuueOsOecn+WunuaMh+agh+aVsOaNruOAggoKKirlhbPplK7mj5DnpLrvvIjiiaQz77yJKioKLSDlhYjorqki56m66IqC54K56LeR6YCa5Zu+IuWGjeWhq+W3peWFt+iwg+eUqOKAlOKAlOWIq+S4gOatpeWIsOS9jeOAggotIGRlZ3JhZGVkIOaYr+S4gOetieS/oeWPt++8jOW/hemhu+S7juW3peWFt+mAj+S8oOi/myBzdGF0Ze+8iEgz77yJ77yM5LiN6IO95ZCe5o6J44CCCi0g6L+Z5Liq5Y2V6IqC54K55Zu+5pivIE00IOeKtuaAgeacuueahOenjeWtkO+8jHN0YXRlIOWtl+autei1t+WQjeimgeiDveWkjeeUqOOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOWbvui3keS4jeWKqO+8muWFiOehruiupCBgY29tcGlsZSgpYCDmiJDlip/jgIFTVEFSVC9FTkQg6L655o6l5a+577yb55yLIExhbmdHcmFwaCDmiqXnmoToioLngrnlkI3jgIIKLSDop4bpopHvvJp2aWRlby0yIFAyNS0yNuOAjExhbmdHcmFwaCDku4vnu43Ct0FnZW50JldvcmtGbG9344CN5bu656uLIuWbviB2cyBBZ2VudCLnmoTnm7Top4njgIIKLSDpl64gQUnvvJrjgIzmiJHlnKggTGFuZ0dyYXBoIHN0YXJ0ZXIg5Z+656GA5LiK5oqK6IqC54K55pS55oiQ6LCD5LiA5LiqIEhUVFAg5bel5YW377yM5Zu+6IO957yW6K+R5L2G6IqC54K55ou/5LiN5YiwIHN0YXRlIOeahCBzZXJ2aWNlIOWtl+aute+8jOaIkeeahCBTdGF0ZSDlrprkuYnlkozoioLngrnnrb7lkI3ov5nmoLfvvIjotLTlh7rvvInvvIzpl67popjlnKjlk6rvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC8uLi4gLWQgJ3sic2VydmljZSI6IjxwbS1zdmM+IiwidGVtcGxhdGUiOiJlcnJvcl9yYXRlIiwid2luZG93IjoiMzBtIn0nCiMg5pyf5pyb77ya6L+U5Zue5L2T6YeM55yL5Yiw5p2l6Ieq55yf5a6eIFByb21ldGhldXMg55qE5oyH5qCH5pWw5o2u77yI57uPIE0yIOe9keWFs+eahCBxdWVyeV9tZXRyaWNz77yJCiMg5byC5bi46Lev5b6E77ya5oqK572R5YWzIHRva2VuIOaUuemUmSDihpIg6IqC54K55oqbIEdhdGV3YXlSZXF1ZXN0RXJyb3LvvIzlm77kvJjpm4Xnu5PmnZ/kuI3ltKnjgIHov5Tlm57lj6/or7vplJnor68KYGBgCuWIpOWumueJueW+ge+8muWbvuiwg+WIsOecn+WuniBxdWVyeV9tZXRyaWNzIOi/lOWbnuecn+aVsOaNru+8m+mUmSB0b2tlbiDml7bkvJjpm4XmiqXplJnkuI3ltKnjgILkvp3otZbnnJ/lrp7mnI3liqHvvJpNMiDnvZHlhbPjgIFQcm9tZXRoZXVz44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIHN0YXJ0ZXIg5Zu+6IO95Y6f5qC36LeR6YCa77yI5aSN5Yi75q6177yJCi0gWyBdIOWNleiKgueCueWbvuecn+Wunuiwg+eUqCBxdWVyeV9tZXRyaWNzIOW5tuaKiue7k+aenOWGmeWbniBzdGF0ZQotIFsgXSBgR2F0ZXdheUNsaWVudGAgNDI54oaSQnVkZ2V0RXhjZWVkZWRFcnJvcuOAgWRlZ3JhZGVkIOmAj+S8oAotIFsgXSDplJkgdG9rZW4g5byC5bi46Lev5b6E77ya5Zu+5LiN5bSp44CB6L+U5Zue5Y+v6K+76ZSZ6K+vCi0gWyBdIHN0YXRlIOWtl+auteWRveWQjeS4uiBNNCDnirbmgIHmnLrpooTnlZnlpI3nlKjnqbrpl7QKCi0tLQoq54mI5pysIEMg54m55b6B77yaTGFuZ0dyYXBoIOS7jiAwIOS4iuaJi+WFqOmdoCLlpI3liLvlrpjmlrkgc3RhcnRlciDihpIg5pS56YCg6IqC54K56LCD55yf5a6e5bel5YW3IOKGkiDoh6rnoJTlt6XlhbflsIHoo4Ui77yM5oqK6ZmM55Sf5qGG5p625LuO56m65bel56iL5LiA5bGC5bGC6ZW/5Ye65p2l44CCKgo=</script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var article = document.getElementById("document-content");
+      var tocList = document.getElementById("toc-list");
+
+      article.querySelectorAll(".completion-checkbox").forEach(function (checkbox) {
+        var storageKey = checkbox.getAttribute("data-check-key");
+        try {
+          checkbox.checked = localStorage.getItem(storageKey) === "true";
+        } catch (_) {}
+        checkbox.addEventListener("change", function () {
+          try {
+            localStorage.setItem(storageKey, String(checkbox.checked));
+          } catch (_) {}
+        });
+      });
+
+      article.querySelectorAll(".copy-code").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var code = button.closest(".code-shell").querySelector("code").textContent;
+          navigator.clipboard.writeText(code).then(function () {
+            button.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>';
+            window.setTimeout(function () {
+              button.innerHTML =
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>';
+            }, 1400);
+          });
+        });
+      });
+
+      if (window.hljs) {
+        article.querySelectorAll("pre code").forEach(function (block) {
+          window.hljs.highlightElement(block);
+        });
+      }
+
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      article.querySelectorAll(".reveal").forEach(function (node) {
+        revealObserver.observe(node);
+      });
+
+      var tocLinks = Array.from(tocList.querySelectorAll("a"));
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (link) {
+            var current = link.getAttribute("href") === "#" + entry.target.id;
+            if (current) link.setAttribute("aria-current", "true");
+            else link.removeAttribute("aria-current");
+          });
+        });
+      }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+      tocLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute("href"));
+        if (section) sectionObserver.observe(section);
+      });
+    }());
+  </script>
+</body>
+</html>

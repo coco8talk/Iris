@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T2.1 安全扫描报告 · 外部暴露面 / 注入防护</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --surface:#ffffff; --fg:#1c2130; --muted:#5b6472;
+    --border:#e3e6ee; --code-bg:#1e2230; --code-fg:#d5d9e5;
+    --red:#c0311f; --red-bg:#fbe9e7; --orange:#a4590a; --orange-bg:#fdf0dd;
+    --yellow:#8a6d0a; --yellow-bg:#fdf6da; --green:#0f7a3d; --green-bg:#e4f6ea;
+    --gray:#5b6472; --gray-bg:#eef0f4; --link:#2454b8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12141c; --surface:#181b26; --fg:#e6e8f0; --muted:#9aa1b2;
+      --border:#2a2e3d; --code-bg:#0d0f16; --code-fg:#cfd4e2;
+      --red:#ff8a75; --red-bg:#3a1b17; --orange:#f0a94e; --orange-bg:#3a2a10;
+      --yellow:#e6c94d; --yellow-bg:#332c0c; --green:#5fd189; --green-bg:#123322;
+      --gray:#aab0bf; --gray-bg:#20232f; --link:#8ab4ff;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    line-height:1.7; font-size:16px;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:40px 24px 100px;}
+  header{margin-bottom:32px;}
+  h1{font-size:1.7rem; margin:0 0 8px; letter-spacing:-0.01em;}
+  .subtitle{color:var(--muted); font-size:0.95rem;}
+  .meta-row{display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:14px; font-size:0.85rem; color:var(--muted);}
+  .meta-row span b{color:var(--fg);}
+  h2{font-size:1.25rem; margin:44px 0 14px; padding-bottom:8px; border-bottom:2px solid var(--border);}
+  h3{font-size:1.05rem; margin:28px 0 10px;}
+  h4{font-size:0.95rem; margin:20px 0 8px; color:var(--muted);}
+  p{margin:10px 0;}
+  code{
+    font-family:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    font-size:0.88em; background:var(--gray-bg); padding:1px 5px; border-radius:4px;
+  }
+  pre{
+    background:var(--code-bg); color:var(--code-fg); padding:14px 16px; border-radius:8px;
+    overflow-x:auto; font-size:0.83rem; line-height:1.55;
+  }
+  pre code{background:none; padding:0; color:inherit;}
+  a{color:var(--link);}
+  table{width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:0.88rem;}
+  th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:top;}
+  th{color:var(--muted); font-weight:600; font-size:0.78rem; text-transform:uppercase; letter-spacing:.03em;}
+  tr:last-child td{border-bottom:none;}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px 22px; margin:16px 0;}
+  .badge{
+    display:inline-block; padding:2px 9px; border-radius:99px; font-size:0.74rem; font-weight:700;
+    letter-spacing:.02em; white-space:nowrap;
+  }
+  .b-missing{background:var(--red-bg); color:var(--red);}
+  .b-partial{background:var(--yellow-bg); color:var(--yellow);}
+  .b-done{background:var(--green-bg); color:var(--green);}
+  .sev-critical{background:var(--red-bg); color:var(--red);}
+  .sev-high{background:var(--orange-bg); color:var(--orange);}
+  .sev-medium{background:var(--yellow-bg); color:var(--yellow);}
+  .sev-low{background:var(--gray-bg); color:var(--gray);}
+  .callout{
+    border-left:4px solid var(--orange); background:var(--orange-bg); border-radius:0 8px 8px 0;
+    padding:12px 16px; margin:16px 0; font-size:0.92rem;
+  }
+  .callout.danger{border-color:var(--red); background:var(--red-bg);}
+  .callout.info{border-color:var(--link); background:var(--gray-bg);}
+  .callout b{display:block; margin-bottom:4px;}
+  .grid-summary{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:18px 0;}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; text-align:center;}
+  .stat .num{font-size:1.9rem; font-weight:800;}
+  .stat .label{font-size:0.78rem; color:var(--muted); margin-top:2px;}
+  .stat.red .num{color:var(--red);}
+  .stat.green .num{color:var(--green);}
+  .stat.orange .num{color:var(--orange);}
+  ul{padding-left:22px;}
+  li{margin:4px 0;}
+  .filelist{columns:2; font-size:0.85rem; color:var(--muted);}
+  .toc{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 20px; font-size:0.88rem;}
+  .toc a{display:block; padding:3px 0; color:var(--fg); text-decoration:none;}
+  .toc a:hover{color:var(--link);}
+  footer{margin-top:60px; padding-top:20px; border-top:1px solid var(--border); font-size:0.8rem; color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>T2.1 安全扫描报告：外部暴露面 &amp; 注入防护</h1>
+  <div class="subtitle">iris-tool-gateway（分支 m2/tool-gateway-greenfield）代码现状核查，对照 M2-工具层契约.md</div>
+  <div class="meta-row">
+    <span>扫描范围：<b>src/main/java 全部 8 个 .java 文件</b></span>
+    <span>扫描日期：<b>2026-08-01</b></span>
+    <span>结论：<b style="color:var(--red)">当前实现处于"裸奔"阶段</b></span>
+  </div>
+</header>
+
+<div class="grid-summary">
+  <div class="stat green"><div class="num">3</div><div class="label">已实现组件</div></div>
+  <div class="stat red"><div class="num">6</div><div class="label">完全未实现</div></div>
+  <div class="stat orange"><div class="num">2</div><div class="label">Critical 风险</div></div>
+  <div class="stat orange"><div class="num">1</div><div class="label">附带发现（静默失效）</div></div>
+</div>
+
+<div class="toc">
+  <a href="#summary">0. 一句话结论</a>
+  <a href="#surface">1. 外部暴露面扫描（(a)）</a>
+  <a href="#injection">2. 注入防护判定（(b)）</a>
+  <a href="#bonus">3. 附带发现：BeanUtil.beanToMap 静默失效</a>
+  <a href="#risk">4. 风险分级汇总</a>
+  <a href="#plan">5. 实现方案（复刻 → 改造 → 自研）</a>
+  <a href="#appendix">6. 附录：扫描文件清单</a>
+  <a href="#templates" style="padding-left:14px; font-size:0.85em;">↳ 5.1 初始模板集（templateName + MetricTemplate）</a>
+</div>
+
+<h2 id="summary">0. 一句话结论</h2>
+<div class="callout danger">
+  <b>当前 MatricsController 把 Prometheus 原生 query_range 接口（query / start / end / step / timeout / limit / lookbackDelta / stats）几乎逐字段透传给外部调用方。</b>
+  这意味着"降采样 step 由网关代码从 window 反推""service 走白名单/CMDB 校验""raw 逃生通道单独收口"这三条设计红线目前<b>一条都没有落地</b>。
+  对照 M2 文档的三段式（🟢复刻 → 🟡改造 → 🔴自研），现状仍停留在<b>🟢第 1 段"复刻"</b>——"先直接返回上游原始 JSON"的阶段特征——尚未进入 🟡改造段（模板端点、降采样）,更谈不上 🔴自研段（横切面）。
+  已完成的只有骨架层：鉴权拦截器、全局异常分层、ApiEnvelope 信封结构。
+</div>
+
+<h2 id="surface">1. 外部暴露面扫描</h2>
+<p>逐项核对 M2 文档 T2.1/T2.2 交付物清单中要求的组件，在 <code>src/main/java</code>（共 8 个 .java 文件，见附录）里是否存在。</p>
+
+<table>
+<thead><tr><th style="width:26%">组件</th><th style="width:12%">状态</th><th style="width:42%">证据</th><th style="width:20%">契约来源</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>MetricsTemplateRegistry</code>（PromQL 模板白名单）</td>
+  <td><span class="badge b-missing">未实现</span></td>
+  <td>全仓库 grep 无匹配；<code>QueryRangeDTO</code> 里没有 <code>template</code> 字段，<code>query</code> 字段是调用方裸传的 PromQL 字符串（<code>QueryRangeDTO.java:26-29</code>）</td>
+  <td>M2 §T2.1 段2</td>
+</tr>
+<tr>
+  <td>window → step 换算逻辑</td>
+  <td><span class="badge b-missing">未实现</span></td>
+  <td><code>QueryRangeDTO</code> 根本没有 <code>window</code> 字段；<code>step</code>（<code>QueryRangeDTO.java:41-44</code>）由调用方直接指定字符串值，网关未做任何反推或钳制</td>
+  <td>设计结论 #2（红线）</td>
+</tr>
+<tr>
+  <td><code>service</code> 参数 CMDB/白名单校验</td>
+  <td><span class="badge b-missing">未实现</span></td>
+  <td><code>QueryRangeDTO</code> 里根本没有 <code>service</code> 字段——校验对象都不存在，属于"设计缺口"而非"存在但校验被绕过"</td>
+  <td>M2 §T2.2 段2 [R3]</td>
+</tr>
+<tr>
+  <td><code>RawController</code> / <code>RawQueryValidator</code>（raw 逃生通道）</td>
+  <td><span class="badge b-missing">未实现</span></td>
+  <td>全仓库 grep 无匹配；无 <code>raw</code> 相关包/类；无长度限制、无 selector 强制正则</td>
+  <td>M2 §T2.2 段3</td>
+</tr>
+<tr>
+  <td><code>BudgetService</code>（SQLite 计数 + 429）</td>
+  <td><span class="badge b-missing">未实现</span></td>
+  <td>全仓库 grep 无匹配；<code>pom.xml</code> 未引入任何 JDBC/SQLite 依赖（仅 webmvc / validation / lombok / knife4j / springdoc / hutool），意味着连底层存储都还没接线</td>
+  <td>设计结论 #4</td>
+</tr>
+<tr>
+  <td><code>AuditService</code></td>
+  <td><span class="badge b-missing">未实现</span></td>
+  <td>仅一行 TODO 注释：<code>MatricsController.java:100</code> <code>// todo 审计</code></td>
+  <td>M2 §T2.1 段3</td>
+</tr>
+<tr>
+  <td><code>AuthInterceptor</code>（Bearer + Incident/Role 头）</td>
+  <td><span class="badge b-done">已实现</span></td>
+  <td><code>AuthInterceptor.java</code> 全文；已在 <code>WebConfig</code> 注册拦截 <code>/**</code></td>
+  <td>M2 §T2.1 段3</td>
+</tr>
+<tr>
+  <td><code>GlobalExceptionHandler</code>（degraded / 4xx / 5xx 分层）</td>
+  <td><span class="badge b-done">已实现</span></td>
+  <td><code>GlobalExceptionHandler.java</code>：503→degraded 200，网络异常→degraded 200，参数校验→400，其余上游 5xx→502，未知→500，分层完整</td>
+  <td>M2 §T2.1 段3</td>
+</tr>
+<tr>
+  <td><code>ApiEnvelope</code> 信封结构</td>
+  <td><span class="badge b-partial">结构已实现 / 字段是占位符</span></td>
+  <td>结构与三种工厂方法（ok/degraded/fail）完整；但 <code>truncated</code>/<code>budgetRemaining</code> 在 <code>MatricsController.java:92-96</code> 硬编码为 <code>false</code>/<code>0</code>，见任务 3 报告</td>
+  <td>设计结论 #1</td>
+</tr>
+</tbody>
+</table>
+
+<div class="callout">
+  <b>一个容易被忽略的细节</b>
+  <code>AuthInterceptor</code> 抛出的 <code>AccessDeniedException</code>（无 token）和 <code>BadRequestException</code>（缺 Incident-Id/Agent-Role）在 <code>GlobalExceptionHandler</code> 里<b>没有专属处理器</b>，会落进兜底的 <code>handleUnknown</code> → 统一变成 <b>500</b>，而不是 M2 文档验收要求的 <b>401 / 400</b>。这不属于本次扫描的两个主线问题，但和"横切面尚未闭环"是同一类现象，一并记录，供后续自研段一起修。
+</div>
+
+<h2 id="injection">2. 注入防护判定</h2>
+<p>M2 文档设计里"模板通道"与"raw 通道"是两条应该分别收口的路径：</p>
+<table>
+<thead><tr><th>路径</th><th>预期约束</th><th>当前 MatricsController.query() 现状</th></tr></thead>
+<tbody>
+<tr>
+  <td>模板通道</td>
+  <td>query 由 <code>MetricsTemplateRegistry</code> 从 <code>{template, service}</code> 代码拼出，调用方不接触 PromQL 原文，<code>service</code> 参数化嵌入而非字符串拼接</td>
+  <td>不存在——没有 template/service 字段，没有模板拼装代码</td>
+</tr>
+<tr>
+  <td>raw 通道</td>
+  <td>调用方可裸传 PromQL，但必须先过 <code>RawQueryValidator</code>：长度 ≤500、强制含 label matcher、违规 403、独立预算 5 次/incident</td>
+  <td>不存在——没有 <code>RawController</code>/<code>RawQueryValidator</code>，没有长度/selector 校验，没有独立预算</td>
+</tr>
+</tbody>
+</table>
+
+<div class="callout danger">
+  <b>判定结论</b>
+  两条路径目前都不存在。现状<b>等价于一个没有任何限制的裸 raw 通道</b>——调用方通过 <code>@Valid @RequestBody QueryRangeDTO</code> 直接控制 <code>query</code> 字段（任意 PromQL）、<code>step</code>（分辨率）、<code>limit</code>（返回序列数上限，<code>@PositiveOrZero</code> 只挡负数，0 表示不限制）、<code>lookbackDelta</code> 等全部原生参数。
+  但对外接口路径 <code>POST /matrics/query</code>、Swagger 文档描述"封装 Prometheus query_range 接口的指标查询工具"、以及 <code>@Valid</code> 校验注解带来的观感，都在暗示这是一个受控的"模板工具"——这是最容易被忽视的落差：<b>看起来安全（有校验注解、有信封包装），实际上和裸调 Prometheus 没有区别</b>。
+</div>
+
+<h3>具体可被利用的点</h3>
+<ul>
+  <li><b>任意 PromQL：</b><code>query</code> 字段（<code>QueryRangeDTO.java:29</code>）只有 <code>@NotBlank</code>，调用方可传高基数正则如 <code>{__name__=~".+"}</code> 造成 Prometheus 侧 cardinality/regex 扫描压力，或跨 service/跨租户查询本不该由该 incident 看到的指标。</li>
+  <li><b>分辨率失控：</b><code>step</code> 字段（<code>QueryRangeDTO.java:41-44</code>）由调用方直传，可传极小值（如 <code>1s</code>）配合大窗口制造超大响应体，与设计结论 #2 的"step 必须由网关反推、不能比原生 scrape_interval 更细"完全相反。</li>
+  <li><b>返回量不设上限：</b><code>limit</code> 字段（<code>QueryRangeDTO.java:50-52</code>）只挡负数，<code>0</code>=不限制是 Prometheus 原生语义，网关未覆盖成安全默认值。</li>
+  <li><b>无调用次数上限：</b>因为 <code>BudgetService</code> 不存在，以上每一种滥用都可以被无限次重复。</li>
+</ul>
+
+<h2 id="bonus">3. 附带发现：BeanUtil.beanToMap 的静默失效风险</h2>
+<div class="card">
+<p><code>MatricsController.java:74-78</code>：</p>
+<pre><code>Map&lt;String, Object&gt; queryRangeMap = BeanUtil.beanToMap(
+        queryRangeDTO,
+        new HashMap&lt;&gt;(),
+        true,
+        true);</code></pre>
+<p>已用 <code>javap</code> 反编译 <code>hutool-all-5.8.47.jar</code> 里的 <code>BeanUtil</code> 确认，这里调用的重载是：</p>
+<pre><code>public static Map&lt;String, Object&gt; beanToMap(Object, Map&lt;String, Object&gt;, boolean, boolean)</code></pre>
+<p>对应签名 <code>(bean, targetMap, isIgnoreNullValue, isIgnoreError)</code>——<b>不带任何命名策略（NamingCase）或 CopyOptions 参数</b>。也就是说 map 的 key 就是 Java 字段名本身（驼峰），不会转成 Prometheus 官方接口要求的 snake_case。</p>
+<p>受影响字段：<code>lookbackDelta</code>（应为 <code>lookback_delta</code>）。查询参数会以 <code>lookbackDelta=5m</code> 的形式拼进 URL；Prometheus HTTP API 对未识别的 query 参数是<b>静默忽略</b>而非报错，所以调用方即使认真传了 <code>lookbackDelta</code>，这个值也不会生效，且不会有任何错误提示——这是一个"看起来传了参数，实际上完全没用"的静默失效点。</p>
+</div>
+
+<h2 id="risk">4. 风险分级汇总</h2>
+<table>
+<thead><tr><th style="width:6%">#</th><th style="width:38%">风险</th><th style="width:12%">等级</th><th>影响</th></tr></thead>
+<tbody>
+<tr><td>F1</td><td>query 字段裸 PromQL，无模板/无 selector 校验</td><td><span class="badge sev-critical">Critical</span></td><td>调用方可执行任意 PromQL；对外包装成"安全的指标查询工具"掩盖了这一事实</td></tr>
+<tr><td>F2</td><td>step / limit / lookbackDelta 等原生参数直接暴露</td><td><span class="badge sev-critical">Critical</span></td><td>违反"确定性代码算 step，绝不进调用方"红线；可制造超大响应/资源消耗</td></tr>
+<tr><td>F3</td><td>无 BudgetService，无调用次数限制</td><td><span class="badge sev-critical">Critical</span></td><td>429 完全不可能触发；单 incident 可无限次调用，H5 预算护栏形同虚设</td></tr>
+<tr><td>F4</td><td>无 RawController / RawQueryValidator</td><td><span class="badge sev-high">High</span></td><td>raw 逃生通道设计完全空白，当前唯一入口本身就是不受限 raw</td></tr>
+<tr><td>F5</td><td>无 MetricsTemplateRegistry，无 window→step 换算</td><td><span class="badge sev-high">High</span></td><td>模板通道整体未开工，仍停留在 🟢复刻段</td></tr>
+<tr><td>F6</td><td>无 service CMDB/白名单校验</td><td><span class="badge sev-medium">Medium</span></td><td>DTO 里目前连 <code>service</code> 字段都没有，暂时是设计缺口而非可利用漏洞</td></tr>
+<tr><td>F7</td><td>无 AuditService，仅 TODO 注释</td><td><span class="badge sev-medium">Medium</span></td><td>无法追溯谁在何时用什么 query 调用过网关，出问题无法复盘定责</td></tr>
+<tr><td>F8</td><td>truncated / budgetRemaining 硬编码占位符</td><td><span class="badge sev-medium">Medium</span></td><td>向 Agent 传递虚假的"数据完整、预算充足"信号；实现方案见任务 3 报告</td></tr>
+<tr><td>F9</td><td>BeanUtil.beanToMap 驼峰未转 snake_case（附带发现）</td><td><span class="badge sev-low">Low（正确性非安全）</span></td><td><code>lookbackDelta</code> 静默失效，无报错提示，排查成本高</td></tr>
+</tbody>
+</table>
+
+<h2 id="plan">5. 实现方案（按 复刻 → 改造 → 自研 顺序）</h2>
+<p>下面按 M2 文档 T2.1/T2.2 的三段式给出落地步骤。🟢复刻段（curl 裸打 Prometheus + 当前 <code>/matrics/query</code> 透传骨架）已完成，方案从 🟡改造段开始。</p>
+
+<h3>🟡 Step A — 模板通道：把 query_metrics 从"裸透传"改造成"模板端点"</h3>
+<div class="card">
+<ol>
+<li>
+  新增 <code>WindowQueryDTO</code>（对外暴露的唯一入参形状）：
+  <pre><code>public class WindowQueryDTO {
+    @NotBlank
+    private String template;      // 枚举白名单：qps/error_rate/p99_latency/...
+
+    @NotBlank @Size(max = 64)
+    @Pattern(regexp = "^[a-zA-Z0-9._-]+$", message = "service 只允许字母数字. _ -")
+    private String service;
+
+    @NotBlank
+    @Pattern(regexp = "^\\d+[smhd]$", message = "window 需形如 30m / 1h")
+    private String window;        // 解析后必须落在 [1m, 24h]，超出范围 400
+
+    private boolean compareBaseline;
+}</code></pre>
+  端点改为 <code>POST /api/v1/tools/query_metrics</code>（对齐文档路径，与当前 <code>/matrics/query</code> 不一致，属于同一批要修的命名缺口）。
+</li>
+<li>
+  新增 <code>MetricsTemplateRegistry</code>：
+  <ul>
+    <li>职责：维护 <code>Map&lt;String, MetricTemplate&gt;</code>，<code>MetricTemplate{promqlTemplate, nativeScrapeIntervalSeconds, maxPoints}</code>。</li>
+    <li><code>render(templateKey, service)</code>：<code>service</code> 先过白名单正则 + CMDB 校验（Step A.3），再用占位符替换生成最终 PromQL——调用方全程不接触 PromQL 原文。</li>
+    <li>未知 <code>templateKey</code> → 400（而不是把它当 PromQL 执行）。</li>
+  </ul>
+</li>
+<li>
+  新增 <code>ServiceRegistry</code>（先给静态白名单占位，T2.2 段2 再接 CMDB/Nacos 动态解析）：<code>isKnown(String service)</code>，未知 service → 400。
+</li>
+<li>
+  新增 <code>StepResolver</code>（确定性纯函数，算法与 truncated 判定见<b>任务 3 报告</b>）。
+</li>
+<li>
+  <code>PrometheusClient</code>：把当前 controller 里直接拼 URL 的逻辑收敛进这一层；继续使用 <code>UriComponentsBuilder.queryParam</code>（本身会做 URL 编码，不是拼接注入的风险点——真正风险是"值"不受控，而不是"拼接方式"），但传入的 <code>query</code> 永远来自 <code>MetricsTemplateRegistry.render()</code> 的产物，不再是调用方原始输入。
+</li>
+</ol>
+</div>
+
+<h3 id="templates">🟡 Step A 补充 — 初始模板集（templateName + MetricTemplate，依据官方文档）</h3>
+<div class="callout info">
+  <b>哪些是有官方依据的，哪些还是待确认项</b>
+  下表的指标族名（<code>http_server_requests_seconds_*</code>、<code>jvm_memory_*</code>、<code>process_cpu_usage</code>）来自 Micrometer 对 Spring Boot 应用的官方标准埋点，只要 M1 阶段按 <code>M1.md</code> 里写的接上 <code>micrometer-registry-prometheus</code> + <code>/actuator/prometheus</code>，这些指标名就是确定会存在的，不是猜的。但两处仍是待确认项，标注在表格备注列里：
+  <ul>
+    <li><code>application</code> 这个 label 不是 Micrometer 默认自带的，需要在各服务 <code>application.yml</code> 里配 <code>management.metrics.tags.application: ${spring.application.name}</code> 才会出现——用它是因为项目自己的 D4 架构评审已经把"告警 label 对齐真实 <code>application</code> 值"定为要修的问题（R3），这里沿用同一约定，但仍需在 M1 落地时核实真的配了这个 tag。</li>
+    <li><code>nativeScrapeIntervalSeconds</code> 目前无法给出项目的真实值——<code>deploy/prometheus/prometheus.yml</code> 按 <code>M0.md</code> 是"从空文件写"的，还没有真实 <code>global.scrape_interval</code>。Prometheus 官方文档（<a href="https://prometheus.io/docs/prometheus/latest/configuration/configuration/" target="_blank" rel="noopener">Configuration §global</a>）里该字段省略时默认 <code>1m</code>；社区教程惯例常显式设为 <code>15s</code>。这里先留空/占位，<b>M0 的 prometheus.yml 落地后必须回填真实值</b>，不能沿用本表任何一个数字。</li>
+    <li>业务专属指标（题库查询耗时、支付线程池、缓存计数）目前在 <code>00-execution-plan.md:95/208</code> 里仍标"需核实"——这类指标需要 prunus-mume 代码里手动加 <code>@Timed</code>/<code>Counter</code>/<code>Gauge</code> 埋点才会出现，属于 M1 的工作，本表只覆盖 Micrometer/Spring Boot Actuator 自动暴露、不需要业务代码改动的通用黄金信号指标。</li>
+  </ul>
+</div>
+<div class="card" style="overflow-x:auto;">
+<table>
+<thead><tr><th style="width:12%">templateName</th><th style="width:16%">语义（黄金信号）</th><th style="width:38%">PromQL 模板</th><th style="width:18%">官方依据</th><th style="width:16%">备注</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>qps</code></td>
+  <td>流量 / 请求速率</td>
+  <td><pre><code>sum(rate(
+  http_server_requests_seconds_count
+    {application="{service}"}[{window}]
+))</code></pre></td>
+  <td><a href="https://docs.spring.io/spring-boot/reference/actuator/metrics.html#actuator.metrics.supported.spring-mvc" target="_blank" rel="noopener">Spring Boot Actuator Metrics — Spring MVC Metrics</a></td>
+  <td>Micrometer <code>Timer</code> 命名规范：<code>http.server.requests</code> → <code>http_server_requests_seconds_count</code>/<code>_sum</code></td>
+</tr>
+<tr>
+  <td><code>error_rate</code></td>
+  <td>错误率</td>
+  <td><pre><code>sum(rate(
+  http_server_requests_seconds_count
+    {application="{service}", status=~"5.."}[{window}]
+)) /
+sum(rate(
+  http_server_requests_seconds_count
+    {application="{service}"}[{window}]
+))</code></pre></td>
+  <td>同上（<code>status</code> 是该 Timer 官方自带的 tag 之一）</td>
+  <td>分母为 0（该服务窗口内无流量）时需在 <code>PrometheusClient</code>/VO 层显式处理，避免把 NaN 直接透传给 Agent</td>
+</tr>
+<tr>
+  <td><code>p99_latency</code></td>
+  <td>延迟 P99</td>
+  <td><pre><code>histogram_quantile(0.99,
+  sum(rate(
+    http_server_requests_seconds_bucket
+      {application="{service}"}[{window}]
+  )) by (le)
+)</code></pre></td>
+  <td><a href="https://docs.spring.io/spring-boot/reference/actuator/metrics.html#actuator.metrics.customizing.per-meter-properties" target="_blank" rel="noopener">Spring Boot Actuator Metrics — Per-meter histograms and percentiles</a></td>
+  <td><b>前置条件</b>：目标服务需开启 <code>management.metrics.distribution.percentiles-histogram.http.server.requests=true</code>，否则 <code>_bucket</code> 序列不存在，模板会查到空数据而非报错——上线前必须确认该配置已在 prunus-mume 各服务打开</td>
+</tr>
+<tr>
+  <td><code>jvm_heap_usage</code></td>
+  <td>饱和度（内存）</td>
+  <td><pre><code>sum(jvm_memory_used_bytes
+  {application="{service}", area="heap"}) /
+sum(jvm_memory_max_bytes
+  {application="{service}", area="heap"})</code></pre></td>
+  <td><a href="https://docs.micrometer.io/micrometer/reference/reference/jvm.html" target="_blank" rel="noopener">Micrometer — JVM Metrics（JvmMemoryMetrics）</a></td>
+  <td>Spring Boot Actuator 自动装配该 binder，无需额外配置</td>
+</tr>
+<tr>
+  <td><code>cpu_usage</code></td>
+  <td>饱和度（CPU）</td>
+  <td><pre><code>avg(process_cpu_usage
+  {application="{service}"})</code></pre></td>
+  <td><a href="https://docs.spring.io/spring-boot/reference/actuator/metrics.html#actuator.metrics.supported.jvm" target="_blank" rel="noopener">Spring Boot Actuator Metrics — Process metrics（ProcessorMetrics）</a></td>
+  <td>官方 Gauge，取值范围 0~1；部分环境返回 -1（不支持采集时），模板渲染层不处理，由调用方/Agent 识别</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>渲染方式建议用具名占位符而非 <code>String.format</code> 的位置参数（<code>error_rate</code> 模板里 <code>{service}</code>/<code>{window}</code> 各出现两次，位置参数容易在维护时错位）：</p>
+<div class="card">
+<pre><code>public String render(String templateKey, String service, String window) {
+    MetricTemplate t = registry.get(templateKey);
+    if (t == null) throw new UnknownTemplateException(templateKey);
+    return t.promqlTemplate()
+            .replace("{service}", service)   // service 已在 ServiceRegistry 白名单校验通过
+            .replace("{window}", window);    // window 已被 @Pattern 钳制为 \d+[smhd]
+}</code></pre>
+</div>
+
+<h3>🟡 Step B — raw 逃生通道：新增独立入口 + 校验器</h3>
+<div class="card">
+<ol>
+<li>新增 <code>RawController</code>：<code>POST /api/v1/tools/raw/promql</code>、<code>POST /api/v1/tools/raw/logql</code>，DTO <code>RawQueryDTO{query, window}</code>。</li>
+<li>
+  新增 <code>RawQueryValidator</code>（🔴自研，纯函数校验，从空文件写）：
+  <pre><code>// 长度
+if (query.length() > 500) throw new RawQueryRejectedException("query 超过 500 字符");
+
+// PromQL：必须含 label matcher，形如 {label="value"} / {label=~"regex"}
+private static final Pattern PROMQL_SELECTOR =
+    Pattern.compile(".*\\{[^{}]*[a-zA-Z_][a-zA-Z0-9_]*\\s*(=~?|!~?)\\s*\"[^\"]*\"[^{}]*\\}.*");
+
+// LogQL：必须以 {...} selector 开头
+private static final Pattern LOGQL_SELECTOR =
+    Pattern.compile("^\\s*\\{[^}]+\\}.*");
+
+// 均不匹配 → 403，附带 reason，而不是让请求悄悄放行</code></pre>
+  校验用例（文档 §T2.2 提示已给出正反例，实现时补齐单测）：
+  <ul>
+    <li>应通过：<code>sum(rate(http_requests_total{service="pm-order"}[5m]))</code></li>
+    <li>应拒绝：<code>sum(http_server_requests_seconds_count)</code>（无 selector）</li>
+    <li>应拒绝：长度 501 字符的合法 selector 查询</li>
+  </ul>
+</li>
+<li>raw 通道预算独立计数（channel=<code>raw</code>，见任务 3 报告 BudgetService 设计），5 次/incident。</li>
+</ol>
+</div>
+
+<h3>🔴 Step C — 现有 <code>/matrics/query</code> 端点的收编</h3>
+<div class="callout info">
+  不能让"看起来像模板工具的路径"继续暴露"完全裸露的参数"。二选一：
+  <ol>
+    <li>直接下线该端点，把 <code>QueryRangeDTO</code>/<code>PrometheusClient</code> 降级为内部实现细节，只服务于 Step A/B 两个新端点；</li>
+    <li>如果要保留裸查询能力，必须整体挪到 Step B 的 raw 通道之下，强制过 <code>RawQueryValidator</code>，不能再独立于 raw 通道之外存在。</li>
+  </ol>
+  推荐方案 1：<code>QueryRangeDTO</code>/<code>QueryRangeVO</code> 保留作 <code>PrometheusClient</code> 内部与上游对接的模型，不再是 controller 层的外部契约。
+</div>
+
+<h3>🔴 Step D — AuditService</h3>
+<div class="card">
+<pre><code>CREATE TABLE IF NOT EXISTS audit_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id   TEXT NOT NULL,
+  agent_role    TEXT NOT NULL,
+  channel       TEXT NOT NULL CHECK (channel IN ('template','raw')),
+  tool          TEXT NOT NULL,
+  template_or_query TEXT NOT NULL,
+  ok            INTEGER NOT NULL,
+  degraded      INTEGER NOT NULL,
+  truncated     INTEGER NOT NULL,
+  elapsed_ms    INTEGER NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);</code></pre>
+<p>建议挂在 <code>HandlerInterceptor.afterCompletion</code>（而不是每个 controller 手写一遍），统一覆盖所有工具端点，与 <code>AuthInterceptor</code> 解析出的 <code>incidentId</code>/<code>agentRole</code> 复用同一个 request attribute。</p>
+</div>
+
+<h3>🔴 Step E — 补上 AuthInterceptor 的异常映射缺口</h3>
+<p>在 <code>GlobalExceptionHandler</code> 里为 <code>AccessDeniedException</code>（401）和 <code>BadRequestException</code>（400）各加一个显式 <code>@ExceptionHandler</code>，不要让它们落进兜底 500——这是本次扫描顺带发现的问题（第 1 节末尾callout），修复成本很低，建议和 Step A~D 一起提交。</p>
+
+<h2 id="appendix">6. 附录：扫描文件清单</h2>
+<div class="card filelist">
+  <div>common/config/WebConfig.java</div>
+  <div>common/interceptor/AuthInterceptor.java</div>
+  <div>common/result/ApiEnvelope.java</div>
+  <div>common/web/GlobalExceptionHandler.java</div>
+  <div>IrisToolGatewayApplication.java</div>
+  <div>matrics/controller/MatricsController.java</div>
+  <div>matrics/model/dto/QueryRangeDTO.java</div>
+  <div>matrics/model/vo/QueryRangeVO.java</div>
+</div>
+
+<footer>
+  基于 iris-tool-gateway 分支 m2/tool-gateway-greenfield 当前代码状态生成，对应 commit 2405d40 附近。若代码有更新，结论需重新核对。
+</footer>
+
+</div>
+</body>
+</html>

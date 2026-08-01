@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="source-sha256" content="1f45a750c54ad45246074e176ad93f8df2d14921780554823cf737508df66fd5">
+  <title>模块 12 · /actions 修复 + HMAC 审批 + HITL + 评估兜底 — 版本 C</title>
+  <style>
+    :root {
+      --bg: oklch(0.9697 0.0153 7.48);
+      --surface: oklch(1.0000 0.0000 89.88 / 0.85);
+      --fg: oklch(0.3109 0.0222 355.11);
+      --muted: oklch(0.3808 0.0172 348.75);
+      --border: oklch(1.0000 0.0000 89.88 / 0.60);
+      --accent: oklch(0.7893 0.1284 5.11);
+      --accent-ink: oklch(0.4930 0.1280 4.50);
+      --highlight: oklch(0.9450 0.0360 55 / 0.78);
+      --soft-pink: oklch(0.9470 0.0248 2.08);
+      --shadow: oklch(0.6521 0.0908 1.39 / 0.15);
+      --tip: oklch(0.6140 0.1300 243);
+      --warn: oklch(0.7000 0.1450 75);
+      --danger: oklch(0.5900 0.1800 25);
+      --success: oklch(0.6200 0.1600 145);
+      --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-display: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+      --code-bg: #282C34;
+      --code-fg: #ABB2BF;
+      --code-comment: #5C6370;
+      --code-keyword: #C678DD;
+      --code-string: #98C379;
+      --code-function: #61AFEF;
+      --code-number: #D19A66;
+      --code-type: #E5C07B;
+      --code-operator: #56B6C2;
+      --code-error: #E06C75;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 28px;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--muted);
+      background:
+        linear-gradient(160deg, #FFF1F3 0%, #FDE7EC 100%);
+      font-family: var(--font-body);
+      font-size: 17px;
+      font-weight: 400;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: var(--fg);
+      text-decoration-color: color-mix(in oklch, var(--muted) 42%, transparent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+      overflow-wrap: anywhere;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .ambient {
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(92px);
+      opacity: 0.56;
+      pointer-events: none;
+    }
+
+    .ambient-one {
+      width: 36vw;
+      height: 36vw;
+      top: -10vw;
+      left: -8vw;
+      background: oklch(0.8550 0.0850 3 / 0.55);
+    }
+
+    .ambient-two {
+      width: 34vw;
+      height: 34vw;
+      top: 30vh;
+      right: -12vw;
+      background: oklch(0.8700 0.0700 50 / 0.42);
+    }
+
+    .ambient-three {
+      width: 28vw;
+      height: 28vw;
+      bottom: -8vw;
+      left: 18vw;
+      background: oklch(0.8500 0.0600 315 / 0.38);
+    }
+
+    .page-shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .reader-layout {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 920px);
+      justify-content: center;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .reader-layout:has(.toc details:not([open])) {
+      grid-template-columns: 56px minmax(0, 920px);
+    }
+
+    .document {
+      grid-column: 2;
+      width: 100%;
+      max-width: 920px;
+      min-width: 0;
+    }
+
+    .glass-card {
+      position: relative;
+      padding: clamp(28px, 4vw, 44px);
+      margin: 0 0 28px;
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 32px rgba(190,120,140,0.15);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .glass-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 38px rgba(190,120,140,0.19);
+    }
+
+    .hero {
+      overflow: hidden;
+      padding-top: clamp(36px, 6vw, 58px);
+      padding-bottom: clamp(34px, 5vw, 52px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 118px;
+      height: 4px;
+      left: clamp(28px, 4vw, 44px);
+      bottom: 25px;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      color: var(--fg);
+      font-family: var(--font-display);
+      font-weight: 650;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 17ch;
+      font-size: clamp(17px, 2.9vw, 26px);
+      line-height: 1.12;
+      letter-spacing: -0.025em;
+    }
+
+    h2 {
+      margin-bottom: 24px;
+      font-size: clamp(25px, 4vw, 32px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+
+    h3 {
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-size: clamp(20px, 3vw, 23px);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      max-width: 65ch;
+      margin: 0 0 16px;
+    }
+
+    strong {
+      color: var(--fg);
+      font-weight: 600;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+
+    em {
+      color: var(--fg);
+      font-style: italic;
+    }
+
+    mark {
+      color: inherit;
+      background: var(--highlight);
+      border-radius: 4px;
+      padding: 0.02em 0.16em;
+    }
+
+    code:not(pre code) {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      color: oklch(0.4300 0.1350 12);
+      background: color-mix(in oklch, var(--accent) 22%, white);
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    ul, ol {
+      margin: 12px 0 22px;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    ul:not(.checklist) > li::before {
+      content: "";
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      left: 3px;
+      top: 0.72em;
+      border-radius: 50%;
+      background: var(--accent-ink);
+      box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent);
+    }
+
+    ol:not(.steps) {
+      counter-reset: ordered;
+    }
+
+    ol:not(.steps) > li {
+      counter-increment: ordered;
+      padding-left: 34px;
+    }
+
+    ol:not(.steps) > li::before {
+      content: counter(ordered) ".";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent-ink);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      font-weight: 600;
+    }
+
+    .checklist > li {
+      padding-left: 0;
+    }
+
+    .completion-label {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+
+    .completion-checkbox {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .check-box {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      margin-top: 0.32em;
+      border: 1.5px solid color-mix(in oklch, var(--accent-ink) 68%, var(--border));
+      border-radius: 5px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .completion-checkbox:focus-visible + .check-box {
+      outline: 3px solid color-mix(in oklch, var(--success) 28%, transparent);
+      outline-offset: 3px;
+    }
+
+    .completion-checkbox:checked + .check-box {
+      border-color: var(--success);
+      background: var(--success);
+      transform: scale(1.04);
+    }
+
+    .completion-checkbox:checked + .check-box::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 9px;
+      left: 5px;
+      top: 1px;
+      border-right: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(45deg);
+    }
+
+    .steps {
+      position: relative;
+      margin-left: 2px;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 25px;
+      bottom: 25px;
+      width: 1px;
+      background: color-mix(in oklch, var(--accent) 48%, var(--border));
+    }
+
+    .steps > li {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 0;
+      margin: 12px 0;
+    }
+
+    .step-badge {
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid color-mix(in oklch, var(--accent-ink) 24%, white);
+      border-radius: 50%;
+      color: var(--accent-ink);
+      background: color-mix(in oklch, var(--soft-pink) 80%, white);
+      box-shadow: 0 4px 12px var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .step-card {
+      min-width: 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+    }
+
+    blockquote {
+      margin: 24px 0 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--tip);
+      border-radius: 0 14px 14px 0;
+      color: var(--fg);
+      background: color-mix(in oklch, var(--tip) 7%, var(--surface));
+    }
+
+    blockquote p {
+      margin: 0;
+    }
+
+    .meta-strip {
+      margin: 0 0 22px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.35);
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .meta-strip p {
+      margin: 0;
+    }
+
+    .code-shell {
+      position: relative;
+      margin: 20px 0 22px;
+      border-radius: 12px;
+      overflow: hidden;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    }
+
+    .code-toolbar {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .language-label {
+      color: color-mix(in srgb, var(--code-fg) 74%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .copy-code {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      color: var(--code-fg);
+      background: rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease;
+    }
+
+    .copy-code:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    .copy-code:active {
+      transform: translateY(2px);
+    }
+
+    .copy-code svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    pre {
+      margin: 0;
+      padding: 48px 18px 18px;
+      overflow: auto;
+      color: var(--code-fg);
+      background: #282C34;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font-family: inherit;
+      white-space: pre;
+    }
+
+    .hljs { color: var(--code-fg); background: transparent; }
+    .hljs-comment, .hljs-quote { color: var(--code-comment); }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--code-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-addition { color: var(--code-string); }
+    .hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--code-function); }
+    .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--code-number); }
+    .hljs-type, .hljs-class .hljs-title, .hljs-built_in { color: var(--code-type); }
+    .hljs-operator, .hljs-attr, .hljs-attribute { color: var(--code-operator); }
+    .hljs-deletion, .hljs-variable, .hljs-template-variable { color: var(--code-error); }
+
+    .closing-note {
+      color: var(--fg);
+      font-weight: 560;
+    }
+
+    .toc {
+      position: sticky;
+      grid-column: 1;
+      grid-row: 1;
+      top: 28px;
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      box-shadow: 0 8px 28px var(--shadow);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+
+    .toc details {
+      padding: 8px;
+    }
+
+    .toc summary {
+      display: flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .toc summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .toc details:not([open]) .toc-list {
+      display: none;
+    }
+
+    .toc summary svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 8px;
+    }
+
+    .toc-list li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list li::before {
+      display: none;
+    }
+
+    .toc-list a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: color-mix(in oklch, var(--muted) 86%, transparent);
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .toc-list a:hover {
+      color: var(--fg);
+      background: rgba(255,255,255,0.42);
+    }
+
+    .toc-list a[aria-current="true"] {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 20%, white);
+      font-weight: 550;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 480ms ease, transform 480ms ease;
+    }
+
+    @media (max-width: 1240px) {
+      .page-shell {
+        width: min(980px, calc(100% - 40px));
+      }
+
+      .reader-layout,
+      .reader-layout:has(.toc details:not([open])) {
+        grid-template-columns: minmax(0, 920px);
+        gap: 18px;
+      }
+
+      .toc {
+        z-index: 10;
+        grid-column: 1;
+        top: 12px;
+        grid-row: 1;
+        max-height: min(62vh, 520px);
+      }
+
+      .toc summary {
+        display: flex;
+      }
+
+      .toc details:not([open]) .toc-list {
+        display: none;
+      }
+
+      .document {
+        grid-column: 1;
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 16px;
+      }
+
+      .page-shell {
+        width: min(100% - 24px, 620px);
+        padding: 18px 0 64px;
+      }
+
+      .glass-card {
+        padding: 24px 20px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+      }
+
+      .hero {
+        padding-top: 32px;
+        padding-bottom: 42px;
+      }
+
+      .hero::after {
+        left: 20px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+
+      h2 {
+        font-size: clamp(24px, 7vw, 29px);
+      }
+
+      h3 {
+        margin-top: 28px;
+      }
+
+      .steps > li {
+        gap: 10px;
+      }
+
+      .step-card {
+        padding: 12px 13px;
+      }
+
+      pre {
+        padding: 48px 16px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media print {
+      @page { margin: 16mm; }
+
+      body {
+        color: #4A3F44;
+        background: white !important;
+        font-size: 12pt;
+      }
+
+      .ambient, .toc, .copy-code {
+        display: none !important;
+      }
+
+      .page-shell {
+        width: 100%;
+        padding: 0;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .glass-card {
+        break-inside: avoid;
+        padding: 0;
+        margin: 0 0 18pt;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      .hero::after {
+        display: none;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .code-shell, pre {
+        break-inside: avoid;
+        color: #ABB2BF !important;
+        background: #282C34 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  
+
+    .table-wrap {
+      margin: 20px 0 22px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: color-mix(in oklch, var(--surface) 76%, transparent);
+      font-size: 0.92em;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--accent) 14%, white);
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+</style>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="ambient ambient-three" aria-hidden="true"></div>
+
+  <main class="page-shell" data-od-id="page-shell">
+    <div class="reader-layout">
+      <article class="document" id="document-content" data-od-id="document-content">
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 12 · /actions 修复 + HMAC 审批 + HITL + 评估兜底 — 版本 C</h1></header>
+<blockquote>
+<p>greenfield。🟢复刻 itsdangerous/interrupt 官方样例 → 🟡改造成受控修复通道 → 🔴自研一次性令牌与判分。<strong>修复永远过人工审批——这是核心叙事不是缺陷。</strong></p>
+</blockquote>
+<section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
+<ol>
+<li>建出与查询通道<strong>物理隔离</strong>的 <code>/actions</code> 修复通道：HMAC 一次性令牌 + dry-run + 白名单，无有效令牌一律 403。</li>
+<li>用 LangGraph interrupt 实现"挂起等人工审批、批准即签发令牌、执行后复查恢复"的闭环。</li>
+<li>用纯函数判分 + runner + <code>make smoke</code> 门禁量化诊断效果（不写单测台账）。</li>
+</ol>
+</section>
+<section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<ul>
+<li>网关侧：<code>tool-gateway/.../actions/{ActionController,ApprovalTokenVerifier,ActionExecutor}.java</code></li>
+<li>Agent 侧：<code>src/.../security/token.py</code>、<code>src/.../graph/nodes/{approval,remediate}.py</code>、<code>src/.../api/approval_api.py</code>、<code>src/.../cli.py</code></li>
+<li>评估：<code>evals/{scorer,runner,gate}.py</code>、<code>Makefile</code>（make smoke）</li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t12-1-actions-通道-hmac-一次性令牌-hitl-审批" data-od-id="section-任务-t12-1-actions-通道-hmac-一次性令牌-hitl-审批"><h2 data-od-id="section-任务-t12-1-actions-通道-hmac-一次性令牌-hitl-审批">任务 T12.1 · /actions 通道 + HMAC 一次性令牌 + HITL 审批</h2>
+<div class="meta-strip"><p><strong>id</strong>：T12.1 ｜ <strong>所属模块</strong>：M12 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：从 0 建修复通道与人在环审批：挂起可恢复、批准即签发一次性令牌、执行前 dry-run。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>HITL interrupt/审批</strong>：图执行到 approval 节点时 <code>interrupt()</code> 挂起，等人工 resume（批准/驳回）。<em>Java 类比</em>：审批流走到审批节点挂起，等人点"同意"才继续，状态靠 checkpointer 持久化。📖 <a href="https://docs.langchain.com/oss/python/langchain/human-in-the-loop" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/human-in-the-loop</a> （interrupt，需核实锚点）· video-2 P71-74「人工介入·审批·中断」</li>
+<li><strong>HMAC 一次性令牌</strong>：批准时签发一个含 <code>exp/nonce</code> 的签名令牌，网关验签 + nonce 一次性消费。<em>Java 类比</em>：一次性支付令牌——签名防伪、过期作废、用过即失效。📖 <a href="https://itsdangerous.palletsprojects.com/" rel="noreferrer" target="_blank">https://itsdangerous.palletsprojects.com/</a> （签名+过期）+ <a href="https://docs.python.org/3/library/hmac.html" rel="noreferrer" target="_blank">https://docs.python.org/3/library/hmac.html</a> （compare_digest）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：itsdangerous <code>URLSafeTimedSerializer</code>（签名+过期）官方样例；LangGraph <code>interrupt()</code> 官方最小样例。</li>
+<li><strong>跑什么</strong>：各跑一次——签发/验一个带过期的令牌；跑一个 interrupt 挂起→resume 的迷你图。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>网关 <code>ActionController</code> <code>POST /api/v1/actions/execute</code>（action 枚举 restart_container/kill_slow_query/revert_config/disable_chaos_flag；target 白名单<strong>从 prunus-mume 实际服务名 + redis 推导</strong> [R10]；dryRun=true 只需服务 token 返回预演，dryRun=false 需 approval 令牌）；<code>approval.py</code> 用 <code>interrupt()</code> 挂起，进 interrupt 前先调 dry-run 拿预演；审批 API <code>GET /incidents/{id}/pending</code>、<code>POST /incidents/{id}/decision</code> + CLI <code>copilot approve/reject</code>。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写 <code>token.py</code>（itsdangerous 签名 + <strong>自研 nonce 一次性</strong>持久层）与网关 <code>ApprovalTokenVerifier</code>（验签 + exp + nonce 未消费 + 常量时间比较，任一失败 403）；<code>revert_config</code> 的 Nacos dataId/group 从 prunus-mume 实际约定映射（M1 已勘察）。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：itsdangerous 签发/验令牌 + interrupt 挂起-resume 各跑通。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造出 /actions/execute + approval interrupt + 审批 API/CLI。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：无令牌 execute → 应 403。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 nonce 一次性 + 白名单 + dry-run。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证同令牌第二次提交 → 403（重放）。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>修复与查询通道物理隔离：<code>/actions</code> 独立预算不计、独立审计表。</li>
+<li>nonce 一次性靠 DB 唯一约束"插入即消费"，防并发重放。</li>
+<li>dry-run 仍需服务 token，只豁免 approval 令牌。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>resume 不生效：确认 checkpointer 持久化、thread_id 对（复用 M4）。</li>
+<li>视频：video-2 P72-73「用户审批工具的执行·人工填写审批理由」最贴近。</li>
+<li>问 AI：「LangGraph interrupt 挂起后，我 kill uvicorn 重启，用 CLI 发 resume 还能继续吗？我的 checkpointer 和 Command(resume=...) 这样写（贴出），对不对？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 走到审批挂起
+curl -XPOST localhost:8000/webhook/alertmanager -d @fault-config-change.json
+copilot list                          # 看到 pending
+copilot approve inc-xxx               # 签发令牌 → remediate 执行
+# 异常路径：
+curl -s $BASE/../actions/execute -XPOST -d '{...no token...}'   # 403
+# 同令牌重放第二次 → 403；伪造签名/过期 exp → 403
+# 审批挂起时 kill uvicorn 重启后 copilot approve 仍能 resume
+</code></pre></div>
+<p>判定特征：无/伪造/过期/重放令牌均 403；dry-run 无令牌 200 且审计 dry_run=1；kill-resume 成功。依赖真实服务：网关、prunus-mume（真实 revert）。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>itsdangerous + interrupt 样例各复现（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>无/伪造/过期/重放令牌均 403</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>dry-run 无令牌 200 且落审计 dry_run=1</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>target 白名单对齐 prunus-mume 真实服务</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>审批挂起 kill-resume 成功</span></label></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t12-2-remediate-复查-评估兜底-judge-runner-smoke-门禁" data-od-id="section-任务-t12-2-remediate-复查-评估兜底-judge-runner-smoke-门禁"><h2 data-od-id="section-任务-t12-2-remediate-复查-评估兜底-judge-runner-smoke-门禁">任务 T12.2 · remediate 复查 + 评估兜底（judge + runner + smoke 门禁）</h2>
+<div class="meta-strip"><p><strong>id</strong>：T12.2 ｜ <strong>所属模块</strong>：M12 ｜ <strong>优先级</strong>：P1（工程化收尾）</p></div>
+<p><strong>一句话目标</strong>：执行修复后复查恢复，并用纯函数判分 + smoke 门禁量化效果。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong>修复复查（动作→指标映射）</strong>：带令牌执行动作后等 60s，按动作查对应指标确认恢复（如 revert_config→error_rate 回基线）。<em>Java 类比</em>：发布后跑一次健康检查确认恢复，没恢复就升级不谎报。📖（复用 M2 query_metrics）</li>
+<li><strong>纯函数三级判分</strong>：结构化字段与真值直接比对（service/class/anchor），零波动、无 LLM judge。<em>Java 类比</em>：断言式比对，输入相同结果永远相同。📖（自研）</li>
+</ul>
+<h3 data-od-id="section-第-1-段-复刻-8" id="section-第-1-段-复刻-8">🟢 第 1 段 · 复刻</h3>
+<ul>
+<li><strong>读什么</strong>：M2 的 query_metrics（复查靠它，无需新端点）。</li>
+<li><strong>跑什么</strong>：手动执行一次 revert_config 后，<code>curl</code> query_metrics 看 error_rate 是否回落。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-改造-9" id="section-第-2-段-改造-9">🟡 第 2 段 · 改造</h3>
+<ul>
+<li>写 <code>remediate.py</code>：带 approval 令牌 execute（dry_run=false）→ 等 60s → 按动作→指标映射复查 <code>stats.last</code> vs 基线（恢复到 2 倍内）→ 未恢复标 <code>escalate</code> 不自动重试。</li>
+<li>写 <code>scorer.py</code>：<code>score(truth, report) -&gt; CaseScore(svc_hit,cls_hit,anchor_hit,negative_ok)</code>；<code>aggregate</code>（acc@service/acc@class/全对率/阴性命中率）。</li>
+</ul>
+<h3 data-od-id="section-第-3-段-自研-10" id="section-第-3-段-自研-10">🔴 第 3 段 · 自研</h3>
+<ul>
+<li><strong>从空文件</strong>写 <code>runner.py</code>（注入→等告警→诊断→revert→判分，JSONL；评估模式自动驳回，只测诊断）与 <code>Makefile</code> 的 <code>make smoke</code>（5 例 &lt;15min，acc@service 不回退门禁）。</li>
+</ul>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：手动 revert 后 query_metrics 看恢复。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造 remediate 复查 + scorer 判分。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：F09 类全流程走一遍。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 runner + make smoke 门禁。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证门禁（把 baseline 改高 → 退出码 1）。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>慢查询类故障只输出"人工补索引/升级"建议，<strong>不得</strong>把 kill_slow_query 当根因修复、不得谎报 recovered=True。</li>
+<li>判分是纯函数、零波动，不用 LLM judge。</li>
+<li>评估只测诊断不真修复（自动驳回，revert 由 runner 做）。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>复查判定不稳：确认基线取的是"告警前"窗口，别用当前值当基线。</li>
+<li>视频：video-2 P61-64「评估器案例」讲评估思路（本项目判分用纯函数非 LLM）。</li>
+<li>问 AI：「我要写一个纯函数判分器，比对报告的 root_service/root_cause 与真值 YAML，acc@service/acc@class 怎么算？给函数签名 + 5 组测试用例。」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># F09 类全流程
+curl -XPOST localhost:8000/webhook/alertmanager -d @fault-config-change.json
+copilot approve inc-xxx        # revert_config 真实执行
+sqlite3 tool-gateway/data/*.db "select * from action_audit"   # 落记录，recovered=True
+make smoke                     # 5 例 &lt;15min，退出码 0
+# 异常路径：把 smoke-baseline 改成 1.0 → make smoke 退出码 1（门禁生效）
+</code></pre></div>
+<p>判定特征：F09 全链路 webhook→报告→审批→revert→复查恢复；make smoke &lt;15min 绿；门禁能拦回退。依赖真实服务：网关、prunus-mume、Prometheus、全部模型。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>手动 revert 后 query_metrics 看到恢复（复刻段）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>remediate 带令牌执行 + 60s 复查，未恢复标 escalate 不重试</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>scorer 纯函数三级判分正确</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>make smoke</code> &lt;15min 绿、门禁能拦 acc 回退</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m12-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>慢查询类只建议人工处理、不谎报修复</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：修复与评估全靠"复刻 itsdangerous/interrupt/query_metrics → 改造成受控修复通道与复查 → 自研一次性令牌与纯函数判分"，把最敏感的"改动生产"能力焊在人工审批与量化验收之后。</em></p>
+</section>
+      </article>
+      <aside class="toc" data-od-id="table-of-contents">
+        <details open>
+          <summary aria-label="展开或收起目录">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </summary>
+          <ol class="toc-list" id="toc-list">
+            <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
+            <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
+            <li><a href="#section-任务-t12-1-actions-通道-hmac-一次性令牌-hitl-审批">任务 T12.1 · /actions 通道 + HMAC 一次性令牌 + HITL 审批</a></li>
+            <li><a href="#section-任务-t12-2-remediate-复查-评估兜底-judge-runner-smoke-门禁">任务 T12.2 · remediate 复查 + 评估兜底（judge + runner + smoke 门禁）</a></li>
+          </ol>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgMTIgwrcgL2FjdGlvbnMg5L+u5aSNICsgSE1BQyDlrqHmibkgKyBISVRMICsg6K+E5Lyw5YWc5bqVIOKAlCDniYjmnKwgQwoKPiBncmVlbmZpZWxk44CC8J+fouWkjeWIuyBpdHNkYW5nZXJvdXMvaW50ZXJydXB0IOWumOaWueagt+S+iyDihpIg8J+foeaUuemAoOaIkOWPl+aOp+S/ruWkjemAmumBkyDihpIg8J+UtOiHqueglOS4gOasoeaAp+S7pOeJjOS4juWIpOWIhuOAgioq5L+u5aSN5rC46L+c6L+H5Lq65bel5a6h5om54oCU4oCU6L+Z5piv5qC45b+D5Y+Z5LqL5LiN5piv57y66Zm344CCKioKCiMjIOWtpuWujOacrOaooeWdl+S9oOiDveWBmuWIsOeahCAzIOS7tuS6iwoxLiDlu7rlh7rkuI7mn6Xor6LpgJrpgZMqKueJqeeQhumalOemuyoq55qEIGAvYWN0aW9uc2Ag5L+u5aSN6YCa6YGT77yaSE1BQyDkuIDmrKHmgKfku6TniYwgKyBkcnktcnVuICsg55m95ZCN5Y2V77yM5peg5pyJ5pWI5Luk54mM5LiA5b6LIDQwM+OAggoyLiDnlKggTGFuZ0dyYXBoIGludGVycnVwdCDlrp7njrAi5oyC6LW3562J5Lq65bel5a6h5om544CB5om55YeG5Y2z562+5Y+R5Luk54mM44CB5omn6KGM5ZCO5aSN5p+l5oGi5aSNIueahOmXreeOr+OAggozLiDnlKjnuq/lh73mlbDliKTliIYgKyBydW5uZXIgKyBgbWFrZSBzbW9rZWAg6Zeo56aB6YeP5YyW6K+K5pat5pWI5p6c77yI5LiN5YaZ5Y2V5rWL5Y+w6LSm77yJ44CCCgojIyDmnKzmqKHlnZfkuqTku5jnianmuIXljZXvvIjmlofku7bot6/lvoTnuqfvvIkKLSDnvZHlhbPkvqfvvJpgdG9vbC1nYXRld2F5Ly4uLi9hY3Rpb25zL3tBY3Rpb25Db250cm9sbGVyLEFwcHJvdmFsVG9rZW5WZXJpZmllcixBY3Rpb25FeGVjdXRvcn0uamF2YWAKLSBBZ2VudCDkvqfvvJpgc3JjLy4uLi9zZWN1cml0eS90b2tlbi5weWDjgIFgc3JjLy4uLi9ncmFwaC9ub2Rlcy97YXBwcm92YWwscmVtZWRpYXRlfS5weWDjgIFgc3JjLy4uLi9hcGkvYXBwcm92YWxfYXBpLnB5YOOAgWBzcmMvLi4uL2NsaS5weWAKLSDor4TkvLDvvJpgZXZhbHMve3Njb3JlcixydW5uZXIsZ2F0ZX0ucHlg44CBYE1ha2VmaWxlYO+8iG1ha2Ugc21va2XvvIkKCi0tLQoKIyMg5Lu75YqhIFQxMi4xIMK3IC9hY3Rpb25zIOmAmumBkyArIEhNQUMg5LiA5qyh5oCn5Luk54mMICsgSElUTCDlrqHmibkKCioqaWQqKu+8mlQxMi4xIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTEyIO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrku44gMCDlu7rkv67lpI3pgJrpgZPkuI7kurrlnKjnjq/lrqHmibnvvJrmjILotbflj6/mgaLlpI3jgIHmibnlh4bljbPnrb7lj5HkuIDmrKHmgKfku6TniYzjgIHmiafooYzliY0gZHJ5LXJ1buOAggoKKirliY3nva7nn6Xor4bvvIjiiaQyIOaWsOamguW/te+8iSoqCi0gKipISVRMIGludGVycnVwdC/lrqHmibkqKu+8muWbvuaJp+ihjOWIsCBhcHByb3ZhbCDoioLngrnml7YgYGludGVycnVwdCgpYCDmjILotbfvvIznrYnkurrlt6UgcmVzdW1l77yI5om55YeGL+mps+Wbnu+8ieOAgipKYXZhIOexu+avlCrvvJrlrqHmibnmtYHotbDliLDlrqHmibnoioLngrnmjILotbfvvIznrYnkurrngrki5ZCM5oSPIuaJjee7p+e7re+8jOeKtuaAgemdoCBjaGVja3BvaW50ZXIg5oyB5LmF5YyW44CC8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdjaGFpbi9odW1hbi1pbi10aGUtbG9vcCDvvIhpbnRlcnJ1cHTvvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFA3MS03NOOAjOS6uuW3peS7i+WFpcK35a6h5om5wrfkuK3mlq3jgI0KLSAqKkhNQUMg5LiA5qyh5oCn5Luk54mMKirvvJrmibnlh4bml7bnrb7lj5HkuIDkuKrlkKsgYGV4cC9ub25jZWAg55qE562+5ZCN5Luk54mM77yM572R5YWz6aqM562+ICsgbm9uY2Ug5LiA5qyh5oCn5raI6LS544CCKkphdmEg57G75q+UKu+8muS4gOasoeaAp+aUr+S7mOS7pOeJjOKAlOKAlOetvuWQjemYsuS8quOAgei/h+acn+S9nOW6n+OAgeeUqOi/h+WNs+WkseaViOOAgvCfk5YgaHR0cHM6Ly9pdHNkYW5nZXJvdXMucGFsbGV0c3Byb2plY3RzLmNvbS8g77yI562+5ZCNK+i/h+acn++8iSsgaHR0cHM6Ly9kb2NzLnB5dGhvbi5vcmcvMy9saWJyYXJ5L2htYWMuaHRtbCDvvIhjb21wYXJlX2RpZ2VzdO+8iQoKIyMjIPCfn6Ig56ysIDEg5q61IMK3IOWkjeWIuwotICoq6K+75LuA5LmIKirvvJppdHNkYW5nZXJvdXMgYFVSTFNhZmVUaW1lZFNlcmlhbGl6ZXJg77yI562+5ZCNK+i/h+acn++8ieWumOaWueagt+S+i++8m0xhbmdHcmFwaCBgaW50ZXJydXB0KClgIOWumOaWueacgOWwj+agt+S+i+OAggotICoq6LeR5LuA5LmIKirvvJrlkITot5HkuIDmrKHigJTigJTnrb7lj5Ev6aqM5LiA5Liq5bim6L+H5pyf55qE5Luk54mM77yb6LeR5LiA5LiqIGludGVycnVwdCDmjILotbfihpJyZXN1bWUg55qE6L+35L2g5Zu+44CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCgCi0g572R5YWzIGBBY3Rpb25Db250cm9sbGVyYCBgUE9TVCAvYXBpL3YxL2FjdGlvbnMvZXhlY3V0ZWDvvIhhY3Rpb24g5p6a5Li+IHJlc3RhcnRfY29udGFpbmVyL2tpbGxfc2xvd19xdWVyeS9yZXZlcnRfY29uZmlnL2Rpc2FibGVfY2hhb3NfZmxhZ++8m3RhcmdldCDnmb3lkI3ljZUqKuS7jiBwcnVudXMtbXVtZSDlrp7pmYXmnI3liqHlkI0gKyByZWRpcyDmjqjlr7wqKiBbUjEwXe+8m2RyeVJ1bj10cnVlIOWPqumcgOacjeWKoSB0b2tlbiDov5Tlm57pooTmvJTvvIxkcnlSdW49ZmFsc2Ug6ZyAIGFwcHJvdmFsIOS7pOeJjO+8ie+8m2BhcHByb3ZhbC5weWAg55SoIGBpbnRlcnJ1cHQoKWAg5oyC6LW377yM6L+bIGludGVycnVwdCDliY3lhYjosIMgZHJ5LXJ1biDmi7/pooTmvJTvvJvlrqHmibkgQVBJIGBHRVQgL2luY2lkZW50cy97aWR9L3BlbmRpbmdg44CBYFBPU1QgL2luY2lkZW50cy97aWR9L2RlY2lzaW9uYCArIENMSSBgY29waWxvdCBhcHByb3ZlL3JlamVjdGDjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJQKLSAqKuS7juepuuaWh+S7tioq5YaZIGB0b2tlbi5weWDvvIhpdHNkYW5nZXJvdXMg562+5ZCNICsgKiroh6rnoJQgbm9uY2Ug5LiA5qyh5oCnKirmjIHkuYXlsYLvvInkuI7nvZHlhbMgYEFwcHJvdmFsVG9rZW5WZXJpZmllcmDvvIjpqoznrb4gKyBleHAgKyBub25jZSDmnKrmtojotLkgKyDluLjph4/ml7bpl7Tmr5TovoPvvIzku7vkuIDlpLHotKUgNDAz77yJ77ybYHJldmVydF9jb25maWdgIOeahCBOYWNvcyBkYXRhSWQvZ3JvdXAg5LuOIHBydW51cy1tdW1lIOWunumZhee6puWumuaYoOWwhO+8iE0xIOW3suWLmOWvn++8ieOAggoKKirokL3nrJTpobrluo8qKgoxLiDlpI3liLvvvJppdHNkYW5nZXJvdXMg562+5Y+RL+mqjOS7pOeJjCArIGludGVycnVwdCDmjILotbctcmVzdW1lIOWQhOi3kemAmuOAggoyLiDmlLnpgKDlh7ogL2FjdGlvbnMvZXhlY3V0ZSArIGFwcHJvdmFsIGludGVycnVwdCArIOWuoeaJuSBBUEkvQ0xJ44CCCjMuIOWPkeS4gOasoeivt+axgu+8muaXoOS7pOeJjCBleGVjdXRlIOKGkiDlupQgNDAz44CCCjQuIOiHqueglCBub25jZSDkuIDmrKHmgKcgKyDnmb3lkI3ljZUgKyBkcnktcnVu44CCCjUuIOmqjOivgeWQjOS7pOeJjOesrOS6jOasoeaPkOS6pCDihpIgNDAz77yI6YeN5pS+77yJ44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOS/ruWkjeS4juafpeivoumAmumBk+eJqeeQhumalOemu++8mmAvYWN0aW9uc2Ag54us56uL6aKE566X5LiN6K6h44CB54us56uL5a6h6K6h6KGo44CCCi0gbm9uY2Ug5LiA5qyh5oCn6Z2gIERCIOWUr+S4gOe6puadnyLmj5LlhaXljbPmtojotLki77yM6Ziy5bm25Y+R6YeN5pS+44CCCi0gZHJ5LXJ1biDku43pnIDmnI3liqEgdG9rZW7vvIzlj6rosYHlhY0gYXBwcm92YWwg5Luk54mM44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0gcmVzdW1lIOS4jeeUn+aViO+8muehruiupCBjaGVja3BvaW50ZXIg5oyB5LmF5YyW44CBdGhyZWFkX2lkIOWvue+8iOWkjeeUqCBNNO+8ieOAggotIOinhumike+8mnZpZGVvLTIgUDcyLTcz44CM55So5oi35a6h5om55bel5YW355qE5omn6KGMwrfkurrlt6XloavlhpnlrqHmibnnkIbnlLHjgI3mnIDotLTov5HjgIIKLSDpl64gQUnvvJrjgIxMYW5nR3JhcGggaW50ZXJydXB0IOaMgui1t+WQju+8jOaIkSBraWxsIHV2aWNvcm4g6YeN5ZCv77yM55SoIENMSSDlj5EgcmVzdW1lIOi/mOiDvee7p+e7reWQl++8n+aIkeeahCBjaGVja3BvaW50ZXIg5ZKMIENvbW1hbmQocmVzdW1lPS4uLikg6L+Z5qC35YaZ77yI6LS05Ye677yJ77yM5a+55LiN5a+577yf44CNCgoqKuecn+WuniBIVFRQIOmqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKIyDotbDliLDlrqHmibnmjILotbcKY3VybCAtWFBPU1QgbG9jYWxob3N0OjgwMDAvd2ViaG9vay9hbGVydG1hbmFnZXIgLWQgQGZhdWx0LWNvbmZpZy1jaGFuZ2UuanNvbgpjb3BpbG90IGxpc3QgICAgICAgICAgICAgICAgICAgICAgICAgICMg55yL5YiwIHBlbmRpbmcKY29waWxvdCBhcHByb3ZlIGluYy14eHggICAgICAgICAgICAgICAjIOetvuWPkeS7pOeJjCDihpIgcmVtZWRpYXRlIOaJp+ihjAojIOW8guW4uOi3r+W+hO+8mgpjdXJsIC1zICRCQVNFLy4uL2FjdGlvbnMvZXhlY3V0ZSAtWFBPU1QgLWQgJ3suLi5ubyB0b2tlbi4uLn0nICAgIyA0MDMKIyDlkIzku6TniYzph43mlL7nrKzkuozmrKEg4oaSIDQwM++8m+S8qumAoOetvuWQjS/ov4fmnJ8gZXhwIOKGkiA0MDMKIyDlrqHmibnmjILotbfml7Yga2lsbCB1dmljb3JuIOmHjeWQr+WQjiBjb3BpbG90IGFwcHJvdmUg5LuN6IO9IHJlc3VtZQpgYGAK5Yik5a6a54m55b6B77ya5pegL+S8qumAoC/ov4fmnJ8v6YeN5pS+5Luk54mM5Z2HIDQwM++8m2RyeS1ydW4g5peg5Luk54mMIDIwMCDkuJTlrqHorqEgZHJ5X3J1bj0x77yba2lsbC1yZXN1bWUg5oiQ5Yqf44CC5L6d6LWW55yf5a6e5pyN5Yqh77ya572R5YWz44CBcHJ1bnVzLW11bWXvvIjnnJ/lrp4gcmV2ZXJ077yJ44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGl0c2Rhbmdlcm91cyArIGludGVycnVwdCDmoLfkvovlkITlpI3njrDvvIjlpI3liLvmrrXvvIkKLSBbIF0g5pegL+S8qumAoC/ov4fmnJ8v6YeN5pS+5Luk54mM5Z2HIDQwMwotIFsgXSBkcnktcnVuIOaXoOS7pOeJjCAyMDAg5LiU6JC95a6h6K6hIGRyeV9ydW49MQotIFsgXSB0YXJnZXQg55m95ZCN5Y2V5a+56b2QIHBydW51cy1tdW1lIOecn+WunuacjeWKoQotIFsgXSDlrqHmibnmjILotbcga2lsbC1yZXN1bWUg5oiQ5YqfCgotLS0KCiMjIOS7u+WKoSBUMTIuMiDCtyByZW1lZGlhdGUg5aSN5p+lICsg6K+E5Lyw5YWc5bqV77yIanVkZ2UgKyBydW5uZXIgKyBzbW9rZSDpl6jnpoHvvIkKCioqaWQqKu+8mlQxMi4yIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTEyIO+9nCAqKuS8mOWFiOe6pyoq77yaUDHvvIjlt6XnqIvljJbmlLblsL7vvIkKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrmiafooYzkv67lpI3lkI7lpI3mn6XmgaLlpI3vvIzlubbnlKjnuq/lh73mlbDliKTliIYgKyBzbW9rZSDpl6jnpoHph4/ljJbmlYjmnpzjgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoq5L+u5aSN5aSN5p+l77yI5Yqo5L2c4oaS5oyH5qCH5pig5bCE77yJKirvvJrluKbku6TniYzmiafooYzliqjkvZzlkI7nrYkgNjBz77yM5oyJ5Yqo5L2c5p+l5a+55bqU5oyH5qCH56Gu6K6k5oGi5aSN77yI5aaCIHJldmVydF9jb25maWfihpJlcnJvcl9yYXRlIOWbnuWfuue6v++8ieOAgipKYXZhIOexu+avlCrvvJrlj5HluIPlkI7ot5HkuIDmrKHlgaXlurfmo4Dmn6Xnoa7orqTmgaLlpI3vvIzmsqHmgaLlpI3lsLHljYfnuqfkuI3osI7miqXjgILwn5OW77yI5aSN55SoIE0yIHF1ZXJ5X21ldHJpY3PvvIkKLSAqKue6r+WHveaVsOS4iee6p+WIpOWIhioq77ya57uT5p6E5YyW5a2X5q615LiO55yf5YC855u05o6l5q+U5a+577yIc2VydmljZS9jbGFzcy9hbmNob3LvvInvvIzpm7bms6LliqjjgIHml6AgTExNIGp1ZGdl44CCKkphdmEg57G75q+UKu+8muaWreiogOW8j+avlOWvue+8jOi+k+WFpeebuOWQjOe7k+aenOawuOi/nOebuOWQjOOAgvCfk5bvvIjoh6rnoJTvvIkKCiMjIyDwn5+iIOesrCAxIOautSDCtyDlpI3liLsKLSAqKuivu+S7gOS5iCoq77yaTTIg55qEIHF1ZXJ5X21ldHJpY3PvvIjlpI3mn6XpnaDlroPvvIzml6DpnIDmlrDnq6/ngrnvvInjgIIKLSAqKui3keS7gOS5iCoq77ya5omL5Yqo5omn6KGM5LiA5qyhIHJldmVydF9jb25maWcg5ZCO77yMYGN1cmxgIHF1ZXJ5X21ldHJpY3Mg55yLIGVycm9yX3JhdGUg5piv5ZCm5Zue6JC944CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCgCi0g5YaZIGByZW1lZGlhdGUucHlg77ya5bimIGFwcHJvdmFsIOS7pOeJjCBleGVjdXRl77yIZHJ5X3J1bj1mYWxzZe+8ieKGkiDnrYkgNjBzIOKGkiDmjInliqjkvZzihpLmjIfmoIfmmKDlsITlpI3mn6UgYHN0YXRzLmxhc3RgIHZzIOWfuue6v++8iOaBouWkjeWIsCAyIOWAjeWGhe+8ieKGkiDmnKrmgaLlpI3moIcgYGVzY2FsYXRlYCDkuI3oh6rliqjph43or5XjgIIKLSDlhpkgYHNjb3Jlci5weWDvvJpgc2NvcmUodHJ1dGgsIHJlcG9ydCkgLT4gQ2FzZVNjb3JlKHN2Y19oaXQsY2xzX2hpdCxhbmNob3JfaGl0LG5lZ2F0aXZlX29rKWDvvJtgYWdncmVnYXRlYO+8iGFjY0BzZXJ2aWNlL2FjY0BjbGFzcy/lhajlr7nnjocv6Zi05oCn5ZG95Lit546H77yJ44CCCgojIyMg8J+UtCDnrKwgMyDmrrUgwrcg6Ieq56CUCi0gKirku47nqbrmlofku7YqKuWGmSBgcnVubmVyLnB5YO+8iOazqOWFpeKGkuetieWRiuitpuKGkuiviuaWreKGknJldmVydOKGkuWIpOWIhu+8jEpTT05M77yb6K+E5Lyw5qih5byP6Ieq5Yqo6amz5Zue77yM5Y+q5rWL6K+K5pat77yJ5LiOIGBNYWtlZmlsZWAg55qEIGBtYWtlIHNtb2tlYO+8iDUg5L6LIDwxNW1pbu+8jGFjY0BzZXJ2aWNlIOS4jeWbnumAgOmXqOemge+8ieOAggoKKirokL3nrJTpobrluo8qKgoxLiDlpI3liLvvvJrmiYvliqggcmV2ZXJ0IOWQjiBxdWVyeV9tZXRyaWNzIOeci+aBouWkjeOAggoyLiDmlLnpgKAgcmVtZWRpYXRlIOWkjeafpSArIHNjb3JlciDliKTliIbjgIIKMy4g5Y+R5LiA5qyh6K+35rGC77yaRjA5IOexu+WFqOa1geeoi+i1sOS4gOmBjeOAggo0LiDoh6rnoJQgcnVubmVyICsgbWFrZSBzbW9rZSDpl6jnpoHjgIIKNS4g6aqM6K+B6Zeo56aB77yI5oqKIGJhc2VsaW5lIOaUuemrmCDihpIg6YCA5Ye656CBIDHvvInjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g5oWi5p+l6K+i57G75pWF6Zqc5Y+q6L6T5Ye6IuS6uuW3peihpee0ouW8lS/ljYfnuqci5bu66K6u77yMKirkuI3lvpcqKuaKiiBraWxsX3Nsb3dfcXVlcnkg5b2T5qC55Zug5L+u5aSN44CB5LiN5b6X6LCO5oqlIHJlY292ZXJlZD1UcnVl44CCCi0g5Yik5YiG5piv57qv5Ye95pWw44CB6Zu25rOi5Yqo77yM5LiN55SoIExMTSBqdWRnZeOAggotIOivhOS8sOWPqua1i+iviuaWreS4jeecn+S/ruWkje+8iOiHquWKqOmps+Wbnu+8jHJldmVydCDnlLEgcnVubmVyIOWBmu+8ieOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOWkjeafpeWIpOWumuS4jeeos++8muehruiupOWfuue6v+WPlueahOaYryLlkYrorabliY0i56qX5Y+j77yM5Yir55So5b2T5YmN5YC85b2T5Z+657q/44CCCi0g6KeG6aKR77yadmlkZW8tMiBQNjEtNjTjgIzor4TkvLDlmajmoYjkvovjgI3orrLor4TkvLDmgJ3ot6/vvIjmnKzpobnnm67liKTliIbnlKjnuq/lh73mlbDpnZ4gTExN77yJ44CCCi0g6ZeuIEFJ77ya44CM5oiR6KaB5YaZ5LiA5Liq57qv5Ye95pWw5Yik5YiG5Zmo77yM5q+U5a+55oql5ZGK55qEIHJvb3Rfc2VydmljZS9yb290X2NhdXNlIOS4juecn+WAvCBZQU1M77yMYWNjQHNlcnZpY2UvYWNjQGNsYXNzIOaAjuS5iOeul++8n+e7meWHveaVsOetvuWQjSArIDUg57uE5rWL6K+V55So5L6L44CC44CNCgoqKuecn+WuniBIVFRQIOmqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKIyBGMDkg57G75YWo5rWB56iLCmN1cmwgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kIEBmYXVsdC1jb25maWctY2hhbmdlLmpzb24KY29waWxvdCBhcHByb3ZlIGluYy14eHggICAgICAgICMgcmV2ZXJ0X2NvbmZpZyDnnJ/lrp7miafooYwKc3FsaXRlMyB0b29sLWdhdGV3YXkvZGF0YS8qLmRiICJzZWxlY3QgKiBmcm9tIGFjdGlvbl9hdWRpdCIgICAjIOiQveiusOW9le+8jHJlY292ZXJlZD1UcnVlCm1ha2Ugc21va2UgICAgICAgICAgICAgICAgICAgICAjIDUg5L6LIDwxNW1pbu+8jOmAgOWHuueggSAwCiMg5byC5bi46Lev5b6E77ya5oqKIHNtb2tlLWJhc2VsaW5lIOaUueaIkCAxLjAg4oaSIG1ha2Ugc21va2Ug6YCA5Ye656CBIDHvvIjpl6jnpoHnlJ/mlYjvvIkKYGBgCuWIpOWumueJueW+ge+8mkYwOSDlhajpk77ot68gd2ViaG9va+KGkuaKpeWRiuKGkuWuoeaJueKGknJldmVydOKGkuWkjeafpeaBouWkje+8m21ha2Ugc21va2UgPDE1bWluIOe7v++8m+mXqOemgeiDveaLpuWbnumAgOOAguS+nei1luecn+WunuacjeWKoe+8mue9keWFs+OAgXBydW51cy1tdW1l44CBUHJvbWV0aGV1c+OAgeWFqOmDqOaooeWei+OAggoKKirlrozmiJDliKTlrpoqKgotIFsgXSDmiYvliqggcmV2ZXJ0IOWQjiBxdWVyeV9tZXRyaWNzIOeci+WIsOaBouWkje+8iOWkjeWIu+aute+8iQotIFsgXSByZW1lZGlhdGUg5bim5Luk54mM5omn6KGMICsgNjBzIOWkjeafpe+8jOacquaBouWkjeaghyBlc2NhbGF0ZSDkuI3ph43or5UKLSBbIF0gc2NvcmVyIOe6r+WHveaVsOS4iee6p+WIpOWIhuato+ehrgotIFsgXSBgbWFrZSBzbW9rZWAgPDE1bWluIOe7v+OAgemXqOemgeiDveaLpiBhY2Mg5Zue6YCACi0gWyBdIOaFouafpeivouexu+WPquW7uuiuruS6uuW3peWkhOeQhuOAgeS4jeiwjuaKpeS/ruWkjQoKLS0tCirniYjmnKwgQyDnibnlvoHvvJrkv67lpI3kuI7or4TkvLDlhajpnaAi5aSN5Yi7IGl0c2Rhbmdlcm91cy9pbnRlcnJ1cHQvcXVlcnlfbWV0cmljcyDihpIg5pS56YCg5oiQ5Y+X5o6n5L+u5aSN6YCa6YGT5LiO5aSN5p+lIOKGkiDoh6rnoJTkuIDmrKHmgKfku6TniYzkuI7nuq/lh73mlbDliKTliIYi77yM5oqK5pyA5pWP5oSf55qEIuaUueWKqOeUn+S6pyLog73lipvnhIrlnKjkurrlt6XlrqHmibnkuI7ph4/ljJbpqozmlLbkuYvlkI7jgIIqCg==</script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var article = document.getElementById("document-content");
+      var tocList = document.getElementById("toc-list");
+
+      article.querySelectorAll(".completion-checkbox").forEach(function (checkbox) {
+        var storageKey = checkbox.getAttribute("data-check-key");
+        try {
+          checkbox.checked = localStorage.getItem(storageKey) === "true";
+        } catch (_) {}
+        checkbox.addEventListener("change", function () {
+          try {
+            localStorage.setItem(storageKey, String(checkbox.checked));
+          } catch (_) {}
+        });
+      });
+
+      article.querySelectorAll(".copy-code").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var code = button.closest(".code-shell").querySelector("code").textContent;
+          navigator.clipboard.writeText(code).then(function () {
+            button.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>';
+            window.setTimeout(function () {
+              button.innerHTML =
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>';
+            }, 1400);
+          });
+        });
+      });
+
+      if (window.hljs) {
+        article.querySelectorAll("pre code").forEach(function (block) {
+          window.hljs.highlightElement(block);
+        });
+      }
+
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08 });
+
+      article.querySelectorAll(".reveal").forEach(function (node) {
+        revealObserver.observe(node);
+      });
+
+      var tocLinks = Array.from(tocList.querySelectorAll("a"));
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          tocLinks.forEach(function (link) {
+            var current = link.getAttribute("href") === "#" + entry.target.id;
+            if (current) link.setAttribute("aria-current", "true");
+            else link.removeAttribute("aria-current");
+          });
+        });
+      }, { rootMargin: "-18% 0px -68% 0px", threshold: 0 });
+
+      tocLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute("href"));
+        if (section) sectionObserver.observe(section);
+      });
+    }());
+  </script>
+</body>
+</html>
