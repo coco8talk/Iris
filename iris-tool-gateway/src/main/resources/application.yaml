@@ -22,3 +22,5 @@ springdoc:
 
 iris:
   bearer-token: ${IRIS.BEARER_TOKEN}
+  prometheus:
+    base-url: http://localhost:9090

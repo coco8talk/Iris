@@ -77,7 +77,7 @@ public class ApiEnvelope<T> {
         /**
          * 本次 incident 在当前通道（模板/raw）下的剩余调用次数，用尽后网关返回 429
          */
-        private int budgetRemaining;
+        private long toolCallsRemaining;
     }
 
 

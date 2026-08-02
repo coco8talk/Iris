@@ -1,4 +1,4 @@
-package com.silas.iris.toolgateway.matrics.model.dto;
+package com.silas.iris.toolgateway.metrics.model.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -51,7 +51,7 @@ public class QueryRangeDTO {
     @PositiveOrZero(message = "limit 不能为负数")
     private Integer limit;
 
-    @Schema(description = "覆盖本次查询的回溯窗口，duration 格式或浮点秒数；"
+    @Schema(description = "如果没有查询到信息，本次查询的回溯窗口，duration 格式或浮点秒数；"
             + "对应 Prometheus 的 lookback_delta 参数", example = "5m")
     private String lookbackDelta;
 

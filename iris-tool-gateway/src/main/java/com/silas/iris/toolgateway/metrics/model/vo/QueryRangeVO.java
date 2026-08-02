@@ -1,4 +1,4 @@
-package com.silas.iris.toolgateway.matrics.model.vo;
+package com.silas.iris.toolgateway.metrics.model.vo;
 
 import com.silas.iris.toolgateway.common.result.ApiEnvelope;
 import io.swagger.v3.oas.annotations.media.Schema;

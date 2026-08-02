@@ -47,7 +47,7 @@ htmlcov/
 .env.*
 !.env.example
 !.env.*.example
-tool-gateway/src/main/resources/application.yml
+*/application.yml
 
 # Logs and temporary files
 *.log
@@ -63,5 +63,4 @@ data/
 .codegraph/
 
 # Documentation
-docs/
 PLAN.md

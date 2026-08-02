@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iris-tool-gateway 功能差距分析报告</title>
+<style>
+  :root {
+    --bg: #fde9ee;
+    --panel-bg: rgba(255, 255, 255, 0.82);
+    --text: #4a3f44;
+    --text-muted: #6b5e64;
+    --border: rgba(255, 255, 255, 0.68);
+    --accent: #d97991;
+    --accent-ink: #9f5267;
+    --highlight: rgba(255, 231, 188, 0.72);
+    --code-bg: #282c34;
+    --code-border: rgba(255, 255, 255, 0.1);
+    --code-fg: #abb2bf;
+    --toc-bg: rgba(255, 255, 255, 0.78);
+    --shadow: rgba(190, 120, 140, 0.16);
+
+    --red-bg: rgba(255, 222, 224, 0.78); --red-fg: #a8444a; --red-border: rgba(204, 92, 99, 0.24);
+    --amber-bg: rgba(255, 239, 203, 0.78); --amber-fg: #8a6519; --amber-border: rgba(190, 142, 43, 0.24);
+    --blue-bg: rgba(225, 235, 255, 0.8); --blue-fg: #4e67a8; --blue-border: rgba(90, 118, 184, 0.22);
+    --green-bg: rgba(221, 244, 227, 0.82); --green-fg: #397853; --green-border: rgba(68, 145, 94, 0.22);
+    --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+    --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 28px;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    color: var(--text-muted);
+    background: linear-gradient(160deg, #fff1f3 0%, #fde7ec 100%);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.72;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    border-radius: 999px;
+    filter: blur(92px);
+    pointer-events: none;
+  }
+  body::before {
+    width: 36vw;
+    height: 36vw;
+    top: -10vw;
+    left: -8vw;
+    background: rgba(233, 144, 165, 0.34);
+  }
+  body::after {
+    width: 34vw;
+    height: 34vw;
+    top: 30vh;
+    right: -12vw;
+    background: rgba(244, 183, 143, 0.28);
+  }
+
+  a {
+    color: var(--text);
+    text-decoration-color: rgba(107, 94, 100, 0.42);
+    text-underline-offset: 0.18em;
+    overflow-wrap: anywhere;
+  }
+  a:hover { text-decoration-color: currentColor; }
+
+  strong {
+    color: var(--text);
+    font-weight: 600;
+    background: var(--highlight);
+    border-radius: 4px;
+    padding: 0.02em 0.16em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 248px minmax(0, 920px);
+    justify-content: center;
+    align-items: start;
+    gap: 48px;
+    width: min(1400px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 64px 0 96px;
+  }
+
+  .toc {
+    position: sticky;
+    top: 28px;
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
+    background: var(--toc-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 28px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  .toc h2 {
+    margin: 0 0 10px;
+    padding: 10px 10px 12px;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+  }
+  .toc ul { list-style: none; margin: 0; padding: 0; }
+  .toc li { margin: 0; padding: 0; }
+  .toc a {
+    display: block;
+    padding: 9px 10px;
+    border-radius: 9px;
+    color: rgba(107, 94, 100, 0.9);
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    transition: color 160ms ease, background 160ms ease;
+  }
+  .toc a:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .toc .toc-sub {
+    padding-left: 12px;
+  }
+  .toc .toc-sub a { font-size: 12.5px; }
+  .toc .toc-count {
+    color: var(--accent-ink);
+    font-size: 11px;
+  }
+
+  .main {
+    width: 100%;
+    max-width: 920px;
+    min-width: 0;
+  }
+
+  header.page-header {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(36px, 6vw, 58px) clamp(28px, 4vw, 44px) clamp(42px, 5vw, 54px);
+    margin-bottom: 28px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel-bg);
+    box-shadow: 0 8px 32px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  header.page-header::after {
+    content: "";
+    position: absolute;
+    width: 118px;
+    height: 4px;
+    left: clamp(28px, 4vw, 44px);
+    bottom: 25px;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+  header.page-header h1 {
+    max-width: 18ch;
+    margin: 0 0 16px;
+    color: var(--text);
+    font-size: clamp(30px, 4.6vw, 48px);
+    font-weight: 650;
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  header.page-header p.subtitle {
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 70ch;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .overview {
+    position: relative;
+    padding: clamp(28px, 4vw, 44px);
+    margin-bottom: 36px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel-bg);
+    box-shadow: 0 8px 32px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  .overview h2 {
+    margin: 0 0 22px;
+    color: var(--text);
+    font-size: clamp(25px, 4vw, 32px);
+    line-height: 1.18;
+    letter-spacing: -0.018em;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .stat-tile {
+    min-height: 112px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.46);
+  }
+  .stat-tile .num { color: var(--text); font-size: 30px; font-weight: 680; line-height: 1.2; }
+  .stat-tile .label { margin-top: 8px; color: var(--text-muted); font-size: 12.5px; line-height: 1.4; }
+  .stat-tile.total { background: rgba(255, 255, 255, 0.46); }
+  .stat-tile.red { background: var(--red-bg); border-color: var(--red-border); }
+  .stat-tile.red .num { color: var(--red-fg); }
+  .stat-tile.amber { background: var(--amber-bg); border-color: var(--amber-border); }
+  .stat-tile.amber .num { color: var(--amber-fg); }
+  .stat-tile.blue { background: var(--blue-bg); border-color: var(--blue-border); }
+  .stat-tile.blue .num { color: var(--blue-fg); }
+  .stat-tile.green { background: var(--green-bg); border-color: var(--green-border); }
+  .stat-tile.green .num { color: var(--green-fg); }
+
+  section.cluster {
+    margin-bottom: 48px;
+    scroll-margin-top: 28px;
+  }
+  section.cluster > h2 {
+    margin: 0 0 20px;
+    padding: 0 4px;
+    color: var(--text);
+    font-size: clamp(24px, 3.5vw, 30px);
+    font-weight: 650;
+    line-height: 1.25;
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+  section.cluster > h2 .cluster-count {
+    display: inline-block;
+    font-size: 12.5px;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  article.feature {
+    position: relative;
+    padding: clamp(26px, 4vw, 40px);
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel-bg);
+    box-shadow: 0 8px 32px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    scroll-margin-top: 28px;
+    transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+  article.feature:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 38px rgba(190, 120, 140, 0.2);
+  }
+  article.feature > h3 {
+    margin: 0 0 18px;
+    color: var(--text);
+    font-size: clamp(19px, 3vw, 23px);
+    font-weight: 650;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    text-wrap: balance;
+  }
+  .badge {
+    display: inline-block;
+    flex: 0 0 auto;
+    padding: 4px 11px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 11.5px;
+    font-weight: 650;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .badge.status-未实现 { background: var(--red-bg); color: var(--red-fg); border-color: var(--red-border); }
+  .badge.status-部分实现 { background: var(--amber-bg); color: var(--amber-fg); border-color: var(--amber-border); }
+  .badge.status-细节不同 { background: var(--blue-bg); color: var(--blue-fg); border-color: var(--blue-border); }
+  .badge.status-完整 { background: var(--green-bg); color: var(--green-fg); border-color: var(--green-border); }
+
+  article.feature h4 {
+    margin: 24px 0 10px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+  }
+  article.feature h4:first-of-type { margin-top: 18px; }
+
+  .evidence-list, .diff-list {
+    margin: 10px 0 22px;
+    padding: 0;
+    list-style: none;
+  }
+  .evidence-list li, .diff-list li {
+    position: relative;
+    margin: 10px 0;
+    padding-left: 25px;
+    font-size: 14px;
+  }
+  .evidence-list li::before, .diff-list li::before {
+    content: "";
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    left: 3px;
+    top: 0.72em;
+    border-radius: 50%;
+    background: var(--accent-ink);
+    box-shadow: 0 0 0 4px rgba(217, 121, 145, 0.18);
+  }
+
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .steps li {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: flex-start;
+    gap: 12px;
+    margin: 10px 0;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.36);
+    font-size: 14px;
+  }
+  .steps input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0.28em 0 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+  }
+  .steps label { min-width: 0; cursor: pointer; }
+
+  code {
+    padding: 0.14em 0.38em;
+    border-radius: 5px;
+    color: #93495f;
+    background: rgba(244, 193, 205, 0.46);
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    overflow-wrap: anywhere;
+  }
+  pre {
+    margin: 10px 0 6px;
+    padding: 20px 18px;
+    overflow: auto;
+    color: var(--code-fg);
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 12px;
+    box-shadow: 0 10px 26px rgba(25, 27, 33, 0.18);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.65;
+    tab-size: 2;
+  }
+  pre code {
+    display: block;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    white-space: pre;
+  }
+  .verify-box {
+    margin-top: 10px;
+  }
+  .note {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 10px 0 0;
+    padding: 12px 14px;
+    border-left: 4px solid var(--accent);
+    border-radius: 0 12px 12px 0;
+    background: rgba(255, 255, 255, 0.38);
+  }
+  .cross-ref {
+    margin: 14px 0;
+    padding: 12px 14px;
+    border: 1px solid rgba(217, 121, 145, 0.22);
+    border-radius: 12px;
+    color: var(--text-muted);
+    background: rgba(255, 239, 243, 0.66);
+    font-size: 12.5px;
+  }
+
+  @media (max-width: 1240px) {
+    .layout {
+      grid-template-columns: minmax(0, 920px);
+      gap: 18px;
+      width: min(980px, calc(100% - 40px));
+    }
+    .toc {
+      z-index: 10;
+      top: 12px;
+      width: 100%;
+      max-height: min(42vh, 360px);
+    }
+  }
+
+  @media (max-width: 768px) {
+    body { font-size: 15px; }
+    .layout {
+      width: min(100% - 24px, 620px);
+      padding: 18px 0 64px;
+    }
+    .toc { padding: 10px; border-radius: 14px; }
+    .toc h2 { padding: 8px 10px; }
+    header.page-header,
+    .overview,
+    article.feature {
+      padding: 24px 20px;
+      border-radius: 18px;
+    }
+    header.page-header { padding-top: 32px; padding-bottom: 42px; }
+    header.page-header::after { left: 20px; }
+    header.page-header h1 { max-width: none; font-size: clamp(27px, 9vw, 38px); }
+    section.cluster > h2 { padding: 0; font-size: clamp(22px, 7vw, 28px); }
+    article.feature > h3 { font-size: 19px; }
+    .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat-tile { min-height: 104px; padding: 15px; }
+    .steps li { padding: 11px 12px; }
+    pre { padding: 18px 16px; font-size: 12px; }
+  }
+
+  @media (max-width: 430px) {
+    .stat-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  @media print {
+    @page { margin: 16mm; }
+    body { color: #4a3f44; background: white !important; font-size: 11pt; }
+    body::before, body::after, .toc { display: none !important; }
+    .layout { display: block; width: 100%; padding: 0; }
+    header.page-header, .overview, article.feature {
+      break-inside: avoid;
+      padding: 0;
+      margin: 0 0 18pt;
+      border: 0;
+      border-radius: 0;
+      background: transparent !important;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    header.page-header::after { display: none; }
+    article.feature:hover { transform: none; }
+    pre { break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc">
+    <h2>目录</h2>
+    <ul>
+      <li><a href="#overview">概览统计</a></li>
+      <li><a href="#cluster-crosscutting">横切面基础设施 <span class="toc-count">(3)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-envelope">统一响应信封 ApiEnvelope</a></li>
+          <li class="toc-sub"><a href="#f-auth">AuthInterceptor 鉴权</a></li>
+          <li class="toc-sub"><a href="#f-exception">GlobalExceptionHandler 异常映射</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-budget">预算护栏 <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-budget-template">模板通道预算护栏</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-metrics">query_metrics <span class="toc-count">(5)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-metrics-route">路由路径</a></li>
+          <li class="toc-sub"><a href="#f-metrics-template">PromQL 模板化</a></li>
+          <li class="toc-sub"><a href="#f-metrics-prom">真实调用 Prometheus</a></li>
+          <li class="toc-sub"><a href="#f-metrics-downsample">降采样（≤30 点）</a></li>
+          <li class="toc-sub"><a href="#f-metrics-degrade">上游超时/不可用 → degraded</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-cmdb">query_cmdb <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-cmdb">Nacos 服务拓扑 / service 校验</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-logs">query_logs <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-logs">Loki 日志查询</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-trace">query_trace <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-trace">Tempo/Zipkin 调用链查询</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-changes">query_changes <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-changes">变更事件表查询</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-raw">raw 逃生通道 <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-raw">promql / logql 裸查询通道</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-audit">审计日志 <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-audit">AuditService</a></li>
+        </ul>
+      </li>
+      <li><a href="#cluster-docs">契约文档 <span class="toc-count">(1)</span></a>
+        <ul>
+          <li class="toc-sub"><a href="#f-tool-contract">docs/tool-contract.md</a></li>
+        </ul>
+      </li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <header class="page-header">
+      <h1>iris-tool-gateway 功能差距分析报告</h1>
+      <p class="subtitle">对照“工具网关”设计规格的差距分析 · 代码库：/Users/silas/Desktop/Iris/iris-tool-gateway（单模块 Spring Boot 工程）· 报告生成日期：2026-08-01</p>
+    </header>
+
+    <section class="overview" id="overview">
+      <h2>整体概览</h2>
+      <p style="margin:0;color:var(--text-muted);font-size:14px;">模块数：<strong style="color:var(--text)">1</strong>（tool-gateway，仓库内未发现其它顶层模块）　功能点总数：<strong style="color:var(--text)">15</strong></p>
+      <div class="stat-grid">
+        <div class="stat-tile total">
+          <div class="num">15</div>
+          <div class="label">功能点总数</div>
+        </div>
+        <div class="stat-tile red">
+          <div class="num">6</div>
+          <div class="label">未实现</div>
+        </div>
+        <div class="stat-tile amber">
+          <div class="num">2</div>
+          <div class="label">部分实现</div>
+        </div>
+        <div class="stat-tile blue">
+          <div class="num">5</div>
+          <div class="label">已实现但细节与规格不同</div>
+        </div>
+        <div class="stat-tile green">
+          <div class="num">2</div>
+          <div class="label">完整</div>
+        </div>
+      </div>
+      <p class="note">说明：本报告由 6 个并行 auditor 的原始审计结果合并去重而成。重叠的横切关注点（例如 <code>ToolCallsExceededException</code> 未映射为 429、service 参数 CMDB 校验缺失等）已在多处证据中合并为单一功能点，并保留最完整的引用证据与实现步骤。</p>
+    </section>
+
+    <!-- ========================= 横切面基础设施 ========================= -->
+    <section class="cluster" id="cluster-crosscutting">
+      <h2>模块：tool-gateway ｜ 功能簇：横切面基础设施 <span class="cluster-count">(3 个功能点)</span></h2>
+
+      <article class="feature" id="f-envelope">
+        <h3><span class="badge status-细节不同">已实现但细节与规格不同</span> 统一响应信封 ApiEnvelope（ok/degraded/degraded_reason/data/meta.elapsed_ms/meta.truncated/meta.budget_remaining）</h3>
+
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/result/ApiEnvelope.java:26-120</code> — 字段齐全：<code>ok</code>(L32)、<code>degraded</code>(L37)、<code>degradedReason</code>(L42)、<code>data</code>(L52)，内部类 <code>Meta</code> 含 <code>elapsedMs</code>(L70)、<code>truncated</code>(L75)、<code>toolCallsRemaining</code>(L80)。三态静态工厂 <code>ok()</code>(L87-94)/<code>degraded()</code>(L99-107)/<code>fail()</code>(L113-120) 语义与规格一致：<code>ok=true,degraded=false</code> 为正常；<code>ok=true,degraded=true</code> 为上游降级（HTTP 仍 200）；<code>ok=false</code> 为真错误。</li>
+          <li><code>src/main/java/com/silas/iris/toolgateway/metrics/controller/MetricsController.java:206-212</code> — <code>buildMeta()</code> 实际组装 <code>elapsedMs</code>/<code>truncated</code>/<code>toolCallsRemaining</code>，证明该信封被真实业务路径消费，非空壳定义。</li>
+          <li>已检索 <code>application.yaml</code> 与全部 <code>.java</code> 源码，未发现任何 Jackson 命名策略配置（无 <code>JsonNaming</code>/snake_case 配置），因此 JSON 序列化输出为 Java camelCase：<code>degradedReason</code>、<code>elapsedMs</code>、<code>toolCallsRemaining</code>，而非规格写的 <code>degraded_reason</code>、<code>elapsed_ms</code>、<code>budget_remaining</code>。</li>
+        </ul>
+
+        <h4>与规格的差异</h4>
+        <ul class="diff-list">
+          <li>规格：JSON 字段命名为 snake_case（<code>degraded_reason</code>/<code>elapsed_ms</code>/<code>budget_remaining</code>）。</li>
+          <li>代码库实际：Lombok <code>@Data</code> 生成的 POJO 未配置 snake_case 序列化策略，Spring Boot 默认 Jackson 行为下输出为 camelCase；且字段语义名从 <code>budget_remaining</code> 改为 <code>toolCallsRemaining</code>（语义等价，均指“当前 incident/通道剩余可调用次数”，但命名指向具体机制而非抽象“预算”概念）。</li>
+        </ul>
+
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s1-1"><label for="s1-1">若下游 agent/report-builder 尚未依赖具体字段名，直接把 <code>docs/tool-contract.md</code>（需新建）按代码库现状写成 camelCase 契约，不要反向改代码去凑 snake_case。</label></li>
+          <li><input type="checkbox" id="s1-2"><label for="s1-2">若下游已有 snake_case 既有约定，评估在 <code>ApiEnvelope</code>/<code>Meta</code> 上加 <code>@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)</code>，这是唯一改动点，不涉及业务逻辑。</label></li>
+          <li><input type="checkbox" id="s1-3"><label for="s1-3">若保留 <code>toolCallsRemaining</code>，需在契约文档中显式注明其等价于规格里的 <code>budget_remaining</code>，避免下游误解为跨端点共享配额（实际是按 incident 维度、单一 Redis key 计数）。</label></li>
+        </ul>
+
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code>curl -s -X POST http://localhost:8080/metrics/query \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigator" \
+  -H "Content-Type: application/json" \
+  -d '{"templateKey":"qps","service":"foo","window":300}' | jq .
+# 观察返回 JSON 顶层字段实际名（ok/degraded/data/meta），
+# 以及 meta 内是否为 elapsedMs/truncated/toolCallsRemaining</code></pre></div>
+      </article>
+
+      <article class="feature" id="f-auth">
+        <h3><span class="badge status-细节不同">已实现但细节与规格不同</span> AuthInterceptor 鉴权（Bearer token 校验 + 强制 X-Incident-Id/X-Agent-Role）</h3>
+
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/interceptor/AuthInterceptor.java:43-64</code> — <code>preHandle()</code>：L50-54 校验 <code>Authorization</code> 头非空、<code>Bearer </code> 前缀、token 匹配 <code>${iris.bearer-token}</code>，不满足抛 <code>UnauthorizedException</code>；L56-58 用 <code>StrUtil.hasBlank(incidentIdValue, agentRole)</code> 校验两头任一缺失抛 <code>MissingRequiredHeaderException</code>；L60-61 写入 request attribute。</li>
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/config/WebConfig.java:22-34</code> — 拦截器通过 <code>addPathPatterns("/**")</code> 全局注册，仅排除 swagger/knife4j 静态资源路径，确认真实生效、覆盖所有业务端点。</li>
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/web/GlobalExceptionHandler.java:58-68</code> — <code>UnauthorizedException</code> → <strong>401</strong>；<code>MissingRequiredHeaderException</code> → <strong>400</strong>。</li>
+          <li><code>HeaderConstants.java:21,26,31,36</code> 确认三个头名字面量与 <code>Bearer </code> 前缀集中定义，无拼写不一致风险。</li>
+        </ul>
+
+        <h4>与规格的差异</h4>
+        <ul class="diff-list">
+          <li>规格原文把“Bearer 校验失败”和“两头缺失”并列在同一条“缺失→400”规则下。</li>
+          <li>代码库实际区分两类失败：Authorization 缺失/格式错/token 不匹配 → <strong>401</strong>；仅 X-Incident-Id/X-Agent-Role 缺失 → <strong>400</strong>。这是更细粒度、更符合 REST 惯例的处理（401=未认证，400=请求参数不全），不违背规格意图，但状态码字面值与规格文档不完全一致。</li>
+        </ul>
+
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s2-1"><label for="s2-1">无需改代码；在 <code>docs/tool-contract.md</code>（需新建）中明确写出“Authorization 缺失/无效 → 401；X-Incident-Id 或 X-Agent-Role 缺失 → 400”，把更精细的行为固化进契约。</label></li>
+          <li><input type="checkbox" id="s2-2"><label for="s2-2">若后续要支持多租户/多 token，应在 <code>AuthInterceptor.java:29</code> 的单一 <code>bearerToken</code> 字段基础上扩展为查表校验，并同步复用现有 <code>GlobalExceptionHandler</code> 的 <code>UnauthorizedException</code> 分支。</label></li>
+        </ul>
+
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code># 1. 完全不带任何头 -> 期待 401（Authorization 缺失优先级最高）
+curl -i -X POST http://localhost:8080/metrics/query -d '{}' -H "Content-Type: application/json"
+# 2. 带正确 Authorization 但不带 X-Incident-Id/X-Agent-Role -> 期待 400
+curl -i -X POST http://localhost:8080/metrics/query \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'</code></pre></div>
+      </article>
+
+      <article class="feature" id="f-exception">
+        <h3><span class="badge status-部分实现">部分实现</span> GlobalExceptionHandler 异常映射（参数错误400 / 上游不可用200 degraded / 超限429 / 未知异常500）</h3>
+
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/web/GlobalExceptionHandler.java:44-99</code> 逐条核实：<code>MethodArgumentNotValidException</code> → 400（L44-50）；<code>UnknownTemplateException</code>/<code>UnknownServiceException</code> → 400（L52-56，但 <code>UnknownServiceException</code> 目前在仓库中从未被 <code>throw</code>，是“接好了处理器但没有调用方”的死代码，详见 query_cmdb 功能点）；<code>UnauthorizedException</code> → 401（L58-62）；<code>MissingRequiredHeaderException</code> → 400（L64-68）；<code>HttpClientErrorException</code>（上游 4xx）→ 透传原状态码 + fail（L70-74）；<code>HttpServerErrorException.ServiceUnavailable</code>（上游 503）→ <strong>200 + degraded</strong>（L76-80）；<code>ResourceAccessException</code>（连接失败/超时）→ <strong>200 + degraded</strong>（L82-86）；其余非 503 的 5xx → 502 + fail（L88-92，未强行伪装成 degraded）；<code>Exception.class</code> 兜底 → 500 + fail 并 <code>log.error</code>（L94-99）。</li>
+          <li><code>src/main/java/com/silas/iris/toolgateway/metrics/controller/MetricsController.java:67-78</code> — <code>initPrometheusClient</code> 显式设置 connect/read timeout，保证会真正抛出 <code>ResourceAccessException</code> 而非无限挂起，确认 degraded 分支可达。</li>
+          <li><strong>缺口</strong>：<code>ToolCallsExceededException</code>（<code>common/exception/ToolCallsExceededException.java:9-14</code>）由 <code>RedisService.consume_tool_calls()</code> 在预算耗尽时抛出（<code>RedisService.java:51-53</code>），但 <code>GlobalExceptionHandler</code> 全文（L1-100）中<strong>没有</strong>针对该异常类型的 <code>@ExceptionHandler</code>。该异常会落入 L94 的兜底 <code>Exception.class</code> 分支，被映射为 <strong>500 + fail</strong>，而非规格第 4 条要求的“超限 429”，且触发 <code>log.error("unhandled exception in tool gateway", e)</code>，把预期内的限流事件误记为“未处理异常”，污染错误日志。<code>MetricsController.java:123</code> 确认该异常在真实请求链路（<code>POST /metrics/query</code>）中会被抛出。</li>
+        </ul>
+
+        <h4>与规格的差异（该缺口部分）</h4>
+        <ul class="diff-list">
+          <li>规格：预算超限（模板通道 40 次、raw 通道 5 次）应返回 429。</li>
+          <li>代码库实际：<code>RedisService</code> 确实抛出专门的 <code>ToolCallsExceededException</code>（说明设计意图是要单独处理），但 <code>GlobalExceptionHandler</code> 未注册对应 handler，实际运行时表现为 500。</li>
+        </ul>
+
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s3-1"><label for="s3-1">在 <code>GlobalExceptionHandler.java</code> 中新增 <code>@ExceptionHandler(ToolCallsExceededException.class)</code>，返回 <code>ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(ApiEnvelope.fail(...))</code>，沿用 <code>UnauthorizedException</code>/<code>MissingRequiredHeaderException</code> 同样的写法风格。</label></li>
+          <li><input type="checkbox" id="s3-2"><label for="s3-2">消息文案复用 <code>ToolCallsExceededException</code> 构造函数已传入的 <code>incidentId</code>，例如 <code>"incident " + e.getMessage() + " 工具调用预算已耗尽"</code>。</label></li>
+          <li><input type="checkbox" id="s3-3"><label for="s3-3">不需要改动 <code>RedisService</code>/Lua 脚本本身（不在本功能点范围）；后续预算相关改动都应基于 <code>RedisService</code> + Lua 机制，不要引入新的 <code>BudgetService</code> 类。</label></li>
+          <li><input type="checkbox" id="s3-4"><label for="s3-4">新增分支后，同步更新文件顶部类注释里的映射表（如有），补一行 429 映射说明。</label></li>
+        </ul>
+
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code># 连续调用同一 incidentId 超过预算上限（当前硬编码 30，见 RedisService.java:30）
+for i in $(seq 1 31); do
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/metrics/query \
+    -H "Authorization: Bearer $TOKEN" -H "X-Incident-Id: INC-BUDGET-TEST" \
+    -H "X-Agent-Role: investigator" -H "Content-Type: application/json" \
+    -d '{"templateKey":"qps","service":"foo","window":300}'
+done
+# 当前预期（缺口存在时）：第 31 次返回 500
+# 修复后预期：第 31 次返回 429</code></pre></div>
+        <p class="note">同时验证上游降级：把 <code>iris.prometheus.base-url</code> 指向不存在的端口触发 <code>ResourceAccessException</code>，确认响应为 200 + <code>degraded:true</code>。</p>
+      </article>
+    </section>
+
+    <!-- ========================= 预算护栏 ========================= -->
+    <section class="cluster" id="cluster-budget">
+      <h2>模块：tool-gateway ｜ 功能簇：预算护栏 <span class="cluster-count">(1 个功能点，raw 通道预算见“raw 逃生通道”)</span></h2>
+
+      <article class="feature" id="f-budget-template">
+        <h3><span class="badge status-细节不同">已实现但细节与规格不同</span> 模板通道预算护栏（工具调用次数限流，consume_tool_calls）</h3>
+
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/redis/RedisService.java:27-56</code>（<code>consume_tool_calls(incidentId)</code>，基于 <code>RedisScript.of(ClassPathResource("scripts/consume_tool_calls.lua"), Long.class)</code> + <code>redisTemplate.execute(...)</code>，<code>TOOL_CALLS_LIMIT = 30</code>，<code>ttl = 24h</code>，key 为 <code>consume_tool_calls:{incident_id}</code>）。</li>
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/scripts/consume_tool_calls.lua:1-14</code>（原子 <code>GET</code>→比较→<code>INCR</code>→首次 <code>EXPIRE</code>，超限返回 <code>-1</code>，否则返回 <code>limit - newVal</code>）。</li>
+          <li><code>MetricsController.java:123</code>（<code>POST /metrics/query</code> 编排逻辑第一步即消费预算，确认已真实接入调用链）。</li>
+          <li><code>AuthInterceptor.java:60</code> + <code>WebConfig.java:24-33</code>：确认 <code>incidentId</code> 来自全局拦截器解析的 <code>X-Incident-Id</code> 头，非占位符。</li>
+          <li><strong>构建期缺陷</strong>：<code>consume_tool_calls.lua</code> 物理路径是 <code>src/main/java/.../common/scripts/consume_tool_calls.lua</code>（放在 Java 源码目录而非 <code>src/main/resources/</code>），<code>pom.xml</code> 未配置任何自定义 <code>&lt;resources&gt;</code> 把 <code>src/main/java</code> 下非 <code>.java</code> 文件打包为资源。已实际执行 <code>mvn -q -DskipTests compile</code>（编译成功）并检查 <code>target/classes</code>，确认<strong>不存在</strong> <code>scripts/</code> 目录或任何 <code>.lua</code> 文件。<code>RedisTemplate.execute(...)</code> 首次真正执行脚本时才会读取该 <code>ClassPathResource</code>，届时会因资源不存在而抛出异常——只要 Redis 可连，第一次调用 <code>/metrics/query</code> 就会在执行脚本这一步失败，整套预算护栏目前处于名义上“已接入”、实际运行时会报错的状态。</li>
+        </ul>
+
+        <h4>与规格的差异</h4>
+        <ul class="diff-list">
+          <li>命名/架构：规格要求独立的 <code>BudgetService</code> 类；代码库实际是 <code>RedisService.consume_tool_calls()</code> + Lua 原子脚本，无 <code>BudgetService</code>。后续预算扩展应基于此机制，不要引入 <code>BudgetService</code>。</li>
+          <li>限额数值：规格要求模板通道 <strong>40 次/incident</strong>，代码库实际硬编码为 <code>TOOL_CALLS_LIMIT = 30</code>（<code>RedisService.java:30</code>）。</li>
+          <li>超限响应码：应为 429，实际因 <code>GlobalExceptionHandler</code> 缺少映射而返回 500（详见“横切面基础设施”簇的 GlobalExceptionHandler 功能点，此处不重复展开）。</li>
+          <li>Lua 脚本未进入 classpath，导致机制名义已接入、实际运行时报错（见上）。</li>
+        </ul>
+
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s4-1"><label for="s4-1">把 <code>consume_tool_calls.lua</code> 移到 <code>src/main/resources/scripts/consume_tool_calls.lua</code>（与 <code>RedisService.java:28</code> 里 <code>ClassPathResource("scripts/consume_tool_calls.lua")</code> 的相对路径保持一致），修完后重新 <code>mvn -DskipTests compile</code> 并确认 <code>target/classes/scripts/consume_tool_calls.lua</code> 存在。</label></li>
+          <li><input type="checkbox" id="s4-2"><label for="s4-2">在 <code>GlobalExceptionHandler.java</code> 新增 <code>ToolCallsExceededException</code> → 429 映射（与“横切面基础设施”簇为同一个改动点，不要重复实现）。</label></li>
+          <li><input type="checkbox" id="s4-3"><label for="s4-3">若确认“40 次/incident”是硬性要求，把 <code>RedisService.java:30</code> 的 <code>TOOL_CALLS_LIMIT</code> 从 30 改为 40；若 30 是有意的产品决策，以代码为准，仅在契约文档中说明偏差。</label></li>
+          <li><input type="checkbox" id="s4-4"><label for="s4-4">raw 通道独立 5 次/incident 预算：待 raw 通道本身落地后，在 <code>RedisService</code> 里加一个 <code>consume_raw_tool_calls(incidentId)</code> 方法（或给现有方法加 channel 参数），复用同一 Lua 脚本（脚本本身与“模板/raw”无关，只是通用 incr+expire 限流），仅 key 前缀和 limit 参数不同（limit=5）。不要为此新建 <code>BudgetService</code>。</label></li>
+        </ul>
+
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code># 1) 修复资源打包问题后先确认脚本进了 classpath
+mvn -DskipTests compile && find target/classes -iname "consume_tool_calls.lua"
+
+# 2) 启动应用后，连续调用 /metrics/query 超过限额次数（当前 30 次）
+for i in $(seq 1 31); do
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -X POST http://localhost:9000/metrics/query \
+    -H "Authorization: Bearer $IRIS_BEARER_TOKEN" \
+    -H "X-Incident-Id: INC-TEST-001" \
+    -H "X-Agent-Role: investigator" \
+    -H "Content-Type: application/json" \
+    -d '{"templateKey":"qps","service":"demo","window":300}'
+done
+# 期望（修复后）：前 30 次 200（meta.toolCallsRemaining 递减），第 31 次 HTTP 429 且 ApiEnvelope.ok=false
+# 修复前实际现象：lua 脚本不在 classpath，第 1 次调用即可能直接报错（500）</code></pre></div>
+      </article>
+    </section>
+
+    <!-- ========================= query_metrics ========================= -->
+    <section class="cluster" id="cluster-metrics">
+      <h2>模块：tool-gateway ｜ 功能簇：query_metrics <span class="cluster-count">(5 个功能点)</span></h2>
+
+      <article class="feature" id="f-metrics-route">
+        <h3><span class="badge status-细节不同">已实现但细节与规格不同</span> query_metrics 路由路径</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/metrics/controller/MetricsController.java:42-91</code>（<code>@RequestMapping("/metrics")</code> + <code>@PostMapping("/query")</code>，无 class-level 前缀 <code>/api/v1/tools</code>）。</li>
+          <li><code>src/main/resources/application.yaml:1-26</code>（未配置 <code>server.servlet.context-path</code>，无法通过部署配置补齐前缀）。</li>
+        </ul>
+        <h4>与规格的差异</h4>
+        <ul class="diff-list">
+          <li>规格要求路由为 <code>POST /api/v1/tools/query_metrics</code>；代码库实际路由是 <code>POST /metrics/query</code>（注意 controller 包名和路径都拼写为 <code>metrics</code> 而非 <code>metrics</code>，且没有 <code>/api/v1/tools</code> 前缀，也没有以工具名 <code>query_metrics</code> 命名端点）。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s5-1"><label for="s5-1">若要对齐规格路径，改 <code>@RequestMapping("/api/v1/tools")</code> + 方法级 <code>@PostMapping("/query_metrics")</code>；但这会是破坏性变更（影响下游已对接方及尚不存在的契约文档）。</label></li>
+          <li><input type="checkbox" id="s5-2"><label for="s5-2">若保留现状，在 <code>docs/tool-contract.md</code> 中如实写入 <code>/metrics/query</code>，避免下游按错误路径对接。</label></li>
+          <li><input type="checkbox" id="s5-3"><label for="s5-3">与其它 4 个工具端点（query_logs/query_trace/query_cmdb/query_changes，均未实现）统一路径风格后一次性定稿，不要 query_metrics 单独改名造成风格不一致。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code>curl -s -X POST http://localhost:9000/metrics/query -H "Authorization: Bearer &lt;token&gt;" -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigator" -H "Content-Type: application/json" -d '{"templateKey":"qps","service":"pm-auth","window":300}'</code></pre></div>
+      </article>
+
+      <article class="feature" id="f-metrics-template">
+        <h3><span class="badge status-完整">完整</span> PromQL 模板化</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/metrics/model/enums/MetricTemplate.java:22-51</code>（QPS/ERROR_RATE/P99_LATENCY/JVM_HEAP_USAGE/CPU_USAGE 五个模板常量，含 <code>{service}</code>/<code>{window}</code> 占位符）。</li>
+          <li><code>src/main/java/com/silas/iris/toolgateway/metrics/utils/MetricsTemplateUtil.java:25-33</code>（<code>render</code> 方法按白名单查表替换占位符，未知 key 抛 <code>UnknownTemplateException</code>）。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s6-1"><label for="s6-1">无需新增，已覆盖规格提到的 qps/error_rate/p99（并额外覆盖饱和度维度的 heap/cpu，超出规格最低要求）。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <p class="note"><code>templateKey</code> 传 <code>not_exist</code> 应返回 400（<code>UnknownTemplateException</code> 由 <code>GlobalExceptionHandler.java:52-56</code> 处理）；传 <code>qps</code>/<code>error_rate</code>/<code>p99_latency</code> 应各自渲染出对应 PromQL。</p>
+      </article>
+
+      <article class="feature" id="f-metrics-prom">
+        <h3><span class="badge status-完整">完整</span> 是否真实调用 Prometheus</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>MetricsController.java:58-78</code>（<code>@PostConstruct initPrometheusClient()</code> 用 <code>RestClient.builder().baseUrl(prometheusBaseUrl)</code> 构造真实 HTTP 客户端，显式设置 connect/read timeout）。</li>
+          <li><code>MetricsController.java:188-197</code>（<code>fetchQueryRange</code> 执行 <code>prometheusClient.get().uri(...).retrieve().body(QueryRangeVO.class)</code>，真实发起 HTTP GET 到 <code>iris.prometheus.base-url</code>（application.yaml:26，默认 <code>http://localhost:9090</code>），并反序列化响应体）。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s7-1"><label for="s7-1">无需新增；已确认不是仅拼接 PromQL 字符串占位实现。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <p class="note">本地起一个假 Prometheus（或用真实 Prometheus）监听 9090，观察 <code>/api/v1/query_range</code> 是否收到带 <code>query/start/end/step/limit</code> 参数的 GET 请求；将 <code>iris.prometheus.base-url</code> 指向不存在的端口，验证请求会抛 <code>ResourceAccessException</code> 走 degraded。</p>
+      </article>
+
+      <article class="feature" id="f-metrics-downsample">
+        <h3><span class="badge status-细节不同">已实现但细节与规格不同</span> 降采样（≤30 点）</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/metrics/constant/MetricsQueryConstants.java:20-23</code>（<code>MAX_SAMPLE_POINTS = 30</code>）。</li>
+          <li><code>MetricsController.java:144-147</code>（<code>resolveStep</code> 用 <code>NumberUtil.ceilDiv(window, MAX_SAMPLE_POINTS)</code> 反推 step，并与 <code>DEFAULT_NATIVE_SCRAPE_INTERVAL_SECONDS</code>（15s，代码注释标注为待核实的默认值）取较大值）。</li>
+          <li><code>MetricsController.java:199-212</code>（<code>buildMeta</code> 中 <code>truncated</code> 字段硬编码为 <code>false</code>，未做真实截断判定）。</li>
+        </ul>
+        <h4>与规格的差异</h4>
+        <ul class="diff-list">
+          <li>实现方式是通过反推 step 让 Prometheus 侧原生降采样（请求参数层面控制返回点数），而非网关拿到全量响应后再做后处理截断——这是合理且更高效的方式，但有两个真实缺口：</li>
+          <li>网关信任自己算出的 step 一定能让 Prometheus 返回 ≤30 点，但从未对实际返回的 <code>data.result[].values</code> 长度做校验/截断。</li>
+          <li><code>meta.truncated</code> 恒为 <code>false</code>，即便真的发生了降采样，调用方也无法从响应信封判断本次数据是否被降采样过——语义未打通。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s8-1"><label for="s8-1">在 <code>fetchQueryRange</code> 拿到 <code>QueryRangeVO</code> 后，检查任一 series 的 <code>values.size()</code>，只要 <code>window</code> 超过触发降采样分支的阈值，就在 <code>buildMeta</code> 里把 <code>truncated</code> 设为 <code>true</code>。</label></li>
+          <li><input type="checkbox" id="s8-2"><label for="s8-2">不需要引入新的“后处理截断”逻辑，当前“预先算好 step 控制点数”的方式已经是合理实现，不建议推倒重做。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <p class="note">传 <code>window=86400</code>（24 小时上限）观察 Prometheus 返回的每条 series 的 <code>values</code> 数组长度是否 ≤30；同时检查响应 <code>meta.truncated</code> 字段目前恒为 <code>false</code>。</p>
+      </article>
+
+      <article class="feature" id="f-metrics-degrade">
+        <h3><span class="badge status-细节不同">已实现但细节与规格不同</span> 上游超时/不可用 → degraded</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>GlobalExceptionHandler.java:76-86</code>（<code>HttpServerErrorException.ServiceUnavailable</code> → 200 degraded；<code>ResourceAccessException</code>（连接失败/读超时）→ 200 degraded）。</li>
+          <li><code>MetricsController.java:67-78</code>（<code>initPrometheusClient</code> 显式设置 connect/read timeout，保证真正会抛出 <code>ResourceAccessException</code> 而不是无限挂起）。</li>
+          <li><code>GlobalExceptionHandler.java:88-92</code>（503 以外的其余上游 5xx 走 502 fail，不算 degraded）。</li>
+        </ul>
+        <h4>与规格的差异</h4>
+        <ul class="diff-list">
+          <li>规格泛泛要求“上游超时/不可用 → 200 degraded”，代码库实际区分更细：只有 503 和网络层异常（<code>ResourceAccessException</code>）才 degraded，其余 5xx（非 503）被当作需要人工关注的错误直接 502 fail，而非一律 degraded。这是比规格更严格/细致的实现，不算缺陷。</li>
+        </ul>
+        <div class="cross-ref">此功能点与“横切面基础设施”簇中 GlobalExceptionHandler 功能点描述的是同一段代码；<code>ToolCallsExceededException</code> 未映射为 429 的缺口已在该功能点详细展开，此处不重复。</div>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s9-1"><label for="s9-1">上游超时/不可用部分无需改动，行为已符合规格意图。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <p class="note">把 Prometheus base-url 指向一个不存在的端口触发 <code>ResourceAccessException</code>，确认响应为 200 + <code>degraded:true</code>。</p>
+      </article>
+    </section>
+
+    <!-- ========================= query_cmdb ========================= -->
+    <section class="cluster" id="cluster-cmdb">
+      <h2>模块：tool-gateway ｜ 功能簇：query_cmdb <span class="cluster-count">(1 个功能点)</span></h2>
+
+      <article class="feature" id="f-cmdb">
+        <h3><span class="badge status-部分实现">部分实现</span> query_cmdb（Nacos 服务拓扑查询 / service 参数动态校验）</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>src/main/java/com/silas/iris/toolgateway/metrics/utils/MetricsTemplateUtil.java:27</code> — 明确的 TODO 注释 <code>// todo cmdb校验</code>，紧跟在 <code>render</code> 方法入口，<code>service</code> 参数在此之后直接被拼进 PromQL 而未经任何白名单/CMDB 校验。</li>
+          <li><code>src/main/java/com/silas/iris/toolgateway/common/exception/UnknownServiceException.java:4</code> — Javadoc 引用 <code>{@link com.silas.iris.toolgateway.metrics.utils.ServiceRegistry}</code>，但该类在仓库中不存在（已用 <code>find</code>/<code>grep -rn "ServiceRegistry"</code> 确认，仅此一处引用，是断链 Javadoc）。</li>
+          <li><code>UnknownServiceException</code> 类本身已存在且已在 <code>GlobalExceptionHandler.java:52</code>（<code>@ExceptionHandler({UnknownTemplateException.class, UnknownServiceException.class})</code>）注册了 400 映射，但全仓库 grep 确认该异常从未被 <code>throw</code>（唯一出现位置是类定义、import 和 handler 注册）。</li>
+          <li>全仓库 grep "nacos"/"cmdb" 无任何命中（排除被 <code>.gitignore</code> 忽略的 <code>.idea/</code>）；<code>pom.xml</code> 无 Nacos 客户端依赖；<code>application.yaml</code> 无 nacos 相关配置项；无 cmdb 包、Controller、Client。</li>
+        </ul>
+        <h4>与规格的差异</h4>
+        <ul class="diff-list">
+          <li>规格预期是独立的 <code>query_cmdb</code> 工具端点 + Nacos 拓扑拉取，同时作为其余工具 service 参数校验的依赖方；代码库现状是——没有端点实现，但已经提前搭好了“未知 service → 400”这条异常链路（<code>UnknownServiceException</code> + <code>GlobalExceptionHandler</code> 映射）以及一处明确写着“这里该做 cmdb 校验”的 TODO 注释，说明作者已规划用这套异常机制承接 CMDB 校验结果，只是数据源（Nacos 拉取逻辑）和 query_cmdb 端点本身都还没写。当前 <code>service</code> 传入任意不存在的值会被直接渲染进 PromQL 发给 Prometheus 并静默返回 200（语义上是错误的静默通过）。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s10-1"><label for="s10-1">新增包 <code>com.silas.iris.toolgateway.cmdb</code>，含 <code>controller/CmdbController.java</code>（<code>@PostMapping("/cmdb/query")</code>）、Nacos client 或 <code>RestClient</code> 调用、<code>model/vo/ServiceTopologyVO.java</code>。当前 pom.xml 无 Nacos SDK 依赖，需先确认预算/时间是否支持引入，或先用可配置静态白名单/枚举做 M0 占位，两种方式都需在契约文档中注明依据。</label></li>
+          <li><input type="checkbox" id="s10-2"><label for="s10-2">新增 <code>com.silas.iris.toolgateway.metrics.utils.ServiceRegistry</code>（即 <code>UnknownServiceException.java:4</code> 已引用但缺失的类），内部持有从 Nacos 拉取的 service 白名单缓存（建议加定时刷新或简单 TTL 缓存）。</label></li>
+          <li><input type="checkbox" id="s10-3"><label for="s10-3">在 <code>MetricsTemplateUtil.render()</code> 的 <code>// todo cmdb校验</code>（<code>MetricsTemplateUtil.java:27</code>）位置补上真实校验逻辑：<code>ServiceRegistry.exists(service)</code> 为 false 时 <code>throw new UnknownServiceException(service)</code>，异常处理链路已经就绪，不需要新增映射代码。</label></li>
+          <li><input type="checkbox" id="s10-4"><label for="s10-4"><code>CmdbController</code> 对外暴露 query_cmdb 工具端点时，同样调用 <code>RedisService.consume_tool_calls(incidentId)</code> 消费预算，鉴权依赖已注册的 <code>AuthInterceptor</code>，无需重复实现。</label></li>
+          <li><input type="checkbox" id="s10-5"><label for="s10-5"><code>application.yaml</code> 新增 <code>iris.nacos.base-url</code> 等配置项。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code>curl -X POST http://localhost:9000/cmdb/query -H "Authorization: Bearer &lt;token&gt;" -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigator" -H "Content-Type: application/json" -d '{"service":"foo"}'</code></pre></div>
+        <p class="note">同时验证：<code>metrics/query</code> 传入未注册 service 时应返回 400（当前实测会因 <code>MetricsTemplateUtil.java:27</code> 的 TODO 未实现而直接跳过校验，不会 400，这是本功能点缺失导致的联动缺陷）。</p>
+      </article>
+    </section>
+
+    <!-- ========================= query_logs ========================= -->
+    <section class="cluster" id="cluster-logs">
+      <h2>模块：tool-gateway ｜ 功能簇：query_logs <span class="cluster-count">(1 个功能点)</span></h2>
+
+      <article class="feature" id="f-logs">
+        <h3><span class="badge status-未实现">未实现</span> query_logs（Loki 日志查询，pattern 聚合 + traceId 提取）</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li>全仓库 grep "loki"（不区分大小写，排除被 <code>.gitignore</code> 忽略的 <code>.idea/</code>）无任何命中。</li>
+          <li><code>find src -iname "*log*"</code> 除日志框架相关的 <code>@Slf4j</code> 注解外无 logs 包/Controller/Client。</li>
+          <li><code>pom.xml</code>（已读取全文）无 Loki/OkHttp/WebClient 等日志查询相关依赖。</li>
+          <li><code>application.yaml</code>/<code>application.yml</code>/<code>application-example.yml</code>（均已读取全文）无 loki 相关配置项。未发现任何 TODO、空方法体或桩实现。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s11-1"><label for="s11-1">新增包 <code>com.silas.iris.toolgateway.logs</code>，仿照 <code>metrics</code> 包结构建 <code>controller/LogsController.java</code>、<code>model/dto/QueryLogsDTO.java</code>、<code>model/vo/QueryLogsVO.java</code>。</label></li>
+          <li><input type="checkbox" id="s11-2"><label for="s11-2"><code>application.yaml</code> 新增 <code>iris.loki.base-url</code>（及 connect/read timeout，仿 <code>iris.prometheus.*</code> 现有命名风格），<code>LogsController</code> 用 <code>RestClient</code>（同 <code>MetricsController.initPrometheusClient()</code> 模式）请求 Loki <code>query_range</code> 接口。</label></li>
+          <li><input type="checkbox" id="s11-3"><label for="s11-3">Controller 方法内先调用 <code>RedisService.consume_tool_calls(incidentId)</code> 消费预算（复用现有机制，不新建 BudgetService），再做 pattern 聚合与 traceId 提取（正则匹配日志行中的 trace id 字段，如 <code>trace_id=xxx</code> 或 <code>traceId:xxx</code>），返回时用 <code>ApiEnvelope.ok(data, meta)</code> 封装。</label></li>
+          <li><input type="checkbox" id="s11-4"><label for="s11-4">service 参数校验：依赖 query_cmdb 落地后，未知 service 抛 <code>UnknownServiceException</code>（已存在），复用已注册的 400 映射，不新建异常类。</label></li>
+          <li><input type="checkbox" id="s11-5"><label for="s11-5">上游超时/不可达复用 <code>GlobalExceptionHandler</code> 已有的 200 degraded 映射，不需要新写降级逻辑。</label></li>
+          <li><input type="checkbox" id="s11-6"><label for="s11-6">请求头校验（Authorization/X-Incident-Id/X-Agent-Role）自动由已注册的 <code>AuthInterceptor</code>（<code>addPathPatterns("/**")</code>）覆盖，新 Controller 无需重复实现。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code>curl -X POST http://localhost:9000/logs/query -H "Authorization: Bearer &lt;token&gt;" -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigator" -H "Content-Type: application/json" -d '{"service":"foo","window":300,"pattern":"error"}'</code></pre></div>
+      </article>
+    </section>
+
+    <!-- ========================= query_trace ========================= -->
+    <section class="cluster" id="cluster-trace">
+      <h2>模块：tool-gateway ｜ 功能簇：query_trace <span class="cluster-count">(1 个功能点)</span></h2>
+
+      <article class="feature" id="f-trace">
+        <h3><span class="badge status-未实现">未实现</span> query_trace（Tempo/Zipkin 调用链查询，树深度 ≤3 精简）</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li>全仓库 grep "tempo"/"zipkin" 无任何命中。</li>
+          <li><code>find src -iname "*trace*"</code> 无结果。</li>
+          <li><code>pom.xml</code> 无 Tempo/Zipkin 客户端依赖；<code>application.yaml</code> 系列文件无 tempo/zipkin 配置项。未发现 trace 包、Controller、DTO 或任何 TODO/桩实现痕迹。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s12-1"><label for="s12-1">新增包 <code>com.silas.iris.toolgateway.trace</code>，含 <code>controller/TraceController.java</code>（<code>/trace/query</code>，与现有 <code>/metrics</code> 风格一致）、<code>model/dto/QueryTraceDTO.java</code>（traceId、service 等入参）、<code>model/vo/TraceTreeVO.java</code>。</label></li>
+          <li><input type="checkbox" id="s12-2"><label for="s12-2"><code>application.yaml</code> 新增 <code>iris.tempo.base-url</code>（或 zipkin），Controller 内用 <code>RestClient</code> 按 <code>MetricsController</code> 同样模式初始化并设超时。</label></li>
+          <li><input type="checkbox" id="s12-3"><label for="s12-3">拉到原始 span 树后做深度裁剪：写纯函数 <code>TraceTreeUtil.pruneDepth(rootSpan, maxDepth=3)</code>，递归遍历，超过 3 层的子树折叠/丢弃并在 VO 中标记 <code>truncated=true</code>，透传到 <code>ApiEnvelope.Meta.truncated</code>。</label></li>
+          <li><input type="checkbox" id="s12-4"><label for="s12-4">预算消费：调用 <code>RedisService.consume_tool_calls(incidentId)</code>（沿用 <code>MetricsController.query</code> 的顺序：先消费预算再发起上游请求），不引入 BudgetService。</label></li>
+          <li><input type="checkbox" id="s12-5"><label for="s12-5">service 参数需查 CMDB 校验（依赖 query_cmdb 先落地），未知 service 复用 <code>UnknownServiceException</code> + 400 映射。</label></li>
+          <li><input type="checkbox" id="s12-6"><label for="s12-6">上游不可用场景复用 <code>GlobalExceptionHandler</code> 中已有的 200 degraded 分支，不新增降级逻辑。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code>curl -X POST http://localhost:9000/trace/query -H "Authorization: Bearer &lt;token&gt;" -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigator" -H "Content-Type: application/json" -d '{"traceId":"abc123"}'</code></pre></div>
+      </article>
+    </section>
+
+    <!-- ========================= query_changes ========================= -->
+    <section class="cluster" id="cluster-changes">
+      <h2>模块：tool-gateway ｜ 功能簇：query_changes <span class="cluster-count">(1 个功能点)</span></h2>
+
+      <article class="feature" id="f-changes">
+        <h3><span class="badge status-未实现">未实现</span> query_changes（变更事件表查询）</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li>全仓库 grep "change"（排除 <code>.idea/workspace.xml</code> 中与业务无关的 IntelliJ VCS changelist 名称）在 <code>src/</code> 下无任何命中。</li>
+          <li><code>find src -iname "*change*"</code> 结果为空；无 <code>changes</code> 包、Controller、DTO。</li>
+          <li>未发现变更事件相关的数据表定义（仓库内无任何 <code>.sql</code> 文件）；<code>application.yaml</code> 无变更事件源相关配置。</li>
+        </ul>
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s13-1"><label for="s13-1">新增包 <code>com.silas.iris.toolgateway.changes</code>，含 <code>controller/ChangesController.java</code>（<code>/changes/query</code>）、<code>model/dto/QueryChangesDTO.java</code>（incident 关联服务名 + 时间窗口）、<code>model/vo/ChangeEventVO.java</code>。</label></li>
+          <li><input type="checkbox" id="s13-2"><label for="s13-2">明确变更事件数据源：规格假定有变更事件表，但仓库既无数据库依赖也无数据源配置，需先确定数据来自内部变更管理系统 API 还是需新增数据库依赖；若走上游 API，按 <code>MetricsController.initPrometheusClient()</code> 模式用 <code>RestClient</code>；若需落库查询，先在 pom.xml 引入数据访问依赖并新增建表脚本。</label></li>
+          <li><input type="checkbox" id="s13-3"><label for="s13-3"><code>ChangesController</code> 中同样调用 <code>RedisService.consume_tool_calls(incidentId)</code> 消费预算，返回用 <code>ApiEnvelope.ok/degraded</code> 封装。</label></li>
+          <li><input type="checkbox" id="s13-4"><label for="s13-4">service 参数校验依赖 query_cmdb 的 <code>ServiceRegistry</code>（一旦落地），未知 service 复用 <code>UnknownServiceException</code> + 现有 400 映射。</label></li>
+          <li><input type="checkbox" id="s13-5"><label for="s13-5">上游/数据源不可用时复用 <code>GlobalExceptionHandler</code> 已有的 200 degraded 映射；数据库场景需另外补充 JDBC 异常映射（当前只覆盖了 HTTP 客户端异常）。</label></li>
+        </ul>
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code>curl -X POST http://localhost:9000/changes/query -H "Authorization: Bearer &lt;token&gt;" -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigator" -H "Content-Type: application/json" -d '{"service":"foo","window":3600}'</code></pre></div>
+      </article>
+    </section>
+
+    <!-- ========================= raw 逃生通道 ========================= -->
+    <section class="cluster" id="cluster-raw">
+      <h2>模块：tool-gateway ｜ 功能簇：raw 逃生通道 <span class="cluster-count">(1 个功能点)</span></h2>
+
+      <article class="feature" id="f-raw">
+        <h3><span class="badge status-未实现">未实现</span> raw 逃生通道（POST /raw/promql、/raw/logql，label selector 强校验、403、长度≤500、独立预算 5 次/incident）</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>find src -iname "*raw*"</code> → 无任何匹配，仓库中不存在 <code>raw</code> 包、<code>RawController</code>、<code>RawQueryValidator</code>。</li>
+          <li><code>grep -rni "label.*selector|logql|promql" src</code> → 除 <code>metrics</code> 包中与 PromQL query_range 拼装相关的代码外，无 LogQL、无 label selector 校验、无 raw 相关代码。</li>
+          <li><code>GlobalExceptionHandler.java:44-99</code> 目前只映射了 400/401/200-degraded/502/500，无 403 分支。</li>
+          <li><code>RedisService.java:22-56</code> 只有 <code>consume_tool_calls(String incidentId)</code> 一个方法，key 模板固定为 <code>"consume_tool_calls:{incident_id}"</code>，阈值硬编码 <code>TOOL_CALLS_LIMIT = 30</code>，<strong>没有 channel 维度</strong>，无法直接区分“模板通道”和“raw 通道”两套独立预算。</li>
+          <li><code>common/scripts/consume_tool_calls.lua:1-14</code> 本身是通用的（<code>limit</code>、<code>ttl</code> 都通过 <code>ARGV</code> 传入，<code>KEYS[1]</code> 也是外部传入的任意 key），可以原样复用，不需要改脚本。</li>
+        </ul>
+        <h4>与规格的差异</h4>
+        <p style="font-size:14px;color:var(--text-muted);margin:0 0 8px;">不适用（代码库中完全没有对应实现，非“细节不同”）。</p>
+
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s14-1"><label for="s14-1">新建包与路由：<code>com.silas.iris.toolgateway.raw.controller.RawController</code>，遵循 <code>MetricsController</code> 现有约定，落在 <code>/raw/**</code>（而非规格写的 <code>/api/v1/raw/**</code>，与仓库既有路由风格保持一致），提供 <code>@PostMapping("/promql")</code>、<code>@PostMapping("/logql")</code> 两个端点。</label></li>
+          <li><input type="checkbox" id="s14-2"><label for="s14-2">新建 <code>RawQueryDTO { @NotBlank @Size(max=500) String query; String service; }</code>，长度限制用 <code>@Size(max=500)</code> 复用已有 <code>spring-boot-starter-validation</code>，触发 <code>MethodArgumentNotValidException</code> → 已有 400 分支。</label></li>
+          <li><input type="checkbox" id="s14-3"><label for="s14-3">新建 <code>com.silas.iris.toolgateway.raw.validator.RawQueryValidator</code>：LogQL 必须以 label selector 花括号开头（正则 <code>^\s*\{[^}]+\}</code>）；PromQL 必须包含至少一个 label matcher（正则匹配 <code>{label="value"}</code>/<code>label!="x"</code>/<code>label=~"regex"</code>/<code>label!~"regex"</code>），不满足抛 <code>RawQueryRejectedException</code>。</label></li>
+          <li><input type="checkbox" id="s14-4"><label for="s14-4">新建 <code>common/exception/RawQueryRejectedException extends RuntimeException</code>，在 <code>GlobalExceptionHandler</code> 中新增 <code>@ExceptionHandler(RawQueryRejectedException.class)</code> → <code>HttpStatus.FORBIDDEN</code>（403），沿用 <code>UnauthorizedException</code>/<code>MissingRequiredHeaderException</code> 同构写法，不能落进兜底 500。</label></li>
+          <li><input type="checkbox" id="s14-5"><label for="s14-5">在 <code>RedisService</code> 中新增按 channel 区分 key、limit 可传参的方法（如 <code>consume_raw_tool_calls(incidentId)</code>，key 为 <code>consume_tool_calls:raw:{incident_id}</code>，limit=5），复用同一 Lua 脚本，不新建 <code>BudgetService</code>。超限同样抛 <code>ToolCallsExceededException</code>，依赖“横切面基础设施”簇里 429 映射的落地（当前该映射不存在，属已知缺口，见该功能点）。</label></li>
+          <li><input type="checkbox" id="s14-6"><label for="s14-6">审计落盘：<code>AuditService</code>/<code>audit_log</code> 表同样不存在（详见“审计日志”簇），若 raw 先落地，Controller 里应预留调用点（如 <code>auditService.record(...)</code>，标记 <code>templateOrRaw="raw"</code>），具体实现以审计簇结论为准。</label></li>
+          <li><input type="checkbox" id="s14-7"><label for="s14-7">鉴权/必需头校验由已注册的 <code>AuthInterceptor</code>（<code>addPathPatterns("/**")</code>）自动覆盖 <code>/raw/**</code>，无需重复实现。</label></li>
+        </ul>
+
+        <h4>参考代码片段</h4>
+        <pre><code>@Component
+public class RawQueryValidator {
+    // LogQL 必须以 label selector 花括号开头
+    private static final Pattern LOGQL_LABEL_SELECTOR =
+            Pattern.compile("^\\s*\\{[^}]+\\}");
+
+    // PromQL 必须包含至少一个 label matcher
+    private static final Pattern PROMQL_LABEL_MATCHER =
+            Pattern.compile("\\{[^}]*[a-zA-Z_][a-zA-Z0-9_]*\\s*(=~|!~|!=|=)\\s*\"[^\"]*\"[^}]*\\}");
+
+    public void validateLogQL(String query) {
+        if (!LOGQL_LABEL_SELECTOR.matcher(query).find()) {
+            throw new RawQueryRejectedException("LogQL 查询必须以 label selector 开头，如 {app=\"xxx\"}");
+        }
+    }
+
+    public void validatePromQL(String query) {
+        if (!PROMQL_LABEL_MATCHER.matcher(query).find()) {
+            throw new RawQueryRejectedException("PromQL 查询必须包含至少一个 label matcher，如 {service=\"xxx\"}");
+        }
+    }
+}</code></pre>
+
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code># 合规样例（PromQL 带 label matcher，应 200）
+curl -s -X POST http://localhost:8080/raw/promql \
+  -H "Authorization: Bearer your-token" \
+  -H "X-Incident-Id: INC-20260801-001" \
+  -H "X-Agent-Role: investigator" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "rate(http_requests_total{service=\"order-svc\"}[5m])"}'
+
+# 被 403 拒绝的样例（PromQL 无任何 label matcher）
+curl -s -X POST http://localhost:8080/raw/promql \
+  -H "Authorization: Bearer your-token" \
+  -H "X-Incident-Id: INC-20260801-001" \
+  -H "X-Agent-Role: investigator" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "up"}'
+# 期望：HTTP 403
+
+# 预算耗尽验证：连续调用 6 次（同一 X-Incident-Id），第 6 次应触发限流
+# （依赖 429 映射落地，目前该映射缺失，属已知缺口）</code></pre></div>
+      </article>
+    </section>
+
+    <!-- ========================= 审计日志 ========================= -->
+    <section class="cluster" id="cluster-audit">
+      <h2>模块：tool-gateway ｜ 功能簇：审计日志 <span class="cluster-count">(1 个功能点)</span></h2>
+
+      <article class="feature" id="f-audit">
+        <h3><span class="badge status-未实现">未实现</span> AuditService 审计日志（记录工具调用，含 raw 通道，标记 template_or_raw 与 agent_role）</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>find src -iname "*audit*"</code> 返回空，仓库内不存在 audit 包、AuditService 类或任何 audit_log 相关代码；<code>grep -ril "AuditService|audit_log|template_or_raw" src</code> 同样为空。</li>
+          <li><code>MetricsController.java:133</code> —— 在唯一已落地的工具端点 <code>POST /metrics/query</code> 的编排逻辑里，正常返回前留有明确的 <code>// todo 审计</code> 注释，是“设计上打算做审计、但尚未实现”的直接代码证据。</li>
+          <li><code>find . -iname "schema.sql"</code> 返回空，不存在任何 schema.sql。</li>
+          <li><code>pom.xml</code>（已读取全文）依赖只有 spring-boot-starter-webmvc/-validation、lombok、knife4j+springdoc、hutool-all、spring-boot-starter-data-redis(+test)，没有任何关系型数据库依赖（无 JPA/JDBC/MyBatis/H2/MySQL/PostgreSQL driver）；application.yaml 无 datasource 配置块。</li>
+          <li><code>AuthInterceptor.java:60-61</code> —— 已把 <code>incidentId</code>/<code>agentRole</code> 从请求头解析后写入 <code>request.setAttribute</code>（<code>HeaderConstants.java:39-46</code>），后续 controller 通过 <code>@RequestAttribute</code> 读取，这是审计落地时应复用的既有取值路径。</li>
+          <li><code>find src -iname "*raw*"</code> 返回空：raw 逃生通道本身也完全不存在，因此“raw 调用标记 <code>template_or_raw='raw'</code>”目前没有任何调用点可以挂载，只能作为 schema/接口设计上的预留字段。</li>
+          <li><code>pom.xml</code> 中未声明 spring-boot-starter-aop，仓库现有横切面手段是 <code>HandlerInterceptor</code>（AuthInterceptor + WebConfig 注册），不是 Spring AOP <code>@Aspect</code>。</li>
+        </ul>
+
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s15-1"><label for="s15-1">前置缺口：补数据库依赖和数据源配置。二选一：<code>spring-boot-starter-jdbc</code>（配合 <code>JdbcTemplate</code>，与仓库“薄封装、少框架”风格更一致，建议优先）或 <code>mybatis-spring-boot-starter</code>；具体数据库驱动需向仓库所有者确认。<code>application.yaml</code> 新增 <code>spring.datasource.*</code> 配置块。</label></li>
+          <li><input type="checkbox" id="s15-2"><label for="s15-2">新建 <code>src/main/resources/schema.sql</code>，定义 <code>audit_log</code> 表（incident_id、agent_role、tool_name、template_or_raw、request_params、response_summary、degraded、http_status、elapsed_ms、created_at），并加 incident_id/created_at 索引。</label></li>
+          <li><input type="checkbox" id="s15-3"><label for="s15-3">新建 <code>com.silas.iris.toolgateway.common.audit.AuditService</code>（放在 <code>common</code> 包下，因为是被 metrics 及未来各工具包共用的横切能力，与 <code>common.redis.RedisService</code> 组织方式一致），内部持有 <code>JdbcTemplate</code>，提供 <code>void record(AuditRecord record)</code>；写审计失败要 catch 并 <code>log.error</code>，不能影响主流程返回。</label></li>
+          <li><input type="checkbox" id="s15-4"><label for="s15-4">不建议新增 Spring AOP <code>@Aspect</code>（pom.xml 未声明相关依赖，且仓库已选定 <code>HandlerInterceptor</code> 模式）。新增独立的 <code>AuditInterceptor implements HandlerInterceptor</code>（不塞进 AuthInterceptor，保持单一职责），在 <code>afterCompletion(request, response, handler, ex)</code> 钩子里执行审计写入，此时能拿到最终 HTTP 状态码，也能通过 <code>request.getAttribute</code> 复用 AuthInterceptor 已写入的 <code>incidentId</code>/<code>agentRole</code>。</label></li>
+          <li><input type="checkbox" id="s15-5"><label for="s15-5"><code>tool_name</code>/<code>template_or_raw</code> 在 interceptor 层拿不到业务语义，需要各工具 controller 在处理完成后把这两个字段写入 request attribute（类似 AuthInterceptor 写 incidentId 的方式），供 AuditInterceptor 在 <code>afterCompletion</code> 里读取。</label></li>
+          <li><input type="checkbox" id="s15-6"><label for="s15-6">在 <code>WebConfig.java</code> 的 <code>addInterceptors</code> 里追加注册 <code>AuditInterceptor</code>，排除规则与 AuthInterceptor 保持一致（swagger/webjars 等文档路径）。</label></li>
+          <li><input type="checkbox" id="s15-7"><label for="s15-7">在 <code>MetricsController.java:133</code> 的 <code>// todo 审计</code> 处，改为设置 request attribute（<code>TOOL_NAME_ATTR="query_metrics"</code>, <code>TEMPLATE_OR_RAW_ATTR="template"</code>），交由 AuditInterceptor 统一落库，不在 controller 内部直接调用 AuditService。</label></li>
+          <li><input type="checkbox" id="s15-8"><label for="s15-8">raw 通道待实现后，同样在 raw controller 里设置 <code>template_or_raw="raw"</code> 的 request attribute 即可复用同一套 AuditInterceptor，无需为 raw 单独写审计逻辑。</label></li>
+        </ul>
+
+        <h4>参考 schema.sql</h4>
+        <pre><code>CREATE TABLE IF NOT EXISTS audit_log (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,      -- 或 BIGSERIAL（PostgreSQL）
+    incident_id       VARCHAR(128)  NOT NULL,                 -- 对应 X-Incident-Id
+    agent_role        VARCHAR(64)   NOT NULL,                 -- 对应 X-Agent-Role
+    tool_name         VARCHAR(64)   NOT NULL,                 -- 例如 query_metrics / query_logs / raw_promql
+    template_or_raw   VARCHAR(16)   NOT NULL,                 -- 'template' | 'raw'
+    request_params    TEXT,                                    -- 请求体 JSON 快照（建议脱敏后存储）
+    response_summary  TEXT,                                    -- 响应摘要，不建议存全量 body
+    degraded          BOOLEAN       NOT NULL DEFAULT FALSE,    -- 对应 ApiEnvelope.degraded
+    http_status       INT,
+    elapsed_ms        BIGINT,                                  -- 对应 ApiEnvelope.Meta.elapsedMs
+    created_at        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_incident_id ON audit_log (incident_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log (created_at);</code></pre>
+
+        <h4>验证方式</h4>
+        <div class="verify-box"><pre><code># 补齐数据库依赖与 schema.sql、AuditInterceptor 后：
+curl -X POST http://localhost:9000/metrics/query \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "X-Incident-Id: INC-20260801-001" \
+  -H "X-Agent-Role: investigator" \
+  -H "Content-Type: application/json" \
+  -d '{"templateKey":"qps","service":"order-service","window":300}'
+
+# 之后查询审计表确认落库且字段符合预期
+psql -c "SELECT incident_id, agent_role, tool_name, template_or_raw, degraded, created_at FROM audit_log ORDER BY id DESC LIMIT 1;"</code></pre></div>
+      </article>
+    </section>
+
+    <!-- ========================= 契约文档 ========================= -->
+    <section class="cluster" id="cluster-docs">
+      <h2>模块：tool-gateway ｜ 功能簇：契约文档 <span class="cluster-count">(1 个功能点)</span></h2>
+
+      <article class="feature" id="f-tool-contract">
+        <h3><span class="badge status-未实现">未实现</span> docs/tool-contract.md 契约文档</h3>
+        <h4>依据</h4>
+        <ul class="evidence-list">
+          <li><code>find /Users/silas/Desktop/Iris/iris-tool-gateway -iname "docs" -o -iname "tool-contract*"</code> 返回空，仓库根目录及任何子目录下都不存在 <code>docs/</code> 目录或 <code>tool-contract.md</code>（也不存在任何变体命名）。</li>
+          <li>仓库唯一的“契约”来源是运行时生成的 OpenAPI/Swagger（springdoc + knife4j，见 <code>pom.xml:47-51</code>、<code>application.yaml:10-21</code>），这是自动生成的接口文档，不是人工维护的 tool-contract.md，二者用途不同——目前只有 1 个工具端点 <code>/metrics/query</code> 落地，其余 4 个工具与 raw 通道均不存在，契约文档即使写也只能先覆盖已实现的 1 个端点，其余标注“待实现”。</li>
+        </ul>
+
+        <h4>实现步骤</h4>
+        <ul class="steps">
+          <li><input type="checkbox" id="s16-1"><label for="s16-1">新建 <code>docs/tool-contract.md</code>，按仓库当前实际落地情况撰写（只有 metrics 一个工具端点，路径是 <code>/metrics/query</code> 而非规格里写的 <code>/api/v1/tools/query_metrics</code>），如实按代码库现状记录，不按规格文档臆造尚不存在的 <code>/api/v1/tools/*</code> 路径。</label></li>
+          <li><input type="checkbox" id="s16-2"><label for="s16-2">每新增/变更一个工具端点，同步更新对应章节，保持与代码实际路径/字段一致，避免再次出现文档与实现路径不一致的情况。</label></li>
+          <li><input type="checkbox" id="s16-3"><label for="s16-3">在 CI 或 PR checklist 中加一条“改了 controller 请求/响应结构必须同步改 docs/tool-contract.md”的提醒，因为目前没有从 OpenAPI 自动生成 tool-contract.md 的机制，只能靠人工同步。</label></li>
+        </ul>
+
+        <h4>大纲草稿</h4>
+        <pre><code># Iris Tool Gateway 工具契约
+
+## 通用约定
+- 鉴权：Authorization: Bearer &lt;token&gt;（AuthInterceptor 校验）
+- 必需请求头：X-Incident-Id、X-Agent-Role（缺失 -&gt; 400）
+- 统一响应信封 ApiEnvelope：{ok, degraded, degradedReason, message, data,
+  meta:{elapsedMs, truncated, toolCallsRemaining}}
+- 限流：按 incident 维度，consume_tool_calls.lua 实现，当前上限 30 次/incident/24h，
+  超限抛 ToolCallsExceededException
+- 错误码：400 参数错误/未知 templateKey|service，401 鉴权失败，
+  200+degraded=true 上游不可用，500 网关自身异常
+
+## 1. query_metrics（已实现）
+- Method / Path: POST /metrics/query
+- 请求头: Authorization, X-Incident-Id, X-Agent-Role（均必需）
+- 请求体 (WindowQueryDTO): templateKey（枚举）、service（string）、window（int，秒）
+- 响应体 data (QueryRangeVO): Prometheus query_range 原始结构透传
+- 错误码: 400 未知 templateKey/service，200+degraded 上游超时/不可用，
+  429 预算耗尽
+
+## 2. query_logs（未实现）
+## 3. query_trace（未实现）
+## 4. query_cmdb（未实现）
+## 5. query_changes（未实现）
+## raw 逃生通道（未实现）</code></pre>
+
+        <h4>验证方式</h4>
+        <p class="note"><code>ls docs/tool-contract.md</code> 确认文件存在；<code>git diff</code> 检查新增/修改的 controller 是否同步更新了对应章节；可选地写脚本 diff 文档中声明的路径列表与 <code>curl http://localhost:9000/v3/api-docs | jq '.paths | keys'</code> 的实际路径列表，人工比对是否遗漏同步。</p>
+      </article>
+    </section>
+
+  </main>
+</div>
+</body>
+</html>
