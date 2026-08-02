@@ -44,4 +44,29 @@ public final class HeaderConstants {
      * incidentId 在 request attribute 中的 key，供后续 controller 通过 {@code @RequestAttribute} 读取。
      */
     public static final String INCIDENT_ID_ATTR = "incidentId";
+
+    /**
+     * 当前请求对应的工具名称，供审计拦截器读取。
+     */
+    public static final String TOOL_NAME_ATTR = "auditToolName";
+
+    /**
+     * 当前请求使用模板通道还是 raw 通道，供审计拦截器读取。
+     */
+    public static final String TEMPLATE_OR_RAW_ATTR = "auditTemplateOrRaw";
+
+    /**
+     * 当前请求的审计参数摘要；未设置时审计拦截器会记录请求方法、路径和查询串。
+     */
+    public static final String AUDIT_REQUEST_PARAMS_ATTR = "auditRequestParams";
+
+    /**
+     * 当前响应的审计摘要；未设置时审计拦截器会根据最终状态码生成摘要。
+     */
+    public static final String AUDIT_RESPONSE_SUMMARY_ATTR = "auditResponseSummary";
+
+    /**
+     * 当前响应是否为降级结果，供审计拦截器读取。
+     */
+    public static final String AUDIT_DEGRADED_ATTR = "auditDegraded";
 }

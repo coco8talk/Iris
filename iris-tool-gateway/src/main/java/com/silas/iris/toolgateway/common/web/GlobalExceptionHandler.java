@@ -1,5 +1,6 @@
 package com.silas.iris.toolgateway.common.web;
 
+import com.silas.iris.toolgateway.common.constant.HeaderConstants;
 import com.silas.iris.toolgateway.common.exception.MissingRequiredHeaderException;
 import com.silas.iris.toolgateway.common.exception.RawQueryRejectedException;
 import com.silas.iris.toolgateway.common.exception.ToolCallsExceededException;
@@ -7,6 +8,7 @@ import com.silas.iris.toolgateway.common.exception.UnauthorizedException;
 import com.silas.iris.toolgateway.common.exception.UnknownServiceException;
 import com.silas.iris.toolgateway.common.exception.UnknownTemplateException;
 import com.silas.iris.toolgateway.common.result.ApiEnvelope;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +19,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -91,17 +94,23 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(HttpServerErrorException.ServiceUnavailable.class)
-    public ResponseEntity<ApiEnvelope<?>> handleUpstreamUnavailable(HttpServerErrorException.ServiceUnavailable e) {
+    public ResponseEntity<ApiEnvelope<?>> handleUpstreamUnavailable(
+            HttpServerErrorException.ServiceUnavailable e, HttpServletRequest request) {
         // 503：查询超时或被中止，属于上游不可用，走降级而非真错误，HTTP 状态码仍为 200
         log.error("Prometheus 服务不可用，status: {}", e.getStatusCode(), e);
-        return ResponseEntity.ok(ApiEnvelope.degraded(null, "prometheus query timeout or aborted: " + e.getMessage(), null));
+        String reason = "prometheus query timeout or aborted: " + e.getMessage();
+        markAuditDegraded(request, reason);
+        return ResponseEntity.ok(ApiEnvelope.degraded(null, reason, null));
     }
 
     @ExceptionHandler(ResourceAccessException.class)
-    public ResponseEntity<ApiEnvelope<?>> handleUpstreamUnreachable(ResourceAccessException e) {
+    public ResponseEntity<ApiEnvelope<?>> handleUpstreamUnreachable(
+            ResourceAccessException e, HttpServletRequest request) {
         // 连接失败/读超时，连 HTTP 响应都没拿到，同样属于上游不可用
         log.error("Prometheus 连接或读取失败", e);
-        return ResponseEntity.ok(ApiEnvelope.degraded(null, "prometheus unreachable: " + e.getMessage(), null));
+        String reason = "prometheus unreachable: " + e.getMessage();
+        markAuditDegraded(request, reason);
+        return ResponseEntity.ok(ApiEnvelope.degraded(null, reason, null));
     }
 
     @ExceptionHandler(HttpServerErrorException.class)
@@ -116,5 +125,11 @@ public class GlobalExceptionHandler {
         // 未识别的异常视为网关自身问题（代码 bug/解析失败等），不能伪装成降级
         log.error("unhandled exception in tool gateway", e);
         return ResponseEntity.internalServerError().body(ApiEnvelope.fail(e.getMessage(), null));
+    }
+
+    private void markAuditDegraded(HttpServletRequest request, String reason) {
+        request.setAttribute(HeaderConstants.AUDIT_DEGRADED_ATTR, true);
+        request.setAttribute(HeaderConstants.AUDIT_RESPONSE_SUMMARY_ATTR,
+                Map.of("ok", true, "degraded", true, "reason", reason));
     }
 }
