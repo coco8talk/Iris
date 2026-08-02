@@ -3,6 +3,7 @@ package com.silas.iris.toolgateway.metrics.controller;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.NumberUtil;
 import cn.hutool.core.util.StrUtil;
+import com.silas.iris.toolgateway.common.audit.constant.AuditConstants;
 import com.silas.iris.toolgateway.common.constant.HeaderConstants;
 import com.silas.iris.toolgateway.common.exception.RawQueryRejectedException;
 import com.silas.iris.toolgateway.common.interceptor.AuthInterceptor;
@@ -19,6 +20,7 @@ import io.swagger.v3.oas.annotations.Parameters;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,7 +28,9 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -50,6 +54,7 @@ import java.util.Objects;
 public class MetricsController {
 
     private final RedisService redisService;
+    private final MetricsTemplateUtil metricsTemplateUtil;
     @Value("${iris.prometheus.base-url}")
     private String prometheusBaseUrl;
 
@@ -61,8 +66,9 @@ public class MetricsController {
 
     private RestClient prometheusClient;
 
-    public MetricsController(RedisService redisService) {
+    public MetricsController(RedisService redisService, MetricsTemplateUtil metricsTemplateUtil) {
         this.redisService = redisService;
+        this.metricsTemplateUtil = metricsTemplateUtil;
     }
 
     /**
@@ -92,6 +98,7 @@ public class MetricsController {
      *
      * @param windowQueryDTO 查询参数：模板 key、目标服务、时间窗口（秒）
      * @param incidentId     当前事件 ID，由 {@link AuthInterceptor} 从请求头解析后放入 request attribute
+     * @param request        当前 HTTP 请求，用于写入审计上下文属性
      * @return 统一响应信封，data 为 Prometheus query_range 原始响应
      */
     @PostMapping("/query")
@@ -121,9 +128,13 @@ public class MetricsController {
     })
     public ApiEnvelope<QueryRangeVO> query(
             @Valid @RequestBody WindowQueryDTO windowQueryDTO,
-            @RequestAttribute(HeaderConstants.INCIDENT_ID_ATTR) String incidentId) {
+            @RequestAttribute(HeaderConstants.INCIDENT_ID_ATTR) String incidentId,
+            HttpServletRequest request) {
 
         long startTask = System.currentTimeMillis();
+        request.setAttribute(HeaderConstants.TOOL_NAME_ATTR, AuditConstants.QUERY_METRICS);
+        request.setAttribute(HeaderConstants.TEMPLATE_OR_RAW_ATTR, AuditConstants.TEMPLATE);
+        request.setAttribute(HeaderConstants.AUDIT_REQUEST_PARAMS_ATTR, BeanUtil.beanToMap(windowQueryDTO));
         log.info("开始指标查询，incidentId: {}, templateKey: {}, service: {}, window: {}",
                 incidentId, windowQueryDTO.getTemplateKey(), windowQueryDTO.getService(), windowQueryDTO.getWindow());
 
@@ -132,14 +143,13 @@ public class MetricsController {
 
         // 2. 分发：解析 step、渲染 PromQL、推算时间范围、组装请求参数，并请求 Prometheus
         int window = windowQueryDTO.getWindow();
-        String promQL = MetricsTemplateUtil.render(windowQueryDTO.getTemplateKey(), windowQueryDTO.getService(), StrUtil.toString(window));
+        String promQL = metricsTemplateUtil.render(windowQueryDTO.getTemplateKey(), windowQueryDTO.getService(), StrUtil.toString(window));
         TimeRange timeRange = resolveTimeRange(window, windowQueryDTO.getEndOffsetSeconds());
         Map<String, Object> queryRangeParams = buildQueryRangeParams(promQL, timeRange, resolveStep(window));
         log.info("开始请求 Prometheus query_range，incidentId: {}", incidentId);
         QueryRangeVO data = fetchQueryRange(queryRangeParams);
 
         // 3. 组装结果：统一信封 + meta
-        // todo 审计
         log.info("指标查询完成，incidentId: {}, remaining: {}, elapsedMs: {}",
                 incidentId, remaining, System.currentTimeMillis() - startTask);
         return ApiEnvelope.ok(data, buildMeta(startTask, remaining));
@@ -150,11 +160,13 @@ public class MetricsController {
      * 用于模板覆盖不到的诊断需求。
      * <p>
      * 编排顺序：先做本地 label matcher 强校验（零网络/零预算成本）-&gt; 校验通过才消费本次 incident
-     * 的工具调用配额（与模板通道共享同一预算池，故意不单独开一份，避免格式错误的裸查询也去挤占共享预算）
+     * 的 raw 通道工具调用配额（与模板通道使用独立的 key/限额，见 {@link RedisService#consume_raw_tool_calls}，
+     * 互不挤占对方额度，格式错误的裸查询不会消耗任何一侧的预算）
      * -&gt; 其余流程（时间范围推算、step 反推、请求 Prometheus、封装信封）与模板通道完全一致，直接复用。
      *
      * @param windowQueryDTO 查询参数：裸 PromQL（query）、目标服务、时间窗口（秒）
      * @param incidentId     当前事件 ID，由 {@link AuthInterceptor} 从请求头解析后放入 request attribute
+     * @param request        当前 HTTP 请求，用于写入审计上下文属性
      * @return 统一响应信封，data 为 Prometheus query_range 原始响应
      */
     @PostMapping("/query/raw")
@@ -186,9 +198,13 @@ public class MetricsController {
     })
     public ApiEnvelope<QueryRangeVO> queryRaw(
             @Valid @RequestBody WindowQueryDTO windowQueryDTO,
-            @RequestAttribute(HeaderConstants.INCIDENT_ID_ATTR) String incidentId) {
+            @RequestAttribute(HeaderConstants.INCIDENT_ID_ATTR) String incidentId,
+            HttpServletRequest request) {
 
         long startTask = System.currentTimeMillis();
+        request.setAttribute(HeaderConstants.TOOL_NAME_ATTR, AuditConstants.QUERY_METRICS);
+        request.setAttribute(HeaderConstants.TEMPLATE_OR_RAW_ATTR, AuditConstants.RAW);
+        request.setAttribute(HeaderConstants.AUDIT_REQUEST_PARAMS_ATTR, BeanUtil.beanToMap(windowQueryDTO));
         String promQL = windowQueryDTO.getQuery();
         log.info("开始裸 PromQL 查询，incidentId: {}, service: {}, window: {}",
                 incidentId, windowQueryDTO.getService(), windowQueryDTO.getWindow());
@@ -196,8 +212,8 @@ public class MetricsController {
         // 1. 本地强校验：必须带 label matcher，不满足直接 403，不消费预算
         validateRawPromQL(promQL);
 
-        // 2. 校验通过 -> 限流：消费本次 incident 的工具调用配额（与模板通道共享同一预算池）
-        Long remaining = redisService.consume_tool_calls(incidentId);
+        // 2. 校验通过 -> 限流：消费本次 incident 的 raw 通道工具调用配额（与模板通道独立计数）
+        Long remaining = redisService.consume_raw_tool_calls(incidentId);
 
         // 3. 分发：推算时间范围、组装请求参数，并请求 Prometheus（不做模板渲染，promQL 即调用方原样传入的查询）
         int window = windowQueryDTO.getWindow();
@@ -207,7 +223,6 @@ public class MetricsController {
         QueryRangeVO data = fetchQueryRange(queryRangeParams);
 
         // 4. 组装结果：统一信封 + meta
-        // todo 审计（标记 template_or_raw="raw"）
         log.info("裸 PromQL 查询完成，incidentId: {}, remaining: {}, elapsedMs: {}",
                 incidentId, remaining, System.currentTimeMillis() - startTask);
         return ApiEnvelope.ok(data, buildMeta(startTask, remaining));
@@ -292,12 +307,11 @@ public class MetricsController {
      * @return Prometheus query_range 原始响应
      */
     private QueryRangeVO fetchQueryRange(Map<String, Object> queryRangeParams) {
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromPath(MetricsQueryConstants.QUERY_RANGE_PATH);
+        queryRangeParams.forEach(uriBuilder::queryParam);
+        URI uri = uriBuilder.build().encode().toUri();
         return prometheusClient.get()
-                .uri(uriBuilder -> {
-                    uriBuilder.path(MetricsQueryConstants.QUERY_RANGE_PATH);
-                    queryRangeParams.forEach(uriBuilder::queryParam);
-                    return uriBuilder.build();
-                })
+                .uri(uri)
                 .retrieve()
                 .body(QueryRangeVO.class);
     }

@@ -1,7 +1,9 @@
 package com.silas.iris.toolgateway.metrics.utils;
 
+import com.silas.iris.toolgateway.cmdb.service.ServiceRegistry;
 import com.silas.iris.toolgateway.metrics.model.enums.MetricTemplate;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * PromQL 模板渲染工具：按 {@code templateKey} 查找 {@link MetricTemplate} 白名单模板，
@@ -11,7 +13,14 @@ import lombok.extern.slf4j.Slf4j;
  * @since 2026/8/1 17:54
  */
 @Slf4j
+@Component
 public class MetricsTemplateUtil {
+
+    private final ServiceRegistry serviceRegistry;
+
+    public MetricsTemplateUtil(ServiceRegistry serviceRegistry) {
+        this.serviceRegistry = serviceRegistry;
+    }
 
     /**
      * 渲染指定模板的 PromQL 表达式。
@@ -22,9 +31,9 @@ public class MetricsTemplateUtil {
      * @return 替换完占位符、可直接执行的 PromQL 表达式
      * @throws com.silas.iris.toolgateway.common.exception.UnknownTemplateException templateKey 不在白名单内
      */
-    public static String render(String templateKey, String service, String window) {
+    public String render(String templateKey, String service, String window) {
 
-        // todo cmdb校验
+        serviceRegistry.requireExists(service);
         log.info("开始填充 PromQL：render templateKey: {}, service: {}", templateKey, service);
         MetricTemplate metricTemplate = MetricTemplate.fromKey(templateKey);
         return metricTemplate.getPromqlTemplate()
