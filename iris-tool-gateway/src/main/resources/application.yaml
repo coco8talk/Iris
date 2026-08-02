@@ -1,6 +1,20 @@
 spring:
   application:
     name: iris-tool-gateway
+  datasource:
+    url: jdbc:sqlite:./iris-tool-gateway.db
+    driver-class-name: org.sqlite.JDBC
+  sql:
+    init:
+      mode: always
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:1}
+      password: ${coco8talk.redis.password:redis}
+
+
 
 
 server:
@@ -24,3 +38,19 @@ iris:
   bearer-token: ${IRIS.BEARER_TOKEN}
   prometheus:
     base-url: http://localhost:9090
+  loki:
+    base-url: http://localhost:3100
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000
+  tempo:
+    base-url: http://localhost:3200
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000
+  nacos:
+    base-url: http://localhost:8848
+    console-base-url: http://localhost:8080
+    namespace-id: public
+    group-name: DEFAULT_GROUP
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000
+    service-cache-ttl-seconds: 30
