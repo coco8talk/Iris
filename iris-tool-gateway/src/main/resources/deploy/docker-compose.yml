@@ -1,0 +1,500 @@
+name: prunus-mume
+
+networks:
+  dev-net:
+    name: dev-net
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  postgres-data:
+  rabbitmq-data:
+  nacos-data:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  alloy-data:
+  grafana-data:
+  tempo-data:
+
+services:
+  # ---- core: auto-restart with OrbStack -------------------------------
+  mysql:
+    image: mysql:8.4.11
+    container_name: mysql
+    # also tagged "msa": nacos (profile msa) depends_on mysql, and compose refuses
+    # to resolve a depends_on that crosses into a profile that isn't active — without
+    # this, `docker compose --profile msa up -d` alone errors instead of auto-starting mysql.
+    profiles: [ "core", "msa" ]
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: nacos
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    networks: [ dev-net ]
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    healthcheck:
+      test: [ "CMD-SHELL", 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysqladmin ping -h 127.0.0.1 -uroot --silent' ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8.8.1-alpine
+    container_name: redis
+    profiles: [ "core" ]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks: [ dev-net ]
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}" ]
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---- db: standalone, on-demand ---------------------------------------
+  postgres:
+    image: postgres:18.4
+    container_name: postgres
+    profiles: [ "db" ]
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # PostgreSQL 18+ images expect the volume at the parent dir, not .../data
+      # (they manage a version-named subdirectory themselves).
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [ dev-net ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4.3.4-management
+    container_name: rabbitmq
+    profiles: [ "db" ]
+    restart: "no"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks: [ dev-net ]
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ---- msa: Spring Cloud Alibaba infra, on-demand -----------------------
+  nacos:
+    image: nacos/nacos-server:v3.2.3-slim
+    container_name: nacos
+    profiles: [ "msa" ]
+    restart: "no"
+    environment:
+      PREFER_HOST_MODE: hostname
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      # NACOS_AUTH_ENABLE only gates client/OpenAPI auth. The console login screen is a
+      # SEPARATE switch (nacos.core.auth.console.enabled) — both must be false for a
+      # truly passwordless console on 127.0.0.1-only local dev.
+      NACOS_AUTH_ENABLE: "false"
+      NACOS_AUTH_CONSOLE_ENABLE: "false"
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:9848:9848"
+    volumes:
+      - nacos-data:/home/nacos/data
+    networks: [ dev-net ]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8848' || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  sentinel-dashboard:
+    build: ./sentinel-dashboard
+    image: sentinel-dashboard-nacos:1.8.10
+    container_name: sentinel-dashboard
+    profiles: [ "msa" ]
+    restart: "no"
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      JAVA_OPTS: "-Dsentinel.dashboard.auth.username=${SENTINEL_DASHBOARD_USER} -Dsentinel.dashboard.auth.password=${SENTINEL_DASHBOARD_PASSWORD}"
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:8858:8858"
+    networks: [ dev-net ]
+    depends_on:
+      nacos:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:8858/" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---- sre: observability stack, on-demand ------------------------------
+  prometheus:
+    image: prom/prometheus:v3.13.1
+    container_name: prometheus
+    profiles: [ "sre" ]
+    restart: "no"
+    mem_limit: 1g
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=5GB
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks: [ dev-net ]
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  alertmanager:
+    image: prom/alertmanager:v0.33.1
+    container_name: alertmanager
+    profiles: [ "sre" ]
+    restart: "no"
+    mem_limit: 256m
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --data.retention=168h
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks: [ dev-net ]
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:9093/-/ready" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  loki:
+    image: grafana/loki:3.7.4
+    container_name: loki
+    profiles: [ "sre" ]
+    restart: "no"
+    mem_limit: 1g
+    command:
+      - -config.file=/etc/loki/loki.yml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks: [ dev-net ]
+    healthcheck:
+      test: [ "CMD", "/usr/bin/loki", "-version" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  alloy:
+    image: grafana/alloy:v1.18.0
+    container_name: alloy
+    profiles: [ "sre" ]
+    restart: "no"
+    mem_limit: 512m
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    ports:
+      - "127.0.0.1:12345:12345"
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    networks: [ dev-net ]
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "/bin/alloy", "--version" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  grafana:
+    image: grafana/grafana:13.1.1
+    container_name: grafana
+    profiles: [ "sre" ]
+    restart: "no"
+    mem_limit: 512m
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./grafana/provisioning/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - grafana-data:/var/lib/grafana
+    networks: [ dev-net ]
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  tempo:
+    image: grafana/tempo:2.10.5
+    container_name: tempo
+    profiles: [ "sre" ]
+    restart: "no"
+    mem_limit: 1g
+    command:
+      - -config.file=/etc/tempo/tempo.yml
+    ports:
+      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:9411:9411"
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+    networks: [ dev-net ]
+    healthcheck:
+      test: [ "CMD", "/tempo", "-version" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pm-user:
+    build:
+      context: ..
+      dockerfile: deploy/docker/pm-user.Dockerfile
+    container_name: pm-user
+    profiles: [ "app" ]
+    restart: "no"
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      COCO8TALK_DATASOURCE_HOST: mysql
+      COCO8TALK_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      COCO8TALK_REDIS_HOST: redis
+      COCO8TALK_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:8091:8091"
+    networks: [ dev-net ]
+    depends_on:
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8091' || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pm-auth:
+    build:
+      context: ..
+      dockerfile: deploy/docker/pm-auth.Dockerfile
+    container_name: pm-auth
+    profiles: [ "app" ]
+    restart: "no"
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      COCO8TALK_DATASOURCE_HOST: mysql
+      COCO8TALK_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      COCO8TALK_REDIS_HOST: redis
+      COCO8TALK_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:8081:8081"
+    networks: [ dev-net ]
+    depends_on:
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8081' || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pm-payment:
+    build:
+      context: ..
+      dockerfile: deploy/docker/pm-payment.Dockerfile
+    container_name: pm-payment
+    profiles: [ "app" ]
+    restart: "no"
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      COCO8TALK_DATASOURCE_HOST: mysql
+      COCO8TALK_DATASOURCE_DATABASE: interview_practice_platform
+      COCO8TALK_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:8089:8089"
+    networks: [ dev-net ]
+    depends_on:
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8089' || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pm-question:
+    build:
+      context: ..
+      dockerfile: deploy/docker/pm-question.Dockerfile
+    container_name: pm-question
+    profiles: [ "app" ]
+    restart: "no"
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      COCO8TALK_DATASOURCE_HOST: mysql
+      COCO8TALK_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      COCO8TALK_REDIS_HOST: redis
+      COCO8TALK_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:8083:8083"
+    networks: [ dev-net ]
+    depends_on:
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8083' || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pm-interaction:
+    build:
+      context: ..
+      dockerfile: deploy/docker/pm-interaction.Dockerfile
+    container_name: pm-interaction
+    profiles: [ "app" ]
+    restart: "no"
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      COCO8TALK_DATASOURCE_HOST: mysql
+      COCO8TALK_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      COCO8TALK_REDIS_HOST: redis
+      COCO8TALK_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:8086:8086"
+    networks: [ dev-net ]
+    depends_on:
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8086' || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pm-file-storage:
+    build:
+      context: ..
+      dockerfile: deploy/docker/pm-file-storage.Dockerfile
+    container_name: pm-file-storage
+    profiles: [ "app" ]
+    restart: "no"
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      COCO8TALK_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:8092:8092"
+    networks: [ dev-net ]
+    depends_on:
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8092' || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
