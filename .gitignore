@@ -53,13 +53,17 @@ htmlcov/
 *.log
 *.tmp
 *.temp
-.cache/
 agent-platform/runs/
 
-# Local databases and tool caches
+# Local data and databases
 data/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
+
+# Tool caches
+.cache/
 .codegraph/
 
 # Documentation
