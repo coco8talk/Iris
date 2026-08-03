@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>query_trace 模块设计讲解与实现计划</title>
+<style>
+  :root {
+    --bg: #fde9ee;
+    --panel-bg: rgba(255, 255, 255, 0.82);
+    --text: #4a3f44;
+    --text-muted: #6b5e64;
+    --border: rgba(255, 255, 255, 0.68);
+    --accent: #d97991;
+    --accent-ink: #9f5267;
+    --highlight: rgba(255, 231, 188, 0.72);
+    --code-bg: #282c34;
+    --code-border: rgba(255, 255, 255, 0.1);
+    --code-fg: #abb2bf;
+    --toc-bg: rgba(255, 255, 255, 0.78);
+    --shadow: rgba(190, 120, 140, 0.16);
+
+    --red-bg: rgba(255, 222, 224, 0.78); --red-fg: #a8444a; --red-border: rgba(204, 92, 99, 0.24);
+    --amber-bg: rgba(255, 239, 203, 0.78); --amber-fg: #8a6519; --amber-border: rgba(190, 142, 43, 0.24);
+    --blue-bg: rgba(225, 235, 255, 0.8); --blue-fg: #4e67a8; --blue-border: rgba(90, 118, 184, 0.22);
+    --green-bg: rgba(221, 244, 227, 0.82); --green-fg: #397853; --green-border: rgba(68, 145, 94, 0.22);
+    --purple-bg: rgba(232, 223, 255, 0.8); --purple-fg: #6a52a8; --purple-border: rgba(120, 90, 184, 0.22);
+    --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+    --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; scroll-padding-top: 28px; }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    color: var(--text-muted);
+    background: linear-gradient(160deg, #fff1f3 0%, #fde7ec 100%);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.72;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    border-radius: 999px;
+    filter: blur(92px);
+    pointer-events: none;
+  }
+  body::before { width: 36vw; height: 36vw; top: -10vw; left: -8vw; background: rgba(233, 144, 165, 0.34); }
+  body::after { width: 34vw; height: 34vw; top: 30vh; right: -12vw; background: rgba(244, 183, 143, 0.28); }
+
+  a { color: var(--text); text-decoration-color: rgba(107, 94, 100, 0.42); text-underline-offset: 0.18em; overflow-wrap: anywhere; }
+  a:hover { text-decoration-color: currentColor; }
+
+  strong {
+    color: var(--text);
+    font-weight: 600;
+    background: var(--highlight);
+    border-radius: 4px;
+    padding: 0.02em 0.16em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 900px);
+    justify-content: center;
+    align-items: start;
+    gap: 48px;
+    width: min(1400px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 64px 0 96px;
+  }
+
+  .toc {
+    position: sticky;
+    top: 28px;
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
+    background: var(--toc-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 28px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  .toc h2 { margin: 0 0 10px; padding: 10px 10px 12px; color: var(--text); font-size: 14px; line-height: 1.2; letter-spacing: 0.08em; }
+  .toc .toc-part { margin: 4px 0 2px; padding: 10px 10px 4px; color: var(--accent-ink); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; }
+  .toc ul { list-style: none; margin: 0; padding: 0; }
+  .toc li { margin: 0; padding: 0; }
+  .toc a {
+    display: block; padding: 8px 10px; border-radius: 9px;
+    color: rgba(107, 94, 100, 0.9); font-size: 12.8px; line-height: 1.45;
+    letter-spacing: 0.01em; text-decoration: none; transition: color 160ms ease, background 160ms ease;
+  }
+  .toc a:hover { color: var(--text); background: rgba(255, 255, 255, 0.5); }
+
+  .main { width: 100%; max-width: 900px; min-width: 0; }
+
+  header.page-header {
+    position: relative; overflow: hidden;
+    padding: clamp(36px, 6vw, 58px) clamp(28px, 4vw, 44px) clamp(42px, 5vw, 54px);
+    margin-bottom: 28px; border: 1px solid var(--border); border-radius: 20px;
+    background: var(--panel-bg); box-shadow: 0 8px 32px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  header.page-header::after {
+    content: ""; position: absolute; width: 118px; height: 4px;
+    left: clamp(28px, 4vw, 44px); bottom: 25px; border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+  header.page-header h1 { max-width: 22ch; margin: 0 0 16px; color: var(--text); font-size: clamp(28px, 4.4vw, 44px); font-weight: 650; line-height: 1.16; letter-spacing: -0.025em; text-wrap: balance; }
+  header.page-header p.subtitle { color: var(--text-muted); margin: 0 0 10px; max-width: 74ch; font-size: 14px; line-height: 1.7; }
+  header.page-header p.subtitle:last-child { margin-bottom: 0; }
+
+  section.intro-note {
+    padding: 18px 22px; margin-bottom: 36px; border: 1px solid var(--border); border-radius: 16px;
+    background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber-fg);
+    font-size: 13.5px; line-height: 1.7;
+  }
+  section.intro-note strong { background: rgba(255,255,255,0.5); }
+
+  h2.part-title {
+    margin: 56px 0 22px; padding: 0 4px; color: var(--text);
+    font-size: clamp(23px, 3.6vw, 30px); font-weight: 700; line-height: 1.25;
+    letter-spacing: -0.018em; display: flex; align-items: baseline; gap: 12px; text-wrap: balance;
+  }
+  h2.part-title .part-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 10px; background: var(--accent);
+    color: #fff; font-size: 15px; font-weight: 700; flex: 0 0 auto;
+  }
+  h2.part-title:first-of-type { margin-top: 0; }
+
+  article.card {
+    position: relative; padding: clamp(22px, 3.6vw, 34px); margin-bottom: 20px;
+    border: 1px solid var(--border); border-radius: 18px; background: var(--panel-bg);
+    box-shadow: 0 8px 28px var(--shadow); backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    scroll-margin-top: 28px; transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+  article.card:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(190, 120, 140, 0.18); }
+  article.card > h3 {
+    margin: 0 0 14px; color: var(--text); font-size: clamp(18px, 2.8vw, 21px); font-weight: 650;
+    line-height: 1.35; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; text-wrap: balance;
+  }
+  article.card > h4 { margin: 20px 0 8px; color: var(--text); font-size: 13.5px; font-weight: 650; letter-spacing: 0.03em; }
+  article.card > h4:first-of-type { margin-top: 14px; }
+  article.card p { margin: 8px 0; font-size: 14.5px; }
+
+  .badge { display: inline-block; flex: 0 0 auto; padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; font-size: 11px; font-weight: 650; line-height: 1.5; white-space: nowrap; }
+  .badge.tag-concept { background: var(--blue-bg); color: var(--blue-fg); border-color: var(--blue-border); }
+  .badge.tag-analogy { background: var(--amber-bg); color: var(--amber-fg); border-color: var(--amber-border); }
+  .badge.tag-code { background: var(--purple-bg); color: var(--purple-fg); border-color: var(--purple-border); }
+  .badge.tag-diff { background: var(--red-bg); color: var(--red-fg); border-color: var(--red-border); }
+  .badge.tag-new { background: var(--green-bg); color: var(--green-fg); border-color: var(--green-border); }
+
+  .evidence-list, .diff-list { margin: 8px 0 16px; padding: 0; list-style: none; }
+  .evidence-list li, .diff-list li { position: relative; margin: 8px 0; padding-left: 22px; font-size: 14px; }
+  .evidence-list li::before, .diff-list li::before {
+    content: ""; position: absolute; width: 6px; height: 6px; left: 3px; top: 0.7em;
+    border-radius: 50%; background: var(--accent-ink); box-shadow: 0 0 0 3px rgba(217, 121, 145, 0.18);
+  }
+
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .steps li {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: flex-start; gap: 10px;
+    margin: 8px 0; padding: 11px 13px; border: 1px solid var(--border); border-radius: 12px;
+    background: rgba(255, 255, 255, 0.36); font-size: 13.8px;
+  }
+  .steps input[type="checkbox"] { width: 17px; height: 17px; margin: 0.26em 0 0; flex-shrink: 0; accent-color: var(--accent); }
+  .steps label { min-width: 0; cursor: pointer; }
+
+  code { padding: 0.12em 0.36em; border-radius: 5px; color: #93495f; background: rgba(244, 193, 205, 0.46); font-family: var(--font-mono); font-size: 0.87em; overflow-wrap: anywhere; }
+  pre {
+    margin: 8px 0 4px; padding: 18px 16px; overflow: auto; color: var(--code-fg); background: var(--code-bg);
+    border: 1px solid var(--code-border); border-radius: 12px; box-shadow: 0 10px 24px rgba(25, 27, 33, 0.18);
+    font-family: var(--font-mono); font-size: 12.6px; line-height: 1.62; tab-size: 2;
+  }
+  pre code { display: block; color: inherit; background: none; border: none; padding: 0; font-size: inherit; white-space: pre; }
+
+  .note { font-size: 13px; color: var(--text-muted); margin: 10px 0 0; padding: 11px 13px; border-left: 4px solid var(--accent); border-radius: 0 12px 12px 0; background: rgba(255, 255, 255, 0.38); }
+  .analogy { font-size: 13.6px; color: var(--text-muted); margin: 10px 0; padding: 12px 14px; border-left: 4px solid var(--amber-fg); border-radius: 0 12px 12px 0; background: rgba(255, 239, 203, 0.4); }
+  .analogy strong.lbl { display: block; margin-bottom: 4px; color: var(--amber-fg); font-size: 11.5px; letter-spacing: 0.06em; background: none; padding: 0; }
+  .cross-ref { margin: 12px 0; padding: 11px 13px; border: 1px solid rgba(217, 121, 145, 0.22); border-radius: 12px; color: var(--text-muted); background: rgba(255, 239, 243, 0.66); font-size: 12.3px; }
+
+  .term-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 12px 0 6px; }
+  .term-tile { padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: rgba(255, 255, 255, 0.46); }
+  .term-tile .term-name { color: var(--text); font-size: 14.5px; font-weight: 680; margin-bottom: 6px; }
+  .term-tile .term-desc { font-size: 12.8px; line-height: 1.55; }
+
+  .compare-table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 13px; }
+  .compare-table th, .compare-table td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  .compare-table th { background: rgba(255, 255, 255, 0.55); color: var(--text); font-weight: 650; }
+  .compare-table td { background: rgba(255, 255, 255, 0.26); }
+  .compare-table td code, .compare-table th code { white-space: nowrap; }
+
+  .doc-links { margin: 8px 0 4px; padding: 0; list-style: none; }
+  .doc-links li { margin: 8px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,0.4); font-size: 13.4px; }
+  .doc-links .doc-title { color: var(--text); font-weight: 650; display: block; margin-bottom: 3px; }
+  .doc-links .doc-desc { font-size: 12.6px; }
+
+  @media (max-width: 1240px) {
+    .layout { grid-template-columns: minmax(0, 900px); gap: 18px; width: min(980px, calc(100% - 40px)); }
+    .toc { z-index: 10; top: 12px; width: 100%; max-height: min(42vh, 360px); }
+  }
+  @media (max-width: 768px) {
+    body { font-size: 15px; }
+    .layout { width: min(100% - 24px, 620px); padding: 18px 0 64px; }
+    header.page-header, article.card { padding: 22px 18px; border-radius: 18px; }
+    h2.part-title { font-size: clamp(21px, 7vw, 26px); }
+    pre { padding: 16px 14px; font-size: 12px; }
+    .compare-table { font-size: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+  }
+  @media print {
+    @page { margin: 16mm; }
+    body { color: #4a3f44; background: white !important; font-size: 11pt; }
+    body::before, body::after, .toc { display: none !important; }
+    .layout { display: block; width: 100%; padding: 0; }
+    header.page-header, article.card { break-inside: avoid; padding: 0; margin: 0 0 18pt; border: 0; border-radius: 0; background: transparent !important; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+    pre { break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc">
+    <h2>目录</h2>
+    <div class="toc-part">讲解篇</div>
+    <ul>
+      <li><a href="#e-tempo">Tempo/Zipkin 是什么：调用链专用档案系统</a></li>
+      <li><a href="#e-span-origin">span 从哪来：跟日志是两条独立通路</a></li>
+      <li><a href="#e-why-not-loki">为什么不能把 span 塞进 Loki</a></li>
+      <li><a href="#e-query-shape">查询方式的本质区别：点查 vs 范围扫描</a></li>
+      <li><a href="#e-handoff">traceId 从哪来：与 query_logs 的衔接</a></li>
+      <li><a href="#e-span-tree">span 树长什么样：扁平列表怎么拼树</a></li>
+      <li><a href="#e-prune-why">为什么要做"深度 ≤3 精简"</a></li>
+      <li><a href="#e-prune-tune">深度不够怎么办：maxDepth 可调 + 硬上限</a></li>
+      <li><a href="#e-dto-vo">DTO/VO：为什么反而比 metrics/logs 更简单</a></li>
+      <li><a href="#e-docs">官方文档索引</a></li>
+    </ul>
+    <div class="toc-part">实现计划篇</div>
+    <ul>
+      <li><a href="#p-overview">总体设计一览</a></li>
+      <li><a href="#p-config">新增配置</a></li>
+      <li><a href="#p-dto">QueryTraceDTO</a></li>
+      <li><a href="#p-vo">TraceTreeVO</a></li>
+      <li><a href="#p-controller">TraceController</a></li>
+      <li><a href="#p-tree-util">TraceTreeUtil：拼树 + 深度裁剪</a></li>
+      <li><a href="#p-crosscutting">复用现有横切机制</a></li>
+      <li><a href="#p-checklist">实施 checklist</a></li>
+      <li><a href="#p-verify">验证方式</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <header class="page-header">
+      <h1>query_trace 模块设计讲解与实现计划</h1>
+      <p class="subtitle">主题：Tempo/Zipkin 调用链查询工具（span 树 + 深度精简）的设计原理与落地步骤 · 代码库：iris-tool-gateway · 文档生成日期：2026-08-02</p>
+      <p class="subtitle">前半部分讲原理（全程类比你已经理解的 query_logs / traceId），后半部分是可勾选的实现步骤。</p>
+    </header>
+
+    <section class="intro-note">
+      <strong>两处说明</strong>：① <code>query_trace</code> 目前仍是<strong>未实现</strong>状态——全仓库 grep "tempo"/"zipkin" 无命中，<code>pom.xml</code>/<code>application.yaml</code> 均无相关依赖或配置，本文档"实现计划篇"是本次讨论后确定的设计方案，不是照抄现成代码。② 本文档的 <code>maxDepth</code> 可调设计、<code>QueryTraceDTO</code> 不含 <code>service</code> 字段这两点，与 <code>UNIMPLEMENTED_FEATURES_REPORT.html</code> 里最初的建议（固定深度 3、DTO 含 service 并接入 CMDB 校验）不同——差异原因见 <a href="#e-prune-tune">深度不够怎么办</a> 和 <a href="#e-dto-vo">DTO/VO</a> 两节，是这次讨论后主动调整的，不是遗漏。
+    </section>
+
+    <!-- ============================================================ -->
+    <h2 class="part-title" id="part-explain"><span class="part-num">1</span>讲解篇</h2>
+
+    <article class="card" id="e-tempo">
+      <h3><span class="badge tag-analogy">类比</span>Tempo/Zipkin 是什么：调用链专用的"快递档案系统"</h3>
+      <p>Tempo 是 Grafana 出的开源调用链存储与查询系统，跟 Prometheus（存 metric）、Loki（存 log）是同一套"可观测性三件套"里专门管 trace 的那一件；Zipkin 是另一套更早期的同类系统（Twitter 出品），定位几乎一样，只是实现和生态不同——这也是为什么规格里写"Tempo/Zipkin"，具体选哪个是部署侧的事，网关对接的编排模式是一样的。</p>
+      <div class="analogy">
+        <strong class="lbl">生活类比</strong>
+        Tempo 就像快递公司给每个<strong>运单号建的档案袋</strong>：档案袋里按"父子关系"把这一单经过的每一段运输记录整整齐齐串好；你报一个单号，直接拿到整条链路，不用自己去各网点现场拼。它做的事情很单一——<strong>接收各服务上报的 span、按 traceId 存起来、支持按 traceId 查出整条链路</strong>，不做数据采集本身。
+      </div>
+      <p class="note">正因为它和 Prometheus/Loki 是"同一套体系里分工不同的一员"，<code>query_trace</code> 的网关侧代码结构（初始化带超时的 RestClient、先消费预算再请求上游、上游异常复用 <code>GlobalExceptionHandler</code> 降级分支）依然可以照抄 <code>MetricsController</code> 的模子。</p>
+    </article>
+
+    <article class="card" id="e-span-origin">
+      <h3><span class="badge tag-concept">概念</span>span 从哪来：跟日志是两条完全独立的通路</h3>
+      <p>用一个具体例子建立画面：一次下单请求经过 <strong>网关 A → 订单服务 B → 数据库 C</strong> 三跳，整趟旅程是 1 个 trace。里面 A 处理请求算 1 个 span，B 处理请求算另 1 个 span，B 查数据库这一下动作又算第 3 个 span——<strong>span = "某个服务/某段代码干的一件具体事"</strong>，一趟请求经过几跳、发生几次子调用，就有几个 span。</p>
+      <p>这些 span 是怎么产生的：A、B 这些服务的代码里都嵌了一小段"打点"逻辑（tracing SDK，通常是 OpenTelemetry SDK），每次干活前后自动记一笔"我是谁、干了多久、是被谁叫来的"，<strong>直接通过网络把这一笔发给 Tempo</strong>——不写进日志文件，是单独发出去的一条通路，跟"写日志 → 被 Promtail/Fluentd 采集 → 存进 Loki"完全是两条不同的路径。</p>
+    </article>
+
+    <article class="card" id="e-why-not-loki">
+      <h3><span class="badge tag-analogy">类比</span>为什么不能把 span 塞进 Loki 里存</h3>
+      <p>span 记录看起来也是"一条带时间戳的数据"，跟日志行很像，但两者需要的查询方式完全不同：<strong>span 之间有严格的父子关系（parent_id 指向谁调用了谁）</strong>，查询时必须把同一个 traceId 下的所有 span 拼回一棵树、按时间对齐算出"哪一跳耗时最长"。如果用纯文本存储做这件事，相当于每次查询都要在文本堆里现场做一遍"关系型 JOIN + 树重建"，效率很差；Tempo 从存储结构上就是按 traceId 索引、父子指针是结构化字段，专门为"拼树"优化过。</p>
+      <table class="compare-table">
+        <thead><tr><th>类型</th><th>数据形态</th><th>回答的问题</th><th>本项目对应工具</th></tr></thead>
+        <tbody>
+          <tr><td>metric（指标）</td><td>数字随时间变化的曲线</td><td>"现在/过去这个数值是多少、正常吗"</td><td><code>query_metrics</code>（已实现）</td></tr>
+          <tr><td>log（日志）</td><td>一行行带时间戳的自由文本</td><td>"当时具体发生了什么事、报了什么错"（WHAT）</td><td><code>query_logs</code>（未实现，另有文档）</td></tr>
+          <tr><td>trace（调用链）</td><td>结构化的 span 树，只有骨架信息，无自由文本</td><td>"卡在哪一跳、这一跳耗时多久"（WHERE + HOW LONG）</td><td><code>query_trace</code>（本文档主题）</td></tr>
+        </tbody>
+      </table>
+      <p class="note">span 里<strong>不存</strong>具体业务文本（比如"库存不足，sku=A1003"这种内容），只有服务名、起止时间、耗时、几个简单 tag——这是为了保持轻量、撑住海量并发。所以 trace 和 log 从不是互相替代关系：trace 告诉你 WHERE + HOW LONG，log 告诉你 WHAT，两者配合着用。</p>
+    </article>
+
+    <article class="card" id="e-query-shape">
+      <h3><span class="badge tag-concept">概念</span>查询方式的本质区别：点查 vs 范围扫描</h3>
+      <p><code>query_trace</code> 不再是"划一个时间窗口、扫一段范围"，而是<strong>拿 traceId 直接做一次精确命中查询</strong>，这跟 <code>query_metrics</code>/<code>query_logs</code> 在查询形状上是本质不同的两类操作。</p>
+      <div class="analogy">
+        <strong class="lbl">生活类比</strong>
+        <code>query_metrics</code>/<code>query_logs</code> 像"翻某段时间的监控记录本"——不知道异常具体发生在哪一秒，只能划定时间窗口把这段范围内的数据全部扫出来。<code>query_trace</code> 更像"拿着一个具体的快递单号去官网查物流"——不需要告诉系统"大概是这几天寄的"，单号本身就是索引，直接命中，一步到位。这也是为什么 Tempo 的核心查询接口是 <code>GET /api/traces/{traceId}</code>，压根不需要 start/end 参数，跟 Prometheus/Loki 的 <code>query_range</code> 形成鲜明对比。
+      </div>
+    </article>
+
+    <article class="card" id="e-handoff">
+      <h3><span class="badge tag-code">对照代码</span>traceId 从哪来：与 query_logs 的衔接</h3>
+      <p>这条链路的主路径是<strong>先 query_logs、再 query_trace</strong>：investigate agent 先调 <code>query_logs</code> 拿到聚合结果，顺手拿到一批去重的 traceId，挑一个可疑的传给 <code>query_trace</code> 查完整调用链。这不是推测——<code>query_logs</code> 设计文档里 <code>QueryLogsVO.distinctTraceIds</code> 字段的原始注释就写着：</p>
+      <pre><code>@Schema(description = "本次窗口内提取到的全部去重 traceId，可直接作为 query_trace 的入参")
+private List&lt;String&gt; distinctTraceIds;</code></pre>
+      <p class="note">出处：<a href="query_logs-guide.html#p-vo">query_logs-guide.html 的 QueryLogsVO 一节</a>。少数情况下 traceId 也可能来自别的渠道（比如工单里用户报错时系统自带的），但本项目里唯一"官方"的获取路径就是 <code>query_logs</code> 的输出——这也是这两个模块要放进排障链路相邻两环来理解的原因：一个的出参就是另一个的入参。</p>
+    </article>
+
+    <article class="card" id="e-span-tree">
+      <h3><span class="badge tag-concept">概念</span>span 树长什么样：Tempo 给的是扁平列表，网关自己拼树</h3>
+      <p>Tempo 吐给网关的，是这一个 traceId 下<strong>所有 span 组成的一个平铺数组</strong>，每个 span 大概长这样（简化示意，字段用协议惯用的 snake_case）：</p>
+      <pre><code>[
+  {span_id: "s1", parent_id: null, service: "gateway",    duration_ms: 320},
+  {span_id: "s2", parent_id: "s1",  service: "order-svc",  duration_ms: 280},
+  {span_id: "s3", parent_id: "s2",  service: "db",          duration_ms: 250},
+  {span_id: "s4", parent_id: "s2",  service: "cache",       duration_ms: 5}
+]</code></pre>
+      <p><code>parent_id</code> 就是"这一段是谁叫起来的"，跟前面讲过的"运单流水号 + 上一段是谁"完全对应。<strong>网关拿到这个平铺列表后，需要自己按 parent_id 把它们拼回一棵树</strong>（s1 是根，s2 是 s1 的孩子，s3/s4 是 s2 的孩子），拼出来长这样：</p>
+      <pre><code>gateway (s1, 320ms)
+└── order-svc (s2, 280ms)
+    ├── db (s3, 250ms)      ← 耗时占大头，一眼看出瓶颈在这
+    └── cache (s4, 5ms)</code></pre>
+      <p class="note">这一步跟 <code>query_logs</code> 里的"pattern 聚合"是同一类工作——上游给的是原始碎片（扁平 span 列表 / 逐行日志），网关负责加工成结构化的东西再交给 agent。</p>
+    </article>
+
+    <article class="card" id="e-prune-why">
+      <h3><span class="badge tag-analogy">类比</span>为什么要做"深度 ≤3 精简"</h3>
+      <p>一个真实生产环境的调用链，可能有几十上百个 span，嵌套 6-10 层深（网关→鉴权→订单→库存→缓存→数据库→…）。如果把整棵树原封不动转成 JSON 甩给 agent，跟 <code>query_logs</code> 里"把 3000 行原始日志直接甩过去"是同一个坑——直接打爆 agent 的上下文窗口。</p>
+      <div class="analogy">
+        <strong class="lbl">类比：query_logs 的 pattern 聚合</strong>
+        pattern 聚合是"把几千行长得像的日志压缩成几条模式摘要"；深度裁剪是"把几十上百个 span 压缩成前几层的骨架视图"——动机完全一样：<strong>先给 agent 一个"够用但不过量"的概览，而不是把原始全量甩过去</strong>。
+      </div>
+      <p>所以设计上只保留浅层结构（默认前 3 层，看清"大致走了哪几个服务、哪一层耗时突出"），深层子树折叠/丢弃，并在返回结构里标记<strong>发生了裁剪</strong>，让 agent 知道"这不是全貌"。</p>
+    </article>
+
+    <article class="card" id="e-prune-tune">
+      <h3><span class="badge tag-diff">设计决策</span>深度不够怎么办：maxDepth 可调 + 硬上限</h3>
+      <p>如果固定死"只能看 3 层"，遇到瓶颈恰好在第 5 层的场景，agent 会拿到一个"看不出问题在哪"的截断结果——这是一个真实的设计权衡点，不是靠猜一个"更好的固定数字"（比如改成 3-6）能解决的。</p>
+      <p>本文档采用的方案：<strong>默认给小的（3 层），需要时 agent 自己主动要更多，但网关设硬上限兜底</strong>：</p>
+      <ul class="evidence-list">
+        <li>investigate agent 第一次查，不传深度参数，拿到默认 3 层的"概览"。</li>
+        <li>如果发现某个分支被截断、且这个分支恰好是耗时最长的那个，agent 可以用<strong>同一个 traceId、加大 <code>maxDepth</code>（比如传 6）</strong>再查一次，专门把那个分支看得更深。</li>
+        <li>不做成"无限深度"，是因为总要有硬上限兜底，否则一个笨拙的 agent 可以一直加大深度直到打爆自己的上下文——跟 <code>pattern</code> 聚合限制模式组数、<code>window</code> 限制 <code>@Max(86400)</code> 是同一个防滥用逻辑。</li>
+      </ul>
+      <p class="note">把决定权交给调用方，网关只负责兜底,不是网关帮 agent 一次猜对——这是本文档相对最初报告"固定深度 3"建议的主动调整,具体字段设计见 <a href="#p-dto">QueryTraceDTO</a>。</p>
+    </article>
+
+    <article class="card" id="e-dto-vo">
+      <h3><span class="badge tag-code">对照代码</span>DTO/VO：为什么 QueryTraceDTO 反而比 metrics/logs 更简单</h3>
+      <div class="analogy">
+        <strong class="lbl">复习：DTO/VO 是什么</strong>
+        DTO 像你填的<strong>寄件面单</strong>（调用方传进来的东西），VO 像快递公司返的<strong>运单详情</strong>（网关要返回出去的东西）——两者都只是数据搬运容器，本身没有业务逻辑。
+      </div>
+      <p><code>WindowQueryDTO</code>（metrics）和 <code>QueryLogsDTO</code>（logs）都必须带 <code>service</code> + <code>window</code>，因为它们是"划范围扫描"：不圈定服务和时间范围，上游根本不知道该扫哪一段。而 <code>query_trace</code> 是<strong>点查</strong>——<a href="#e-query-shape">前面讲过</a>，traceId 本身就是全局唯一索引,不需要 service 或时间窗口来"圈定范围"。</p>
+      <table class="compare-table">
+        <thead><tr><th>字段</th><th>WindowQueryDTO / QueryLogsDTO</th><th>QueryTraceDTO</th></tr></thead>
+        <tbody>
+          <tr><td><code>service</code></td><td>必填，圈定查询范围</td><td><strong>不需要</strong>——traceId 已经是精确索引</td></tr>
+          <tr><td><code>window</code> / <code>endOffsetSeconds</code></td><td>必填，划定时间范围</td><td><strong>不需要</strong>——点查没有"范围"概念</td></tr>
+          <tr><td>核心入参</td><td>service + window(+可选 pattern)</td><td>仅 <code>traceId</code>(+可选 <code>maxDepth</code>)</td></tr>
+        </tbody>
+      </table>
+      <p class="note">这个对比本身就是"点查 vs 范围扫描"这一区别的直接印证：DTO 更简单不是偷懒，是查询形状决定的。也因为没有 <code>service</code> 字段，最初报告建议的"service 参数需查 CMDB 校验"这一步在 <code>query_trace</code> 里<strong>不适用</strong>，具体设计见 <a href="#p-dto">实现计划篇</a>。</p>
+    </article>
+
+    <article class="card" id="e-docs">
+      <h3><span class="badge tag-concept">参考</span>官方文档索引</h3>
+      <ul class="doc-links">
+        <li><span class="doc-title">Tempo overview（Tempo 是什么，和 Prometheus/Loki 的关系）</span><span class="doc-desc"><a href="https://grafana.com/docs/tempo/latest/" target="_blank" rel="noopener">grafana.com/docs/tempo/latest</a></span></li>
+        <li><span class="doc-title">Tempo HTTP API（按 traceId 查询接口 <code>GET /api/traces/{traceId}</code>）</span><span class="doc-desc"><a href="https://grafana.com/docs/tempo/latest/api_docs/" target="_blank" rel="noopener">grafana.com/docs/tempo/latest/api_docs</a></span></li>
+        <li><span class="doc-title">OpenTelemetry Traces（trace / span / parent_id 的标准定义）</span><span class="doc-desc"><a href="https://opentelemetry.io/docs/concepts/signals/traces/" target="_blank" rel="noopener">opentelemetry.io/docs/concepts/signals/traces</a></span></li>
+        <li><span class="doc-title">Zipkin API（另一套同类调用链系统，接口形态类似）</span><span class="doc-desc"><a href="https://zipkin.io/zipkin-api/" target="_blank" rel="noopener">zipkin.io/zipkin-api</a></span></li>
+      </ul>
+    </article>
+
+    <!-- ============================================================ -->
+    <h2 class="part-title" id="part-plan"><span class="part-num">2</span>实现计划篇</h2>
+
+    <article class="card" id="p-overview">
+      <h3><span class="badge tag-new">总览</span>总体设计一览</h3>
+      <p>新增包 <code>com.silas.iris.toolgateway.trace</code>，结构对齐 <code>metrics</code>/<code>logs</code> 包：</p>
+      <pre><code>com.silas.iris.toolgateway.trace
+├── controller/TraceController.java       POST /trace/query
+├── model/dto/QueryTraceDTO.java          入参：traceId + 可选 maxDepth
+├── model/vo/TraceTreeVO.java             出参：裁剪后的 span 树
+├── model/vo/SpanRaw.java                 Tempo 原始扁平 span（仅内部使用，不对外返回）
+├── constant/TraceQueryConstants.java     路径/默认深度/上限常量
+└── utils/TraceTreeUtil.java              扁平列表 -> 拼树 -> 按 maxDepth 裁剪</code></pre>
+      <p>调用编排顺序（和 <code>MetricsController.query()</code> 同构）：<strong>消费预算 → 请求 Tempo 拿原始 span 列表 → 网关内拼树+裁剪 → 封装 ApiEnvelope</strong>。</p>
+    </article>
+
+    <article class="card" id="p-config">
+      <h3><span class="badge tag-new">配置</span>application.yaml 新增</h3>
+      <p>照抄 <code>iris.prometheus.*</code> 的命名风格：</p>
+      <pre><code>iris:
+  bearer-token: ${IRIS.BEARER_TOKEN}
+  prometheus:
+    base-url: http://localhost:9090
+  tempo:
+    base-url: http://localhost:3200
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000</code></pre>
+    </article>
+
+    <article class="card" id="p-dto">
+      <h3><span class="badge tag-code">代码</span>QueryTraceDTO</h3>
+      <pre><code>package com.silas.iris.toolgateway.trace.model.dto;
+
+import com.silas.iris.toolgateway.trace.constant.TraceQueryConstants;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
+import lombok.Data;
+
+@Data
+public class QueryTraceDTO {
+
+    @NotBlank
+    @Pattern(regexp = "^[a-f0-9]{16,32}$", message = "traceId 格式不合法")
+    @Schema(description = "调用链唯一标识，通常来自 query_logs 返回的 distinctTraceIds",
+            example = "4bf92f3577b34da6a3ce929d0e0e4736", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String traceId;
+
+    @Positive(message = "maxDepth 必须大于 0")
+    @Max(value = TraceQueryConstants.MAX_DEPTH_LIMIT, message = "maxDepth 不能超过 " + TraceQueryConstants.MAX_DEPTH_LIMIT)
+    @Schema(description = "返回的调用链树最大深度；不传则使用默认值 3，超出的子树会被裁剪",
+            example = "3")
+    private Integer maxDepth;
+}</code></pre>
+      <p class="note"><code>traceId</code> 的校验正则 <code>^[a-f0-9]{16,32}$</code> 故意与 <code>query_logs</code> 里 <code>TraceIdExtractor</code> 提取出的格式对齐（见 <code>LogsQueryConstants.TRACE_ID_PATTERN</code>）——这样 <code>query_logs</code> 吐出来的 <code>distinctTraceIds</code> 才能直接喂给这个 DTO，不需要中间转换。没有 <code>service</code> 字段，原因见<a href="#e-dto-vo">讲解篇</a>。</p>
+    </article>
+
+    <article class="card" id="p-vo">
+      <h3><span class="badge tag-code">代码</span>TraceTreeVO</h3>
+      <pre><code>package com.silas.iris.toolgateway.trace.model.vo;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.*;
+import java.util.List;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Schema(description = "调用链树（裁剪后）")
+public class TraceTreeVO {
+
+    @Schema(description = "调用链唯一标识")
+    private String traceId;
+
+    @Schema(description = "裁剪前该 trace 下的 span 总数")
+    private int totalSpanCount;
+
+    @Schema(description = "本次实际生效的裁剪深度")
+    private int appliedMaxDepth;
+
+    @Schema(description = "裁剪后的树根节点")
+    private SpanNode root;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "单个 span 节点")
+    public static class SpanNode {
+
+        @Schema(description = "span 唯一标识")
+        private String spanId;
+
+        @Schema(description = "该 span 所属服务名")
+        private String service;
+
+        @Schema(description = "操作名，如 HTTP 方法+路径、SQL 摘要")
+        private String operationName;
+
+        @Schema(description = "该 span 耗时，单位毫秒")
+        private long durationMs;
+
+        @Schema(description = "子 span 列表，深度超过 maxDepth 时为空列表")
+        private List&lt;SpanNode&gt; children;
+
+        @Schema(description = "该节点因深度裁剪被丢弃的直接子孙数量；0 表示未发生裁剪")
+        private int prunedChildCount;
+    }
+}</code></pre>
+      <p class="note">全局 <code>ApiEnvelope.Meta.truncated</code> 的取值：只要树里存在任意一个 <code>prunedChildCount &gt; 0</code> 的节点，就设为 <code>true</code>——语义上与 <code>query_logs</code> 的 <code>truncated</code> 信号完全一致（"精简结果不是全貌"）。<code>totalSpanCount</code> 对照 <code>QueryLogsVO.totalLines</code> 的设计目的：让 agent 直观感受到"这次帮你省了多少信息"。</p>
+    </article>
+
+    <article class="card" id="p-controller">
+      <h3><span class="badge tag-code">代码</span>TraceController 骨架</h3>
+      <pre><code>@Slf4j
+@RestController
+@RequestMapping("/trace")
+@Validated
+@Tag(name = "Trace 查询", description = "封装 Tempo 按 traceId 查询接口，返回深度裁剪后的调用链树")
+public class TraceController {
+
+    private final RedisService redisService;
+    @Value("${iris.tempo.base-url}") private String tempoBaseUrl;
+    @Value("${iris.tempo.connect-timeout-ms:3000}") private int connectTimeoutMs;
+    @Value("${iris.tempo.read-timeout-ms:10000}") private int readTimeoutMs;
+    private RestClient tempoClient;
+
+    public TraceController(RedisService redisService) {
+        this.redisService = redisService;
+    }
+
+    @PostConstruct
+    void initTempoClient() {
+        // 与 MetricsController#initPrometheusClient 同构：显式设超时，
+        // 否则 Tempo 挂起时线程会无限期占用，degraded 分支永远等不到异常抛出
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeoutMs);
+        requestFactory.setReadTimeout(readTimeoutMs);
+        this.tempoClient = RestClient.builder()
+                .baseUrl(tempoBaseUrl)
+                .requestFactory(requestFactory)
+                .build();
+    }
+
+    @PostMapping("/query")
+    public ApiEnvelope&lt;TraceTreeVO&gt; query(
+            @Valid @RequestBody QueryTraceDTO dto,
+            @RequestAttribute(HeaderConstants.INCIDENT_ID_ATTR) String incidentId,
+            HttpServletRequest request) {
+
+        long startTask = System.currentTimeMillis();
+        request.setAttribute(HeaderConstants.TOOL_NAME_ATTR, AuditConstants.QUERY_TRACE); // 需新增常量
+        request.setAttribute(HeaderConstants.TEMPLATE_OR_RAW_ATTR, AuditConstants.TEMPLATE);
+        request.setAttribute(HeaderConstants.AUDIT_REQUEST_PARAMS_ATTR, BeanUtil.beanToMap(dto));
+
+        // 1. 限流：见下方"复用现有横切机制"一节的预算共享决策
+        Long remaining = redisService.consume_tool_calls(incidentId);
+
+        // 2. 请求 Tempo，拿到该 traceId 下的原始扁平 span 列表
+        int maxDepth = Objects.requireNonNullElse(dto.getMaxDepth(), TraceQueryConstants.DEFAULT_MAX_DEPTH);
+        List&lt;SpanRaw&gt; rawSpans = fetchTrace(dto.getTraceId());
+
+        // 3. 网关内加工：按 parent_id 拼树，再按 maxDepth 裁剪
+        TraceTreeVO data = TraceTreeUtil.buildAndPrune(dto.getTraceId(), rawSpans, maxDepth);
+
+        return ApiEnvelope.ok(data, buildMeta(startTask, remaining, data));
+    }
+
+    // fetchTrace() 用 tempoClient.get().uri(TraceQueryConstants.QUERY_TRACE_PATH, traceId)
+    //   .retrieve().body(new ParameterizedTypeReference&lt;List&lt;SpanRaw&gt;&gt;() {})，
+    //   与 MetricsController#fetchQueryRange 同构；
+    // buildMeta() 根据 data 中是否存在 prunedChildCount &gt; 0 的节点设置 truncated
+}</code></pre>
+      <p class="note">Tempo 真实的 <code>GET /api/traces/{traceId}</code> 响应结构比这里的示意复杂（嵌套 resourceSpans/scopeSpans，遵循 OTLP 协议），<code>fetchTrace</code> 内部需要先做一层"协议解析 -&gt; 拍平成 <code>SpanRaw</code> 列表"的转换，具体字段映射建议实现时对照 <a href="#e-docs">Tempo HTTP API 文档</a> 逐字段核对，不在本文档展开。</p>
+    </article>
+
+    <article class="card" id="p-tree-util">
+      <h3><span class="badge tag-code">代码</span>TraceTreeUtil：拼树 + 深度裁剪</h3>
+      <pre><code>package com.silas.iris.toolgateway.trace.utils;
+
+public final class TraceTreeUtil {
+    private TraceTreeUtil() {}
+
+    public static TraceTreeVO buildAndPrune(String traceId, List&lt;SpanRaw&gt; rawSpans, int maxDepth) {
+        Map&lt;String, List&lt;SpanRaw&gt;&gt; childrenByParent = rawSpans.stream()
+                .filter(s -&gt; s.getParentId() != null)
+                .collect(Collectors.groupingBy(SpanRaw::getParentId));
+        SpanRaw rootRaw = rawSpans.stream()
+                .filter(s -&gt; s.getParentId() == null)
+                .findFirst()
+                .orElseThrow(() -&gt; new IllegalStateException("trace 缺少根 span: " + traceId));
+
+        SpanNode root = pruneRecursive(rootRaw, childrenByParent, 1, maxDepth);
+
+        return TraceTreeVO.builder()
+                .traceId(traceId)
+                .totalSpanCount(rawSpans.size())
+                .appliedMaxDepth(maxDepth)
+                .root(root)
+                .build();
+    }
+
+    // depth 从 1 开始计（根节点算第 1 层）；到达 maxDepth 且仍有子节点时，
+    // 保留当前节点本身，但子节点整体丢弃，记录被丢弃的数量
+    private static SpanNode pruneRecursive(SpanRaw current,
+            Map&lt;String, List&lt;SpanRaw&gt;&gt; childrenByParent, int depth, int maxDepth) {
+        List&lt;SpanRaw&gt; childRaws = childrenByParent.getOrDefault(current.getSpanId(), List.of());
+
+        if (depth &gt;= maxDepth &amp;&amp; !childRaws.isEmpty()) {
+            return toNode(current, List.of(), childRaws.size());
+        }
+        List&lt;SpanNode&gt; children = childRaws.stream()
+                .map(c -&gt; pruneRecursive(c, childrenByParent, depth + 1, maxDepth))
+                .toList();
+        return toNode(current, children, 0);
+    }
+
+    private static SpanNode toNode(SpanRaw raw, List&lt;SpanNode&gt; children, int prunedChildCount) {
+        return SpanNode.builder()
+                .spanId(raw.getSpanId())
+                .service(raw.getService())
+                .operationName(raw.getOperationName())
+                .durationMs(raw.getDurationMs())
+                .children(children)
+                .prunedChildCount(prunedChildCount)
+                .build();
+    }
+}</code></pre>
+      <p class="note">这版实现假设一个 trace 只有 1 个根 span（<code>parent_id == null</code>）——真实数据里偶尔会出现"孤儿 span"（parent_id 指向一个不存在于返回列表里的 span，常见于采样丢失）或"多根"的异常情况，实现时需要补一层防御：找不到根就按"取时间最早的 span 当根"兜底，而不是直接抛异常导致整个查询失败。</p>
+    </article>
+
+    <article class="card" id="p-crosscutting">
+      <h3><span class="badge tag-diff">需要你拍板</span>复用现有横切机制（含预算是否共享）</h3>
+      <ul class="evidence-list">
+        <li><strong>鉴权</strong>：<code>AuthInterceptor</code> 用 <code>addPathPatterns("/**")</code> 全局注册，<code>/trace/**</code> 自动被覆盖，无需改动。</li>
+        <li><strong>上游降级</strong>：<code>GlobalExceptionHandler</code> 已有 <code>ResourceAccessException</code>/<code>HttpServerErrorException.ServiceUnavailable</code> → 200 degraded 的映射，Tempo 超时/不可达自动走这条路径，前提是 <code>initTempoClient()</code> 显式设置了 connect/read timeout。</li>
+        <li><strong>审计常量</strong>：<code>AuditConstants</code> 目前只有 <code>QUERY_METRICS</code>，需要新增 <code>QUERY_TRACE = "query_trace"</code>。</li>
+        <li><strong>service 校验</strong>：<a href="#e-dto-vo">前面讲过</a>，<code>query_trace</code> 没有 <code>service</code> 字段，这一步不适用，与最初报告的建议不同。</li>
+      </ul>
+      <div class="analogy" style="border-left-color: var(--red-fg); background: rgba(255,222,224,0.4);">
+        <strong class="lbl" style="color: var(--red-fg);">需要你决定的一件事：预算是否共享</strong>
+        <code>RedisService.consume_tool_calls(incidentId)</code> 是模板通道共用的 30 次/24h 配额，<code>query_metrics</code> 已在用；如果 <code>query_logs</code>、<code>query_trace</code> 都直接调用同一个方法，三个工具会<strong>共用同一份 30 次配额</strong>，而不是各自 30 次。<br><br>
+        A）<strong>共享预算</strong>（推荐，与 <code>query_logs</code> 文档保持一致的默认选择，改动最小）：语义是"模板通道总预算 30 次"，不区分具体是哪个工具。<br>
+        B）<strong>独立预算</strong>：仿照 <code>consume_raw_tool_calls</code>，新增 <code>consume_trace_tool_calls(incidentId)</code> + 独立 key/限额。<br><br>
+        建议先用 A 上线，如果实测发现 investigate agent 一次排障要跑 metrics+logs+trace 好几轮、30 次很快耗尽，再切换成 B——这个信号只有跑起来才能观察到，现在没必要预先优化。
+      </div>
+    </article>
+
+    <article class="card" id="p-checklist">
+      <h3><span class="badge tag-new">Checklist</span>实施步骤</h3>
+      <ul class="steps">
+        <li><input type="checkbox" id="t1"><label for="t1">新建 <code>trace</code> 包及五个文件（见 <a href="#p-overview">总体设计一览</a> 的目录树）。</label></li>
+        <li><input type="checkbox" id="t2"><label for="t2"><code>application.yaml</code> 新增 <code>iris.tempo.*</code> 配置块。</label></li>
+        <li><input type="checkbox" id="t3"><label for="t3"><code>AuditConstants</code> 新增 <code>QUERY_TRACE</code> 常量。</label></li>
+        <li><input type="checkbox" id="t4"><label for="t4">决定预算共享 vs 独立（见上一节），并据此实现 <code>TraceController</code> 里的限流调用。</label></li>
+        <li><input type="checkbox" id="t5"><label for="t5">实现 <code>fetchTrace()</code>：对照 Tempo 真实响应结构（OTLP 嵌套格式）写反序列化 + 拍平成 <code>SpanRaw</code> 列表的转换逻辑。</label></li>
+        <li><input type="checkbox" id="t6"><label for="t6">实现 <code>TraceTreeUtil.buildAndPrune()</code>，补上"找不到根 span 时按最早时间戳兜底"的防御逻辑。</label></li>
+        <li><input type="checkbox" id="t7"><label for="t7"><code>TraceController</code> 编排逻辑照抄 <code>MetricsController.query()</code> 顺序：限流 → 请求上游 → 拼树裁剪 → 封装信封。</label></li>
+        <li><input type="checkbox" id="t8"><label for="t8">本地起一个假 Tempo（或用真实 Tempo）验证 <code>fetchTrace</code> 请求参数和响应解析。</label></li>
+        <li><input type="checkbox" id="t9"><label for="t9">补充到 <code>docs/tool-contract.md</code>（如果已新建）：新增 <code>query_trace</code> 一节，路径、DTO/VO 字段、错误码。</label></li>
+      </ul>
+    </article>
+
+    <article class="card" id="p-verify">
+      <h3><span class="badge tag-new">验证</span>验证方式</h3>
+      <pre><code>curl -X POST http://localhost:9000/trace/query \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigate" \
+  -H "Content-Type: application/json" \
+  -d '{"traceId":"4bf92f3577b34da6a3ce929d0e0e4736"}'</code></pre>
+      <p class="note">重点检查三件事：① 先用 <code>query_logs</code> 拿一个真实 <code>distinctTraceIds</code> 里的值再传进来，确认能查到对应链路；② 把 <code>maxDepth</code> 调小（比如 1）再调大（比如 6），确认 <code>data.root.children</code> 的展开层数、<code>prunedChildCount</code>、<code>meta.truncated</code> 三者联动正确；③ 把 <code>iris.tempo.base-url</code> 指向不存在的端口，确认返回 200 + <code>degraded:true</code>，而不是报错。</p>
+    </article>
+
+  </main>
+</div>
+</body>
+</html>

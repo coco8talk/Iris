@@ -72,7 +72,7 @@ public class CmdbController {
                     description = "Agent 角色",
                     in = ParameterIn.HEADER,
                     required = true,
-                    example = "investigator"
+                    example = "investigate"
             )
     })
     public ApiEnvelope<ServiceTopologyVO> query(

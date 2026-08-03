@@ -123,7 +123,7 @@ public class MetricsController {
                     description = "Agent 角色",
                     in = ParameterIn.HEADER,
                     required = true,
-                    example = "investigator"
+                    example = "investigate"
             )
     })
     public ApiEnvelope<QueryRangeVO> query(
@@ -193,7 +193,7 @@ public class MetricsController {
                     description = "Agent 角色",
                     in = ParameterIn.HEADER,
                     required = true,
-                    example = "investigator"
+                    example = "investigate"
             )
     })
     public ApiEnvelope<QueryRangeVO> queryRaw(

@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>query_logs 模块设计讲解与实现计划</title>
+<style>
+  :root {
+    --bg: #fde9ee;
+    --panel-bg: rgba(255, 255, 255, 0.82);
+    --text: #4a3f44;
+    --text-muted: #6b5e64;
+    --border: rgba(255, 255, 255, 0.68);
+    --accent: #d97991;
+    --accent-ink: #9f5267;
+    --highlight: rgba(255, 231, 188, 0.72);
+    --code-bg: #282c34;
+    --code-border: rgba(255, 255, 255, 0.1);
+    --code-fg: #abb2bf;
+    --toc-bg: rgba(255, 255, 255, 0.78);
+    --shadow: rgba(190, 120, 140, 0.16);
+
+    --red-bg: rgba(255, 222, 224, 0.78); --red-fg: #a8444a; --red-border: rgba(204, 92, 99, 0.24);
+    --amber-bg: rgba(255, 239, 203, 0.78); --amber-fg: #8a6519; --amber-border: rgba(190, 142, 43, 0.24);
+    --blue-bg: rgba(225, 235, 255, 0.8); --blue-fg: #4e67a8; --blue-border: rgba(90, 118, 184, 0.22);
+    --green-bg: rgba(221, 244, 227, 0.82); --green-fg: #397853; --green-border: rgba(68, 145, 94, 0.22);
+    --purple-bg: rgba(232, 223, 255, 0.8); --purple-fg: #6a52a8; --purple-border: rgba(120, 90, 184, 0.22);
+    --font-body: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+    --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; scroll-padding-top: 28px; }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    color: var(--text-muted);
+    background: linear-gradient(160deg, #fff1f3 0%, #fde7ec 100%);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.72;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    border-radius: 999px;
+    filter: blur(92px);
+    pointer-events: none;
+  }
+  body::before { width: 36vw; height: 36vw; top: -10vw; left: -8vw; background: rgba(233, 144, 165, 0.34); }
+  body::after { width: 34vw; height: 34vw; top: 30vh; right: -12vw; background: rgba(244, 183, 143, 0.28); }
+
+  a { color: var(--text); text-decoration-color: rgba(107, 94, 100, 0.42); text-underline-offset: 0.18em; overflow-wrap: anywhere; }
+  a:hover { text-decoration-color: currentColor; }
+
+  strong {
+    color: var(--text);
+    font-weight: 600;
+    background: var(--highlight);
+    border-radius: 4px;
+    padding: 0.02em 0.16em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 900px);
+    justify-content: center;
+    align-items: start;
+    gap: 48px;
+    width: min(1400px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 64px 0 96px;
+  }
+
+  .toc {
+    position: sticky;
+    top: 28px;
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
+    background: var(--toc-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 28px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  .toc h2 { margin: 0 0 10px; padding: 10px 10px 12px; color: var(--text); font-size: 14px; line-height: 1.2; letter-spacing: 0.08em; }
+  .toc .toc-part { margin: 4px 0 2px; padding: 10px 10px 4px; color: var(--accent-ink); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; }
+  .toc ul { list-style: none; margin: 0; padding: 0; }
+  .toc li { margin: 0; padding: 0; }
+  .toc a {
+    display: block; padding: 8px 10px; border-radius: 9px;
+    color: rgba(107, 94, 100, 0.9); font-size: 12.8px; line-height: 1.45;
+    letter-spacing: 0.01em; text-decoration: none; transition: color 160ms ease, background 160ms ease;
+  }
+  .toc a:hover { color: var(--text); background: rgba(255, 255, 255, 0.5); }
+
+  .main { width: 100%; max-width: 900px; min-width: 0; }
+
+  header.page-header {
+    position: relative; overflow: hidden;
+    padding: clamp(36px, 6vw, 58px) clamp(28px, 4vw, 44px) clamp(42px, 5vw, 54px);
+    margin-bottom: 28px; border: 1px solid var(--border); border-radius: 20px;
+    background: var(--panel-bg); box-shadow: 0 8px 32px var(--shadow);
+    backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+  header.page-header::after {
+    content: ""; position: absolute; width: 118px; height: 4px;
+    left: clamp(28px, 4vw, 44px); bottom: 25px; border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+  header.page-header h1 { max-width: 22ch; margin: 0 0 16px; color: var(--text); font-size: clamp(28px, 4.4vw, 44px); font-weight: 650; line-height: 1.16; letter-spacing: -0.025em; text-wrap: balance; }
+  header.page-header p.subtitle { color: var(--text-muted); margin: 0 0 10px; max-width: 74ch; font-size: 14px; line-height: 1.7; }
+  header.page-header p.subtitle:last-child { margin-bottom: 0; }
+
+  section.intro-note {
+    padding: 18px 22px; margin-bottom: 36px; border: 1px solid var(--border); border-radius: 16px;
+    background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber-fg);
+    font-size: 13.5px; line-height: 1.7;
+  }
+  section.intro-note strong { background: rgba(255,255,255,0.5); }
+
+  h2.part-title {
+    margin: 56px 0 22px; padding: 0 4px; color: var(--text);
+    font-size: clamp(23px, 3.6vw, 30px); font-weight: 700; line-height: 1.25;
+    letter-spacing: -0.018em; display: flex; align-items: baseline; gap: 12px; text-wrap: balance;
+  }
+  h2.part-title .part-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 10px; background: var(--accent);
+    color: #fff; font-size: 15px; font-weight: 700; flex: 0 0 auto;
+  }
+  h2.part-title:first-of-type { margin-top: 0; }
+
+  article.card {
+    position: relative; padding: clamp(22px, 3.6vw, 34px); margin-bottom: 20px;
+    border: 1px solid var(--border); border-radius: 18px; background: var(--panel-bg);
+    box-shadow: 0 8px 28px var(--shadow); backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    scroll-margin-top: 28px; transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+  article.card:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(190, 120, 140, 0.18); }
+  article.card > h3 {
+    margin: 0 0 14px; color: var(--text); font-size: clamp(18px, 2.8vw, 21px); font-weight: 650;
+    line-height: 1.35; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; text-wrap: balance;
+  }
+  article.card > h4 { margin: 20px 0 8px; color: var(--text); font-size: 13.5px; font-weight: 650; letter-spacing: 0.03em; }
+  article.card > h4:first-of-type { margin-top: 14px; }
+  article.card p { margin: 8px 0; font-size: 14.5px; }
+
+  .badge { display: inline-block; flex: 0 0 auto; padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; font-size: 11px; font-weight: 650; line-height: 1.5; white-space: nowrap; }
+  .badge.tag-concept { background: var(--blue-bg); color: var(--blue-fg); border-color: var(--blue-border); }
+  .badge.tag-analogy { background: var(--amber-bg); color: var(--amber-fg); border-color: var(--amber-border); }
+  .badge.tag-code { background: var(--purple-bg); color: var(--purple-fg); border-color: var(--purple-border); }
+  .badge.tag-diff { background: var(--red-bg); color: var(--red-fg); border-color: var(--red-border); }
+  .badge.tag-new { background: var(--green-bg); color: var(--green-fg); border-color: var(--green-border); }
+
+  .evidence-list, .diff-list { margin: 8px 0 16px; padding: 0; list-style: none; }
+  .evidence-list li, .diff-list li { position: relative; margin: 8px 0; padding-left: 22px; font-size: 14px; }
+  .evidence-list li::before, .diff-list li::before {
+    content: ""; position: absolute; width: 6px; height: 6px; left: 3px; top: 0.7em;
+    border-radius: 50%; background: var(--accent-ink); box-shadow: 0 0 0 3px rgba(217, 121, 145, 0.18);
+  }
+
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .steps li {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: flex-start; gap: 10px;
+    margin: 8px 0; padding: 11px 13px; border: 1px solid var(--border); border-radius: 12px;
+    background: rgba(255, 255, 255, 0.36); font-size: 13.8px;
+  }
+  .steps input[type="checkbox"] { width: 17px; height: 17px; margin: 0.26em 0 0; flex-shrink: 0; accent-color: var(--accent); }
+  .steps label { min-width: 0; cursor: pointer; }
+
+  code { padding: 0.12em 0.36em; border-radius: 5px; color: #93495f; background: rgba(244, 193, 205, 0.46); font-family: var(--font-mono); font-size: 0.87em; overflow-wrap: anywhere; }
+  pre {
+    margin: 8px 0 4px; padding: 18px 16px; overflow: auto; color: var(--code-fg); background: var(--code-bg);
+    border: 1px solid var(--code-border); border-radius: 12px; box-shadow: 0 10px 24px rgba(25, 27, 33, 0.18);
+    font-family: var(--font-mono); font-size: 12.6px; line-height: 1.62; tab-size: 2;
+  }
+  pre code { display: block; color: inherit; background: none; border: none; padding: 0; font-size: inherit; white-space: pre; }
+
+  .note { font-size: 13px; color: var(--text-muted); margin: 10px 0 0; padding: 11px 13px; border-left: 4px solid var(--accent); border-radius: 0 12px 12px 0; background: rgba(255, 255, 255, 0.38); }
+  .analogy { font-size: 13.6px; color: var(--text-muted); margin: 10px 0; padding: 12px 14px; border-left: 4px solid var(--amber-fg); border-radius: 0 12px 12px 0; background: rgba(255, 239, 203, 0.4); }
+  .analogy strong.lbl { display: block; margin-bottom: 4px; color: var(--amber-fg); font-size: 11.5px; letter-spacing: 0.06em; background: none; padding: 0; }
+  .cross-ref { margin: 12px 0; padding: 11px 13px; border: 1px solid rgba(217, 121, 145, 0.22); border-radius: 12px; color: var(--text-muted); background: rgba(255, 239, 243, 0.66); font-size: 12.3px; }
+
+  .term-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 12px 0 6px; }
+  .term-tile { padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: rgba(255, 255, 255, 0.46); }
+  .term-tile .term-name { color: var(--text); font-size: 14.5px; font-weight: 680; margin-bottom: 6px; }
+  .term-tile .term-desc { font-size: 12.8px; line-height: 1.55; }
+
+  .compare-table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 13px; }
+  .compare-table th, .compare-table td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  .compare-table th { background: rgba(255, 255, 255, 0.55); color: var(--text); font-weight: 650; }
+  .compare-table td { background: rgba(255, 255, 255, 0.26); }
+  .compare-table td code, .compare-table th code { white-space: nowrap; }
+
+  .doc-links { margin: 8px 0 4px; padding: 0; list-style: none; }
+  .doc-links li { margin: 8px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,0.4); font-size: 13.4px; }
+  .doc-links .doc-title { color: var(--text); font-weight: 650; display: block; margin-bottom: 3px; }
+  .doc-links .doc-desc { font-size: 12.6px; }
+
+  @media (max-width: 1240px) {
+    .layout { grid-template-columns: minmax(0, 900px); gap: 18px; width: min(980px, calc(100% - 40px)); }
+    .toc { z-index: 10; top: 12px; width: 100%; max-height: min(42vh, 360px); }
+  }
+  @media (max-width: 768px) {
+    body { font-size: 15px; }
+    .layout { width: min(100% - 24px, 620px); padding: 18px 0 64px; }
+    header.page-header, article.card { padding: 22px 18px; border-radius: 18px; }
+    h2.part-title { font-size: clamp(21px, 7vw, 26px); }
+    pre { padding: 16px 14px; font-size: 12px; }
+    .compare-table { font-size: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+  }
+  @media print {
+    @page { margin: 16mm; }
+    body { color: #4a3f44; background: white !important; font-size: 11pt; }
+    body::before, body::after, .toc { display: none !important; }
+    .layout { display: block; width: 100%; padding: 0; }
+    header.page-header, article.card { break-inside: avoid; padding: 0; margin: 0 0 18pt; border: 0; border-radius: 0; background: transparent !important; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+    pre { break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc">
+    <h2>目录</h2>
+    <div class="toc-part">讲解篇</div>
+    <ul>
+      <li><a href="#e-loki-vs-prom">Loki 是什么：类比 Prometheus</a></li>
+      <li><a href="#e-lmt">log / metric / trace 三兄弟</a></li>
+      <li><a href="#e-traceid-spanid">traceId 与 spanId 的区别</a></li>
+      <li><a href="#e-pattern">pattern 聚合是在做什么</a></li>
+      <li><a href="#e-logql">LogQL 基础：selector + filter</a></li>
+      <li><a href="#e-dto-vo">DTO/VO：对照 metrics 包真实代码</a></li>
+      <li><a href="#e-docs">官方文档索引</a></li>
+    </ul>
+    <div class="toc-part">实现计划篇</div>
+    <ul>
+      <li><a href="#p-overview">总体设计一览</a></li>
+      <li><a href="#p-config">新增配置</a></li>
+      <li><a href="#p-dto">QueryLogsDTO</a></li>
+      <li><a href="#p-vo">QueryLogsVO</a></li>
+      <li><a href="#p-controller">LogsController</a></li>
+      <li><a href="#p-logql-builder">LogQlBuilder</a></li>
+      <li><a href="#p-aggregator">pattern 聚合 + traceId 提取</a></li>
+      <li><a href="#p-crosscutting">复用现有横切机制</a></li>
+      <li><a href="#p-checklist">实施 checklist</a></li>
+      <li><a href="#p-verify">验证方式</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    <header class="page-header">
+      <h1>query_logs 模块设计讲解与实现计划</h1>
+      <p class="subtitle">主题：Loki 日志查询工具（pattern 聚合 + traceId 提取）的设计原理与落地步骤 · 代码库：iris-tool-gateway · 文档生成日期：2026-08-02</p>
+      <p class="subtitle">前半部分讲原理（全程类比你已经理解的 query_metrics / Prometheus），后半部分是可勾选的实现步骤。</p>
+    </header>
+
+    <section class="intro-note">
+      <strong>先说明一处偏差</strong>：这份文档里所有"现状代码"的引用都基于我刚重新读过的仓库当前源码，不是照抄 <code>UNIMPLEMENTED_FEATURES_REPORT.html</code>（那份报告生成于 2026-08-01，之后仓库已经继续往前走了）。举个例子，那份报告里说 <code>ToolCallsExceededException</code> 没有映射成 429、raw 通道完全不存在——这两点现在都已经落地了（<code>RedisService.consume_raw_tool_calls</code>、<code>GlobalExceptionHandler.handleToolCallsExceeded</code> 均已存在）。后面讲 <code>query_metrics</code> 现有实现时，以我现在读到的代码为准。
+    </section>
+
+    <!-- ============================================================ -->
+    <h2 class="part-title" id="part-explain"><span class="part-num">1</span>讲解篇</h2>
+
+    <article class="card" id="e-loki-vs-prom">
+      <h3><span class="badge tag-analogy">类比</span>Loki 是什么：把它当成"日志界的 Prometheus"</h3>
+      <p>你已经理解 Prometheus 是什么了，所以最快的理解路径是先看两者的骨架有多像，再看差在哪。</p>
+
+      <div class="analogy">
+        <strong class="lbl">生活类比</strong>
+        Prometheus 像工厂里给每台机器装的<strong>数字仪表盘</strong>：每隔几秒记一次读数（温度、转速），擅长回答"这个数值现在/过去是多少、趋势如何"。Loki 更像车间的<strong>值班日志本</strong>：操作工每次动作、每次报警都往本子上写一行文字（"10:03 A 线急停""10:05 王师傅按复位"），擅长回答"当时具体发生了什么事、谁干的、报了什么错"。
+      </div>
+
+      <h4>骨架相同的部分</h4>
+      <ul class="evidence-list">
+        <li>都按 <strong>label（标签）</strong> 分组存储数据——Prometheus 用 <code>{application="pm-auth"}</code>，Loki 用 <code>{service="order-svc"}</code>。</li>
+        <li>都有配套的查询语言——PromQL 对应 LogQL，语法长得非常像（都是"花括号 label 选择器 + 后续处理"的结构）。</li>
+        <li>都通过 HTTP <strong>query_range</strong> 接口对外提供"查一段时间窗口"的能力，请求参数（query/start/end/step）几乎一一对应。</li>
+      </ul>
+
+      <h4>本质不同的部分</h4>
+      <ul class="diff-list">
+        <li>Prometheus 存的是<strong>数字</strong>（一个时间点对应一个浮点数），Loki 存的是<strong>原始文本行</strong>（一个时间点对应一整行日志）。</li>
+        <li>这个差异直接决定了网关侧的处理方式必须不同：<code>query_metrics</code> 可以把 Prometheus 的原始 JSON 直接透传给 agent（反正只是几十个数字点）；<code>query_logs</code> 绝不能把 Loki 返回的几千行原始文本直接透传——这就是为什么规格要求"pattern 聚合"，后面 <a href="#e-pattern">专门讲</a>。</li>
+      </ul>
+
+      <p class="note">正因为两者骨架相似，<code>query_logs</code> 的整体代码结构（Controller 初始化带超时的 RestClient、Controller 里先消费预算再请求上游、上游异常复用 <code>GlobalExceptionHandler</code> 的降级分支）几乎可以照抄 <code>MetricsController</code> 的模子，不需要发明新模式。</p>
+    </article>
+
+    <article class="card" id="e-lmt">
+      <h3><span class="badge tag-concept">概念</span>可观测性三兄弟：log / metric / trace 怎么分工</h3>
+      <p>这三者是可观测性领域里最基础的分类，各自回答不同的问题，通过 <strong>service 名</strong> 和 <strong>traceId</strong> 横向关联在一起。</p>
+
+      <table class="compare-table">
+        <thead><tr><th>类型</th><th>数据形态</th><th>回答的问题</th><th>本项目对应工具</th></tr></thead>
+        <tbody>
+          <tr><td>metric（指标）</td><td>数字随时间变化的曲线</td><td>"现在/过去这个数值是多少、正常吗"</td><td><code>query_metrics</code>（已实现）</td></tr>
+          <tr><td>log（日志）</td><td>一行行带时间戳的原始文本</td><td>"当时具体发生了什么事、报了什么错"</td><td><code>query_logs</code>（本文档主题）</td></tr>
+          <tr><td>trace（调用链）</td><td>一次请求跨多个服务的完整路径树</td><td>"这次请求具体走了哪些服务、卡在哪一跳"</td><td><code>query_trace</code>（未实现，见报告）</td></tr>
+        </tbody>
+      </table>
+
+      <div class="analogy">
+        <strong class="lbl">典型排障流程（investigate agent 的视角）</strong>
+        先用 <code>query_metrics</code> 发现异常（某服务 QPS 掉了 / 错误率升了）→ 定位到具体 <code>service</code> 和时间窗口 → 用 <code>query_logs</code> 查这段窗口的错误日志内容，聚合后顺手拿到几个 <code>traceId</code> → 拿着 <code>traceId</code> 去 <code>query_trace</code> 查完整调用链，看请求具体卡在哪一跳。三个工具串成一条排障链路，<code>query_logs</code> 是承上启下的中间一环。
+      </div>
+    </article>
+
+    <article class="card" id="e-traceid-spanid">
+      <h3><span class="badge tag-concept">术语辨析</span>traceId 和 spanId 到底有什么区别</h3>
+      <div class="analogy">
+        <strong class="lbl">生活类比：快递物流</strong>
+        一次网购下单是一个 <strong>trace</strong>（从下单到签收的完整旅程），<code>trace_id</code> 就是这张<strong>快递单号</strong>——全程唯一，扫哪个物流网点都能查到同一单号。这趟旅程被拆成"仓库→分拣中心""分拣中心→你所在城市""网点→你家"几段运输区间，每一段就是一个 <strong>span</strong>，每段有自己的<strong>运单流水号</strong> <code>span_id</code>；段与段之间通过"上一段是谁"（<code>parent_id</code>）首尾相连，拼成完整链路。
+      </div>
+      <div class="term-grid">
+        <div class="term-tile"><div class="term-name">trace_id</div><div class="term-desc">标识"这一整趟请求"，同一次请求经过的所有 span 共享同一个 trace_id。这是日志和调用链之间的"外键"。</div></div>
+        <div class="term-tile"><div class="term-name">span_id</div><div class="term-desc">标识"这一小段工作"（比如一次 RPC 调用、一次数据库查询）。一个 trace 由多个 span 组成，span 间靠 parent_id 建立父子层级。</div></div>
+      </div>
+      <p>回到 <code>query_logs</code> 的设计目的：日志行里经常会打印 <code>trace_id=xxx</code>（业务代码打点写的），但很少会打印 <code>span_id</code>（那是链路追踪 SDK 内部用的，日志里意义不大）。所以本模块只提取 <strong>traceId</strong>，不提取 spanId——提取出的 traceId 是给下一步 <code>query_trace</code> 用的钥匙。</p>
+    </article>
+
+    <article class="card" id="e-pattern">
+      <h3><span class="badge tag-analogy">类比</span>pattern 聚合具体是在做什么操作</h3>
+      <div class="analogy">
+        <strong class="lbl">生活类比：超市小票</strong>
+        一天几千张收银小票，你不会一张张去看，而是按"商品名"把小票分组，统计"每种商品卖了多少张、总共卖了多少件"。日志的 pattern 聚合同理：把"骨架相同、只有变量部分（IP、时间戳、订单号）不同"的日志行归成一组，最终报出"这个模式一共出现了几次 + 给一条原文示例"，而不是把几千行原始日志照单全收甩给 agent。
+      </div>
+      <p>举个具体例子：假如 1 分钟内产生了 3000 条长得像下面这样的日志（只有 IP 和端口不同）：</p>
+      <pre><code>2026-08-02 10:00:01 ERROR Connection timeout to db-node-1:5432
+2026-08-02 10:00:02 ERROR Connection timeout to db-node-2:5432
+2026-08-02 10:00:03 ERROR Connection timeout to db-node-3:5432
+... （还有 2997 条，骨架完全一样）</code></pre>
+      <p>聚合后应该变成 <strong>1 条记录</strong>：<code>{pattern: "ERROR Connection timeout to db-node-N:5432", count: 3000, sampleLine: "...db-node-1:5432"}</code>。这样 agent 一眼就能看出"这一分钟主要在报数据库连接超时"，而不用自己去数几千行文本。</p>
+      <p class="note">两个不做的事情：不做语义分析（不判断这条日志"是不是异常"，纯粹按文本骨架分组）；不做全量存储（聚合是内存里的一次性计算，不落库、不建索引）。</p>
+    </article>
+
+    <article class="card" id="e-logql">
+      <h3><span class="badge tag-concept">概念</span>LogQL 基础：只需要认识两个积木</h3>
+      <p><code>query_logs</code> 网关内部会拼 LogQL 发给 Loki，但 agent 调用方不需要写 LogQL——就像 <code>query_metrics</code> 的调用方只传 <code>templateKey</code>，不用写 PromQL 一样。你只需要认识拼出来的 LogQL 长什么样。</p>
+
+      <h4>积木一：log stream selector（花括号部分）</h4>
+      <p>必须存在，作用是"先圈定范围"，等价于 PromQL 的 label 选择器：</p>
+      <pre><code>{service="order-svc"}</code></pre>
+      <p>支持 <code>=</code> / <code>!=</code> / <code>=~</code>（正则匹配）/ <code>!~</code>（正则不匹配）四种操作符，本模块只用得到最简单的 <code>=</code>。</p>
+
+      <h4>积木二：line filter（管道后面的部分，可选）</h4>
+      <p>跟在 selector 后面用 <code>|</code> 拼接，官方文档原话是"do a distributed <code>grep</code> over the aggregated logs"——本质就是分布式 grep：</p>
+      <pre><code>{service="order-svc"} |= "error"          # 包含子串 "error"
+{service="order-svc"} |~ "timeout|refused" # 匹配正则</code></pre>
+      <p>本模块设计里，DTO 的 <code>pattern</code> 字段（调用方传入的关键字/正则）会被拼成 <code>|~ "..."</code> 这种 line filter，追加在 selector 后面。</p>
+
+      <p class="note">这就是全部要知道的 LogQL 语法——聚合函数、结构化日志解析器（<code>| json</code> / <code>| logfmt</code>）这些进阶用法本模块暂时用不到，属于 raw 逃生通道用户直接手写查询时才需要精通的范畴，不在本文档展开。</p>
+    </article>
+
+    <article class="card" id="e-dto-vo">
+      <h3><span class="badge tag-code">对照代码</span>DTO / VO：直接读 metrics 包的现成代码</h3>
+      <div class="analogy">
+        <strong class="lbl">生活类比：快递面单</strong>
+        DTO 像你填的<strong>寄件面单</strong>（告诉快递员：寄给谁、寄到哪、多重）——装的是"调用方传进来的东西"。VO 像快递公司返给你的<strong>运单详情</strong>（经过了哪些网点、当前状态）——装的是"网关要返回出去的东西"。方向相反，但都只是"数据的搬运容器"，本身没有业务逻辑。
+      </div>
+
+      <h4>先看现成的：WindowQueryDTO（query_metrics 的入参）</h4>
+      <p>真实文件在 <code>metrics/model/dto/WindowQueryDTO.java</code>，关键字段：</p>
+      <table class="compare-table">
+        <thead><tr><th>字段</th><th>类型</th><th>校验注解</th><th>作用</th></tr></thead>
+        <tbody>
+          <tr><td><code>service</code></td><td>String</td><td><code>@NotBlank @Pattern(^[a-zA-Z0-9._-]+$)</code></td><td>目标服务名，白名单字符防注入</td></tr>
+          <tr><td><code>window</code></td><td>int</td><td><code>@Positive @Max(86400)</code></td><td>查询窗口（秒），上限 24 小时</td></tr>
+          <tr><td><code>endOffsetSeconds</code></td><td>Long</td><td><code>@PositiveOrZero</code></td><td>把窗口向过去平移，不强制 end=now</td></tr>
+          <tr><td><code>templateKey</code> / <code>query</code></td><td>String</td><td><code>@AssertTrue</code> 二选一</td><td>模板通道 / raw 逃生通道，互斥</td></tr>
+        </tbody>
+      </table>
+
+      <h4>推演出来的：QueryLogsDTO（query_logs 的入参，建议设计）</h4>
+      <p><code>service</code>、<code>window</code>、<code>endOffsetSeconds</code> 三个字段和 <code>WindowQueryDTO</code> 语义完全一致，直接照抄校验注解；额外只需要一个新字段 <code>pattern</code>（对应 LogQL 的 line filter，可选）：</p>
+      <pre><code>@NotBlank @Pattern(regexp = "^[a-zA-Z0-9._-]+$")
+private String service;          // 与 WindowQueryDTO 完全同构
+
+@Positive @Max(86400)
+private int window;              // 与 WindowQueryDTO 完全同构
+
+@PositiveOrZero
+private Long endOffsetSeconds;   // 与 WindowQueryDTO 完全同构
+
+@Size(max = 200)
+private String pattern;          // 新增：可选的日志内容过滤关键字/正则</code></pre>
+
+      <h4>VO 的设计分歧点（重要）</h4>
+      <p><code>query_metrics</code> 的 <code>QueryRangeVO</code> 是 Prometheus 原始响应结构的<strong>直接映射</strong>（网关不加工，透传给 agent）。<code>query_logs</code> 不能这样做——原因见前面的 <a href="#e-pattern">pattern 聚合</a> 小节：Loki 原始响应可能是几千行文本，直接透传会打爆 agent 上下文。所以 <code>QueryLogsVO</code> 装的不是"Loki 原始结构"，而是"网关聚合完之后的结果"，字段设计见 <a href="#p-vo">实现计划篇</a>。</p>
+    </article>
+
+    <article class="card" id="e-docs">
+      <h3><span class="badge tag-concept">参考</span>官方文档索引</h3>
+      <ul class="doc-links">
+        <li><span class="doc-title">Loki overview（Loki 是什么，和 Prometheus 的关系）</span><span class="doc-desc"><a href="https://grafana.com/docs/loki/latest/get-started/overview/" target="_blank" rel="noopener">grafana.com/docs/loki/latest/get-started/overview</a></span></li>
+        <li><span class="doc-title">Query Loki（LogQL 总览）</span><span class="doc-desc"><a href="https://grafana.com/docs/loki/latest/query/" target="_blank" rel="noopener">grafana.com/docs/loki/latest/query</a></span></li>
+        <li><span class="doc-title">Log queries（stream selector + line filter 语法细节）</span><span class="doc-desc"><a href="https://grafana.com/docs/loki/latest/query/log_queries/" target="_blank" rel="noopener">grafana.com/docs/loki/latest/query/log_queries</a></span></li>
+        <li><span class="doc-title">Loki HTTP API（query_range 接口的请求参数与响应结构）</span><span class="doc-desc"><a href="https://grafana.com/docs/loki/latest/reference/loki-http-api/" target="_blank" rel="noopener">grafana.com/docs/loki/latest/reference/loki-http-api</a></span></li>
+        <li><span class="doc-title">OpenTelemetry Traces（trace / span / traceId / spanId 的标准定义）</span><span class="doc-desc"><a href="https://opentelemetry.io/docs/concepts/signals/traces/" target="_blank" rel="noopener">opentelemetry.io/docs/concepts/signals/traces</a></span></li>
+      </ul>
+    </article>
+
+    <!-- ============================================================ -->
+    <h2 class="part-title" id="part-plan"><span class="part-num">2</span>实现计划篇</h2>
+
+    <article class="card" id="p-overview">
+      <h3><span class="badge tag-new">总览</span>总体设计一览</h3>
+      <p>新增包 <code>com.silas.iris.toolgateway.logs</code>，结构对齐 <code>metrics</code> 包：</p>
+      <pre><code>com.silas.iris.toolgateway.logs
+├── controller/LogsController.java        POST /logs/query
+├── model/dto/QueryLogsDTO.java           入参
+├── model/vo/QueryLogsVO.java             出参（聚合后的结果，不是 Loki 原始结构）
+├── model/vo/LokiQueryRangeVO.java        Loki query_range 原始响应（仅内部使用，不对外返回）
+├── constant/LogsQueryConstants.java      路径/上限常量、traceId 正则
+├── utils/LogQlBuilder.java               service+pattern -> LogQL 字符串
+├── utils/LogPatternAggregator.java       原始日志行 -> pattern 聚合结果
+└── utils/TraceIdExtractor.java           单行日志 -> 提取 traceId</code></pre>
+      <p>调用编排顺序（和 <code>MetricsController.query()</code> 完全同构）：<strong>消费预算 → 拼查询语句 → 推算时间范围 → 请求上游 → 网关内加工 → 封装 ApiEnvelope</strong>。</p>
+    </article>
+
+    <article class="card" id="p-config">
+      <h3><span class="badge tag-new">配置</span>application.yaml 新增</h3>
+      <p>照抄 <code>iris.prometheus.*</code> 的命名风格：</p>
+      <pre><code>iris:
+  bearer-token: ${IRIS.BEARER_TOKEN}
+  prometheus:
+    base-url: http://localhost:9090
+  loki:
+    base-url: http://localhost:3100
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000</code></pre>
+    </article>
+
+    <article class="card" id="p-dto">
+      <h3><span class="badge tag-code">代码</span>QueryLogsDTO</h3>
+      <pre><code>package com.silas.iris.toolgateway.logs.model.dto;
+
+import com.silas.iris.toolgateway.logs.constant.LogsQueryConstants;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.*;
+import lombok.Data;
+
+@Data
+public class QueryLogsDTO {
+
+    @NotBlank
+    @Size(max = 64)
+    @Pattern(regexp = "^[a-zA-Z0-9._-]+$", message = "service 只允许字母数字. _ -")
+    @Schema(description = "服务名，对应 Loki 日志的 service label",
+            example = "order-svc", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String service;
+
+    @Positive(message = "window 必须大于 0")
+    @Max(value = LogsQueryConstants.MAX_WINDOW_SECONDS, message = "window 不能大于 24 小时")
+    @Schema(description = "时间窗口(秒)", example = "300", requiredMode = Schema.RequiredMode.REQUIRED)
+    private int window;
+
+    @PositiveOrZero(message = "endOffsetSeconds 不能为负")
+    @Schema(description = "查询结束时间相对当前时刻的回溯偏移量(秒)，语义与 query_metrics 同名字段一致",
+            example = "0")
+    private Long endOffsetSeconds;
+
+    @Size(max = 200, message = "pattern 长度不能超过 200")
+    @Schema(description = "可选的日志内容过滤关键字/正则，转换为 LogQL line filter；为空则不过滤",
+            example = "error")
+    private String pattern;
+}</code></pre>
+      <p class="note">和 <code>WindowQueryDTO</code> 不同：这里不需要"模板/raw 二选一"的 <code>@AssertTrue</code> 校验，因为 <code>query_logs</code> 现阶段只有一条通道，没有 raw 逃生通道的需求（除非你后续想加）。</p>
+    </article>
+
+    <article class="card" id="p-vo">
+      <h3><span class="badge tag-code">代码</span>QueryLogsVO</h3>
+      <pre><code>package com.silas.iris.toolgateway.logs.model.vo;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.*;
+import java.util.List;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Schema(description = "日志 pattern 聚合结果")
+public class QueryLogsVO {
+
+    @Schema(description = "本次窗口内 Loki 实际返回的原始日志行数（聚合前）")
+    private int totalLines;
+
+    @Schema(description = "聚合后的日志模式列表，按 count 降序")
+    private List&lt;PatternGroup&gt; patterns;
+
+    @Schema(description = "本次窗口内提取到的全部去重 traceId，可直接作为 query_trace 的入参")
+    private List&lt;String&gt; distinctTraceIds;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "单个日志模式的聚合结果")
+    public static class PatternGroup {
+
+        @Schema(description = "归一化后的日志模式骨架（数字/uuid/ip 等变量部分已替换为占位符）")
+        private String pattern;
+
+        @Schema(description = "该模式在窗口内出现的次数")
+        private long count;
+
+        @Schema(description = "该模式的一条原始日志示例")
+        private String sampleLine;
+
+        @Schema(description = "该模式下提取到的 traceId（去重）")
+        private List&lt;String&gt; traceIds;
+    }
+}</code></pre>
+      <p class="note">这里 <code>totalLines</code>（聚合前行数）和聚合后 <code>patterns.size()</code>（模式组数）的差值，就是"这次查询帮你省了多少行文本"的直观体现——比如 3000 行日志聚合成 4 个模式，agent 一眼就能感知到聚合的价值。</p>
+    </article>
+
+    <article class="card" id="p-controller">
+      <h3><span class="badge tag-code">代码</span>LogsController 骨架</h3>
+      <pre><code>@Slf4j
+@RestController
+@RequestMapping("/logs")
+@Validated
+@Tag(name = "Logs 查询", description = "封装 Loki query_range，返回 pattern 聚合 + traceId 提取结果")
+public class LogsController {
+
+    private final RedisService redisService;
+    @Value("${iris.loki.base-url}") private String lokiBaseUrl;
+    @Value("${iris.loki.connect-timeout-ms:3000}") private int connectTimeoutMs;
+    @Value("${iris.loki.read-timeout-ms:10000}") private int readTimeoutMs;
+    private RestClient lokiClient;
+
+    public LogsController(RedisService redisService) {
+        this.redisService = redisService;
+    }
+
+    @PostConstruct
+    void initLokiClient() {
+        // 与 MetricsController#initPrometheusClient 同构：显式设超时，
+        // 否则 Loki 挂起时线程会无限期占用，degraded 分支永远等不到异常抛出
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeoutMs);
+        requestFactory.setReadTimeout(readTimeoutMs);
+        this.lokiClient = RestClient.builder()
+                .baseUrl(lokiBaseUrl)
+                .requestFactory(requestFactory)
+                .build();
+    }
+
+    @PostMapping("/query")
+    public ApiEnvelope&lt;QueryLogsVO&gt; query(
+            @Valid @RequestBody QueryLogsDTO dto,
+            @RequestAttribute(HeaderConstants.INCIDENT_ID_ATTR) String incidentId) {
+
+        long startTask = System.currentTimeMillis();
+
+        // 1. 限流：见下方"复用现有横切机制"一节，这里有一个需要你拍板的设计决策
+        Long remaining = redisService.consume_tool_calls(incidentId);
+
+        // 2. 拼 LogQL，推算时间范围（resolveTimeRange 与 MetricsController 完全同构，直接照抄）
+        String logQL = LogQlBuilder.build(dto.getService(), dto.getPattern());
+        TimeRange range = resolveTimeRange(dto.getWindow(), dto.getEndOffsetSeconds());
+
+        // 3. 请求 Loki，拿到原始逐行日志（内部结构，不对外返回）
+        LokiQueryRangeVO raw = fetchQueryRange(logQL, range);
+
+        // 4. 网关内聚合：pattern 分组 + traceId 提取，不透传原始逐行日志
+        QueryLogsVO data = LogPatternAggregator.aggregate(raw);
+
+        return ApiEnvelope.ok(data, buildMeta(startTask, remaining, data));
+    }
+
+    // fetchQueryRange() 用 lokiClient.get().uri(...).retrieve().body(LokiQueryRangeVO.class)，
+    // 与 MetricsController#fetchQueryRange 同构；buildMeta() 额外根据 data 是否被截断设置 truncated
+}</code></pre>
+    </article>
+
+    <article class="card" id="p-logql-builder">
+      <h3><span class="badge tag-code">代码</span>LogQlBuilder</h3>
+      <pre><code>package com.silas.iris.toolgateway.logs.utils;
+
+import cn.hutool.core.util.StrUtil;
+
+public final class LogQlBuilder {
+    private LogQlBuilder() {}
+
+    public static String build(String service, String pattern) {
+        String selector = "{service=\"" + service + "\"}";
+        if (StrUtil.isBlank(pattern)) {
+            return selector;
+        }
+        // pattern 来自调用方输入，拼进 line filter 前必须转义双引号；
+        // 长度已由 DTO 的 @Size(max=200) 兜底，避免恶意超长正则拖垮 Loki（ReDoS 风险）
+        String escaped = pattern.replace("\"", "\\\"");
+        return selector + " |~ \"" + escaped + "\"";
+    }
+}</code></pre>
+      <p class="note">这个类和 <code>MetricsTemplateUtil.render()</code> 是同一个角色：调用方不接触查询语言原文，只传结构化参数，网关内部负责拼装。</p>
+    </article>
+
+    <article class="card" id="p-aggregator">
+      <h3><span class="badge tag-code">代码</span>pattern 聚合 + traceId 提取</h3>
+      <pre><code>package com.silas.iris.toolgateway.logs.constant;
+
+import java.util.regex.Pattern;
+
+public final class LogsQueryConstants {
+    private LogsQueryConstants() {}
+
+    public static final int MAX_WINDOW_SECONDS = 24 * 60 * 60;
+    public static final String QUERY_RANGE_PATH = "/loki/api/v1/query_range";
+    public static final int MAX_RAW_LINES = 5000;      // 单次向 Loki 拉取的行数上限
+    public static final int MAX_PATTERN_GROUPS = 30;   // 返回给 agent 的模式组数上限
+
+    // 匹配 trace_id=xxx / traceId:"xxx" / trace-id: xxx 等常见写法
+    public static final Pattern TRACE_ID_PATTERN =
+            Pattern.compile("(?i)trace[_-]?id[\"']?\\s*[:=]\\s*[\"']?([a-f0-9]{16,32})");
+}</code></pre>
+      <pre><code>package com.silas.iris.toolgateway.logs.utils;
+
+import java.util.regex.Matcher;
+import java.util.Optional;
+import static com.silas.iris.toolgateway.logs.constant.LogsQueryConstants.TRACE_ID_PATTERN;
+
+public final class TraceIdExtractor {
+    private TraceIdExtractor() {}
+
+    public static Optional&lt;String&gt; extract(String line) {
+        Matcher matcher = TRACE_ID_PATTERN.matcher(line);
+        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+    }
+}</code></pre>
+      <p><code>LogPatternAggregator.aggregate()</code> 的实现思路（伪代码，实际实现时按此展开）：</p>
+      <pre><code>1. 展开 raw.data.result 里每个 stream 的 values 列表，拿到全部 [纳秒时间戳, 原始行文本]
+2. 对每一行：
+   a. 用 TraceIdExtractor.extract(line) 尝试提取 traceId
+   b. 做骨架归一化：把数字串替换成 "N"、uuid 替换成 "&lt;uuid&gt;"、IP 替换成 "&lt;ip&gt;"，
+      得到这一行的"归一化骨架"作为分组 key
+3. 按归一化骨架分组计数（Map&lt;骨架, 计数+首个原文+traceId 集合&gt;）
+4. 按 count 降序排序，超过 MAX_PATTERN_GROUPS 时只保留前 N 组，
+   并把"是否发生了截断"这个信号透传给 ApiEnvelope.Meta.truncated
+5. 汇总所有分组的 traceId 集合，去重后作为 distinctTraceIds</code></pre>
+      <div class="cross-ref">
+        这一步的第 4 条是一个相对 <code>query_metrics</code> 现状的真实改进点：<code>MetricsController#buildMeta()</code> 目前把 <code>truncated</code> 硬编码成 <code>false</code>（<a href="#e-dto-vo">见前文</a> 提到的透传设计），而 <code>query_logs</code> 从设计之初就能算出真实的截断信号，不需要走这个弯路。
+      </div>
+    </article>
+
+    <article class="card" id="p-crosscutting">
+      <h3><span class="badge tag-diff">需要你拍板</span>复用现有横切机制（含一处预算共享问题）</h3>
+      <ul class="evidence-list">
+        <li><strong>鉴权</strong>：<code>AuthInterceptor</code> 用 <code>addPathPatterns("/**")</code> 全局注册，<code>/logs/**</code> 自动被覆盖，无需任何改动。</li>
+        <li><strong>上游降级</strong>：<code>GlobalExceptionHandler</code> 已有 <code>ResourceAccessException</code> / <code>HttpServerErrorException.ServiceUnavailable</code> → 200 degraded 的映射，Loki 超时/不可达会自动走这条路径，前提是 <code>initLokiClient()</code> 和 <code>MetricsController</code> 一样显式设置了 connect/read timeout。</li>
+        <li><strong>service 校验</strong>：等 <code>query_cmdb</code> 落地后，复用已经注册好 400 映射的 <code>UnknownServiceException</code>，不需要新建异常类。</li>
+      </ul>
+
+      <div class="analogy" style="border-left-color: var(--red-fg); background: rgba(255,222,224,0.4);">
+        <strong class="lbl" style="color: var(--red-fg);">需要你决定的一件事：预算是否共享</strong>
+        <code>RedisService.consume_tool_calls(incidentId)</code> 用的 Redis key 是 <code>consume_tool_calls:template:{incident_id}</code>——如果 <code>query_logs</code> 直接调用这个方法，它会和 <code>query_metrics</code> <strong>共用同一份 30 次/24h 的预算</strong>，也就是说一个 incident 下两个工具加起来一共只有 30 次调用机会，不是各自 30 次。<br><br>
+        两个选项：<br>
+        A）<strong>共享预算</strong>（推荐，改动最小）：语义是"模板通道总预算 30 次"，不区分具体是 metrics 还是 logs，直接复用现有方法，不用改 <code>RedisService</code>。<br>
+        B）<strong>独立预算</strong>：仿照 <code>consume_raw_tool_calls</code> 的做法，在 <code>RedisService</code> 里新增 <code>consume_logs_tool_calls(incidentId)</code>，用新 key <code>consume_tool_calls:logs:{incident_id}</code> + 独立限额，两者互不挤占。
+      </div>
+    </article>
+
+    <article class="card" id="p-checklist">
+      <h3><span class="badge tag-new">Checklist</span>实施步骤</h3>
+      <ul class="steps">
+        <li><input type="checkbox" id="q1"><label for="q1">新建 <code>logs</code> 包及六个文件（见 <a href="#p-overview">总体设计一览</a> 的目录树）。</label></li>
+        <li><input type="checkbox" id="q2"><label for="q2">决定预算共享 vs 独立（见上一节），并据此实现 <code>LogsController</code> 里的限流调用。</label></li>
+        <li><input type="checkbox" id="q3"><label for="q3"><code>application.yaml</code> 新增 <code>iris.loki.*</code> 配置块。</label></li>
+        <li><input type="checkbox" id="q4"><label for="q4">实现 <code>LogQlBuilder</code>、<code>TraceIdExtractor</code>、<code>LogPatternAggregator</code>，其中归一化正则（数字/uuid/ip 替换）可以先写一版简单实现，后续按实际日志样本迭代。</label></li>
+        <li><input type="checkbox" id="q5"><label for="q5"><code>LogsController</code> 编排逻辑照抄 <code>MetricsController.query()</code> 的顺序：限流 → 拼查询 → 推算时间范围 → 请求上游 → 加工 → 封装信封。</label></li>
+        <li><input type="checkbox" id="q6"><label for="q6">本地起一个假 Loki（或用真实 Loki）验证 <code>fetchQueryRange</code> 请求参数和响应解析。</label></li>
+        <li><input type="checkbox" id="q7"><label for="q7">补充到 <code>docs/tool-contract.md</code>（如果已按报告新建）：新增 <code>query_logs</code> 一节，路径、DTO/VO 字段、错误码。</label></li>
+      </ul>
+    </article>
+
+    <article class="card" id="p-verify">
+      <h3><span class="badge tag-new">验证</span>验证方式</h3>
+      <pre><code>curl -X POST http://localhost:9000/logs/query \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "X-Incident-Id: INC-1" -H "X-Agent-Role: investigate" \
+  -H "Content-Type: application/json" \
+  -d '{"service":"order-svc","window":300,"pattern":"error"}'</code></pre>
+      <p class="note">重点检查三件事：① <code>data.patterns</code> 里的 <code>count</code> 总和是否约等于 <code>data.totalLines</code>；② <code>data.distinctTraceIds</code> 里的值能不能在真实 trace 系统里查到；③ 把 <code>iris.loki.base-url</code> 指向不存在的端口，确认返回 200 + <code>degraded:true</code>，而不是报错。</p>
+    </article>
+
+  </main>
+</div>
+</body>
+</html>

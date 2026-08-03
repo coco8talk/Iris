@@ -12,6 +12,7 @@ name = "agent"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "langchain-core" },
     { name = "langchain-deepseek" },
     { name = "langchain-openrouter" },
@@ -19,6 +20,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -38,6 +40,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx" },
     { name = "langchain-core", specifier = ">=1.5.3" },
     { name = "langchain-deepseek", specifier = ">=1.1.0" },
     { name = "langchain-openrouter", specifier = ">=0.2.6" },
@@ -47,6 +50,7 @@ requires-dist = [
     { name = "pydantic-settings" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.1" },
+    { name = "typing-extensions", specifier = ">=4.16.0" },
 ]
 provides-extras = ["dev"]
 

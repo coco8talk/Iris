@@ -55,7 +55,7 @@ class GatewaySettings(BaseSettings):
     )
 
     base_url: str
-    bearer_token: str
+    bearer_token: SecretStr
 
 
 class Settings(BaseSettings):
