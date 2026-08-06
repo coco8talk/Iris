@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="source-sha256" content="affac2ebbf3547fd351821bcae3556bab569d7fb7ca515404f9dc1b4fd95d49f">
+  <meta name="source-sha256" content="cbcb0c1b4dc1c2c6d0a426e83f5392b4cd18b5a2dc9e0a15fc8b1a3996d1ae27">
   <title>模块 11 · Skills(SOP) + Chroma 知识库 + 快速路径 — 版本 C</title>
   <style>
     :root {
@@ -802,138 +802,297 @@
       <article class="document" id="document-content" data-od-id="document-content">
 <header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 11 · Skills(SOP) + Chroma 知识库 + 快速路径 — 版本 C</h1></header>
 <blockquote>
-<p>greenfield。🟢复刻官方格式/样例 → 🟡改造成本项目 SOP 与案例库 → 🔴自研 loader 与快速路径。</p>
+<p>编排理念：🟡在本项目真实代码上改造（照 anthropics/skills 格式直接写本项目的 SOP；用 M8 真跑出来的报告当第一条入库案例）→ 🔴自研 loader、沉淀门槛与快速路径。</p>
 </blockquote>
+<p><strong>本模块的能力边界（先对齐）</strong></p>
+<ul>
+<li><strong>入口是 M5 的 FastAPI，端口 8000</strong>；lead（M10）已在跑，Skills 注入的对象就是它。</li>
+<li><strong><code>TriageResult</code> 的 <code>fast_path</code> / <code>candidate_root</code> 两个字段在本模块补齐</strong>：M6 只定义了 <code>severity</code> / <code>suspected_domains</code>，因为这两个字段依赖 <code>matched_cases</code>，而 <code>matched_cases</code> 要等本模块的 Chroma 检索才有真实来源。现在有了，才轮到写它们。</li>
+<li><strong><code>Domain</code> 的 7 个字面值是 M6 定的</strong>（<code>db</code>/<code>threadpool</code>/<code>jvm</code>/<code>resource</code>/<code>container</code>/<code>config</code>/<code>cache</code>），本模块的预筛映射表必须与它逐字对齐——写完两边各 grep 一次。</li>
+<li><strong>工具集不变</strong>：M7 已把 7 个工具全部接入；Skills 与知识库都不新增工具，它们改变的是<strong>注入 lead 的上下文</strong>。</li>
+<li><strong>不造假案例</strong>：第一条入库案例必须是 M8 真实跑出来的那份报告，不是手编的样例。</li>
+</ul>
 <section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
 <ol>
-<li>用 anthropics/skills 的 SKILL.md 格式写领域 SOP，并按 triage 疑似域<strong>渐进披露</strong>（只给相关的）。</li>
-<li>用 Chroma 把历史案例向量化、按症状检索相似案例。</li>
-<li>让相似案例命中时走"快速路径"，二次同类故障的排查步数可观测地下降。</li>
+<li>用 anthropics/skills 的 SKILL.md 格式写领域 SOP，并按 triage 的疑似域<strong>渐进披露</strong>（只给相关的，不是全塞进去）。</li>
+<li>用 Chroma 把历史案例按<strong>症状</strong>向量化、检索相似案例，并只让"验收通过且获批"的案例进库。</li>
+<li>让相似案例命中时走"快速路径"，二次同类故障的排查步数可观测地下降（记两个真实数字）。</li>
 </ol>
 </section>
 <section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
 <ul>
-<li><code>src/.../skills/loader.py</code> + <code>src/.../skills/*/SKILL.md</code>（7 个 SOP）</li>
-<li><code>src/.../knowledge/store.py</code>（Chroma）+ <code>src/.../knowledge/cases.py</code></li>
-<li><code>src/.../graph/nodes/{knowledge_match,knowledge_update}.py</code></li>
+<li><code>iris-agent-platform/src/agent/skills/loader.py</code>（<strong>新建</strong>）+ <code>src/agent/skills/*/SKILL.md</code>（<strong>新建</strong>：7 个 SOP，与 <code>Domain</code> 一一对应 + 1 个恒列的通用 SOP）</li>
+<li><code>iris-agent-platform/src/agent/knowledge.py</code>（<strong>新建</strong>：Chroma 存取 + <code>KnowledgeHit</code>）</li>
+<li><code>iris-agent-platform/src/agent/nodes/knowledge_match.py</code>、<code>knowledge_update.py</code>（<strong>新建</strong>）</li>
+<li><code>iris-agent-platform/src/agent/state.py</code>（<strong>改造</strong>：<code>TriageResult</code> 补 <code>fast_path</code>/<code>candidate_root</code>；新增 <code>KnowledgeHit</code>）</li>
+<li><code>iris-agent-platform/src/agent/nodes/triage.py</code>（<strong>改造</strong>：读 <code>matched_cases</code> 填快慢路径）</li>
+<li><code>iris-agent-platform/src/agent/lead.py</code>（<strong>改造</strong>：注入 Skills 列表 + 快速路径提示）</li>
+<li><code>iris-agent-platform/src/agent/config.py</code>（<strong>改造</strong>：<code>skills_enabled</code>（A1）、<code>fast_path_similarity</code>）</li>
+<li><code>runs/knowledge/chroma/</code>、<code>runs/knowledge/cases/*.md</code>（运行时产物）</li>
 </ul>
 </section>
 <section class="glass-card reveal" id="section-任务-t11-1-skills-机制-渐进披露-loader" data-od-id="section-任务-t11-1-skills-机制-渐进披露-loader"><h2 data-od-id="section-任务-t11-1-skills-机制-渐进披露-loader">任务 T11.1 · Skills 机制（渐进披露）+ loader</h2>
 <div class="meta-strip"><p><strong>id</strong>：T11.1 ｜ <strong>所属模块</strong>：M11 ｜ <strong>优先级</strong>：P0</p></div>
-<p><strong>一句话目标</strong>：从 0 写 SKILL.md 加载/预筛/按需读取机制 + 第一个通用 Skill。</p>
+<p><strong>一句话目标</strong>：写出本项目的 SOP 文件与加载/预筛/按需读取机制，让 lead 只拿到跟本次事故相关的那几篇。</p>
 <p><strong>前置知识（≤2 新概念）</strong></p>
 <ul>
-<li><strong>Skills 渐进披露（SKILL.md 三段式）</strong>：先给 lead 一份"全部 Skill 的 name+description 一览"，命中疑似域才注入具体 Skill 全文。<em>Java 类比</em>：像按需加载的 SOP/策略文档——先看目录，用到哪篇才读正文，省上下文。📖 <a href="https://github.com/anthropics/skills" rel="noreferrer" target="_blank">https://github.com/anthropics/skills</a> （SKILL.md 格式，需核实锚点）· video-3 P1-6「什么是 Skills·两种架构代码实战」</li>
-<li><strong>疑似域预筛映射</strong>：triage 的疑似域（db/threadpool/jvm/...）→ 对应 Skill 列表；config-change-first 标"通用，任何诊断必列"。<em>Java 类比</em>：按标签路由到相关规则集。📖（自研）</li>
+<li><strong>Skills 渐进披露（SKILL.md 三段式）</strong>
+<ol>
+<li>先给 lead 一份"全部 Skill 的 name + description 一览"（每篇一行，很便宜）。</li>
+<li>lead 判断需要哪篇，才调 <code>read_skill(name)</code> 拿全文（每篇 ≤600 token）。</li>
+<li>好处是上下文只为<strong>用到的</strong>那几篇付费；坏处是多一轮工具调用——所以 description 必须写得让 lead 一眼判得出该不该读。</li>
+<li><em>Java 类比</em>：按需加载的 SOP 文档——先看目录，用到哪篇才读正文。</li>
+<li>📖 <a href="https://github.com/anthropics/skills" rel="noreferrer" target="_blank">https://github.com/anthropics/skills</a> （SKILL.md 格式，需核实锚点）· video-3 P1-6「什么是 Skills·两种架构代码实战」</li>
+</ol>
+</li>
+<li><strong>疑似域预筛映射</strong>
+<ol>
+<li>M6 的 triage 判出的 <code>suspected_domains</code> → 对应的 Skill 列表，这一步在<strong>代码里</strong>做，不劳烦模型。</li>
+<li><code>config-change-first</code> 标成"通用"，<strong>任何诊断都恒列</strong>——"最近改了什么"是 SRE 排查的第一问，不能等模型想起来。</li>
+<li>预筛的输入是枚举值，映射表的 key 必须与 <code>Domain</code> 逐字一致，写错不报错、只是静默返回空列表。</li>
+<li><em>Java 类比</em>：按标签路由到相关规则集。</li>
+</ol>
+</li>
 </ul>
-<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
-<ul>
-<li><strong>读什么</strong>：anthropics/skills 仓库里一个真实 SKILL.md 的 frontmatter（name/description）+ 正文结构。</li>
-<li><strong>跑什么</strong>：照格式手写一份 <code>config-change-first/SKILL.md</code>（判别流程/根因→证据要求/修复建议），先跑通"能被解析"。</li>
-</ul>
-<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
-<ul>
-<li>写 <code>loader.py</code>：扫 <code>skills/*/SKILL.md</code> 解析 frontmatter；<code>listing_for(domains)</code> 按疑似域预筛（映射表 db→[mysql-slow-query] 等，config-change-first 恒列）；<code>read_skill(name)</code> 返回全文；内容里工具名全用 M2 的模板名。</li>
-</ul>
-<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
-<ul>
-<li><strong>从空文件</strong>写 frontmatter 解析（<code>---</code> 分割，yaml 手撕两行，不引 python-frontmatter）；<code>listing()</code> 全量一览；<code>versions()</code>（供 M12 评估记 metadata）；<code>skills_enabled=False</code> 时 lead 不注入（A1 消融）。</li>
-</ul>
+<h3 data-od-id="section-第-1-段-改造-照官方格式写本项目的-sop-4" id="section-第-1-段-改造-照官方格式写本项目的-sop-4">🟡 第 1 段 · 改造（照官方格式写本项目的 SOP）</h3>
+<ol>
+<li>读一份 anthropics/skills 仓库里真实 SKILL.md 的结构，然后<strong>直接写本项目的第一篇</strong> <code>skills/config-change-first/SKILL.md</code>——不要先写一个练手的样例文件。frontmatter 三个字段：</li>
+</ol>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">markdown</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-markdown">---
+name: config-change-first
+description: 任何故障诊断的第一问——最近有没有配置发布、开关变更、版本上线。适用于所有疑似域，恒列。
+version: 1
+---
+
+## 判别流程
+1. 用 query_changes 查告警时间点前 1 小时内本服务及其直接下游的变更记录。
+2. 有变更 → 用 query_metrics 对比变更前后的 error_rate/p99，确认时间相关性。
+3. 无变更 → 明确排除配置类根因，在 hypotheses 里记一条"已排除"，不要留着悬空。
+
+## 根因 → 证据要求
+- 配置变更导致：需要 ①变更记录（时间 + dataId + 操作人）②变更前后指标对比 两类证据。
+
+## 修复建议
+- 确认为配置变更导致 → 建议 revert_config（M12 的受控动作，须经人工审批）。
+</code></pre></div>
+<ol start="2">
+<li>照同一格式写另外 7 篇，与 <code>Domain</code> 的 7 个值一一对应（<code>db</code> → <code>mysql-slow-query</code>、<code>threadpool</code> → <code>threadpool-exhaustion</code>、<code>jvm</code> → <code>jvm-gc-pressure</code>、<code>resource</code> → <code>host-resource-saturation</code>、<code>container</code> → <code>container-crashloop</code>、<code>config</code> → <code>config-change-first</code>（复用）、<code>cache</code> → <code>redis-cache-failure</code>）。</li>
+<li><strong>每篇引用的工具名必须在 M7 已接入的 7 个里真实存在</strong>（<code>query_metrics</code>/<code>query_logs</code>/<code>query_trace</code>/<code>query_cmdb</code>/<code>query_changes</code>/<code>query_metrics_raw</code>/<code>query_logs_raw</code>），写完 grep 校验一遍——SOP 里写一个不存在的工具名，等于教模型去撞墙。</li>
+</ol>
+<h3 data-od-id="section-第-2-段-自研-loader-5" id="section-第-2-段-自研-loader-5">🔴 第 2 段 · 自研（loader）</h3>
+<p><strong>从空文件</strong>写 <code>skills/loader.py</code>，签名先定死：</p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">def listing() -&gt; list[SkillMeta]:
+    """扫 skills/*/SKILL.md，解析 frontmatter 返回全部 Skill 的 name/description/version 一览."""
+
+
+def listing_for(domains: list[Domain]) -&gt; list[SkillMeta]:
+    """按疑似域预筛。规则：
+    1. 逐个 domain 查 _DOMAIN_TO_SKILLS 映射表取并集；
+    2. config-change-first 恒列（无论 domains 是什么）；
+    3. domains 为空或全是未知值时，退化为 listing()（全量给，宁滥勿缺）。
+    """
+
+
+def read_skill(name: str) -&gt; str:
+    """返回某篇 SKILL.md 的正文全文（不含 frontmatter），≤600 token。
+    name 会被拼进路径，先过白名单正则 ^[a-z][a-z0-9-]*$ 再拼，防路径穿越。"""
+
+
+def versions() -&gt; dict[str, int]:
+    """{skill_name: version}，M12 的评估要把它记进 run metadata，
+    这样"这次评估用的是哪版 SOP"事后查得到."""
+</code></pre></div>
+<p>frontmatter 解析<strong>手撕两行</strong>即可（按 <code>---</code> 切三段、逐行 <code>split(":", 1)</code>），不引 <code>python-frontmatter</code>——只有三个字段，多一个依赖不划算。</p>
+<p>A1 消融：<code>settings.skills_enabled=False</code> 时 lead 不注入任何 Skill 列表（<code>lead.py</code> 里判断，不是在 loader 里返回空——loader 保持纯粹）。</p>
 <p><strong>落笔顺序</strong></p>
 <ol class="steps">
-<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻 anthropics/skills 格式，手写第一个 SKILL.md。</div></li>
-<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造出 loader + 预筛映射。</div></li>
-<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次调用：给一组疑似域，看 listing_for 返回对不对。</div></li>
-<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 frontmatter 解析 + A1 开关。</div></li>
-<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证 read_skill 全文可读。</div></li>
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">写 <code>config-change-first/SKILL.md</code>，先只有这一篇。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">写 <code>listing()</code>，跑一次确认能解析出 frontmatter 三字段。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">补齐另外 7 篇 SKILL.md。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">写 <code>_DOMAIN_TO_SKILLS</code> 映射表 + <code>listing_for</code>，用 <code>[Domain.DB]</code> 试一次，确认返回 <code>mysql-slow-query</code> + <code>config-change-first</code>。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">写 <code>read_skill</code>，试 <code>read_skill("../../etc/passwd")</code> 确认被拒。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">接进 <code>lead.py</code>：注入 listing_for 的结果 + 把 <code>read_skill</code> 作为工具给 lead。</div></li>
+<li><span aria-hidden="true" class="step-badge">7</span><div class="step-card">跑一次真实事故，看 lead 有没有主动读了相关那篇。</div></li>
+<li><span aria-hidden="true" class="step-badge">8</span><div class="step-card">关掉 <code>skills_enabled</code> 再跑一次（A1 对照）。</div></li>
 </ol>
 <p><strong>关键提示（≤3）</strong></p>
 <ul>
-<li>疑似域枚举与 M6 triage 的<strong>逐字一致</strong>，否则预筛失灵。</li>
-<li>config-change-first 恒在列（任何诊断先问"最近改了什么"）。</li>
-<li>每个 Skill 引用的工具名必须在 M2 真实存在（写完 grep 校验一遍）。</li>
+<li>映射表的 key 与 M6 <code>Domain</code> 的 7 个字面值<strong>逐字一致</strong>，两边各 grep 一次核对（<code>db</code> 不能一边写成 <code>database</code>）。</li>
+<li><code>config-change-first</code> 恒在列——任何诊断先问"最近改了什么"。</li>
+<li>description 是给模型做判断用的，要写"什么时候该读我"，不是写"我是什么"。</li>
 </ul>
 <p><strong>卡住降级路径（30 分钟没思路）</strong></p>
 <ul>
-<li>预筛不对：打印 listing_for 输入的 domains 和映射表，逐条对。</li>
-<li>视频：video-4 P7「Skills 自我进化」+ P20-21 建立 Skills 直觉（本项目不做自进化，仅渐进披露）。</li>
-<li>问 AI：「我要写一个 SKILL.md loader，解析 frontmatter 的 name/description，按传入的疑似域返回相关 Skill 列表，两行 yaml 手撕怎么写最简？」</li>
+<li>预筛返回空：打印传进来的 <code>domains</code> 和映射表的 keys，对一遍字面值。</li>
+<li>lead 从来不读 Skill：description 太笼统，把触发条件写具体（"当疑似域含 db 或看到慢查询相关日志时读我"）。</li>
+<li>视频：video-4 P7「Skills 自我进化」+ P20-21 建立 Skills 直觉（本项目不做自进化，只做渐进披露）。</li>
+<li>问 AI：「我要写一个 SKILL.md loader，解析 frontmatter 的 name/description/version，按传入的疑似域返回相关 Skill 列表，两行 yaml 手撕怎么写最简？」</li>
 </ul>
-<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
-<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">uv run python -c "from ...skills.loader import listing_for; print(listing_for(['db']))"   # 含 mysql-slow-query + config-change-first
-uv run python -c "from ...skills.loader import read_skill; print(read_skill('config-change-first')[:200])"  # 全文
-# 异常路径：skills_enabled=False → lead prompt 不含 skill 列表（A1）
+<p><strong>真实验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-3"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+uv run python -c "
+from agent.state import Domain
+from agent.skills.loader import listing, listing_for, read_skill, versions
+print([s.name for s in listing_for([Domain.DB])])      # ['mysql-slow-query', 'config-change-first']
+print([s.name for s in listing_for([])])               # 退化为全量
+print(read_skill('config-change-first')[:200])
+print(versions())
+"
+# 工具名校验：SOP 里出现的工具名必须都在真实定义里
+grep -oE 'query_[a-z_]+' src/agent/skills/*/SKILL.md | sort -u
+grep -oE '@tool\(\"[a-z_]+' src/agent/tools/definetions.py | sort -u   # 两边对照，前者是后者的子集
+
+# 异常路径 ①：read_skill('../../etc/passwd') → 抛异常，不读到文件
+# 异常路径 ②：skills_enabled=False 跑一次真实事故 → lead 的 prompt 里不含 skill 列表（A1）
 </code></pre></div>
-<p>判定特征：预筛映射正确且 config-change-first 恒在；read_skill 返回全文；A1 关闭时不注入。依赖真实外部服务：无（纯本地机制）。</p>
+<p>判定特征：预筛映射正确且 <code>config-change-first</code> 恒在；SOP 里的工具名都真实存在；A1 关闭时不注入。依赖真实外部服务：无（纯本地机制，但注入效果要在真实事故里看）。</p>
 <p><strong>完成判定</strong></p>
 <ul class="checklist">
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>anthropics/skills 格式的第一个 SKILL.md 可解析（复刻段）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>loader 预筛映射正确、config-change-first 恒在</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>疑似域枚举与 M6 一致</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>skills_enabled=False 时不注入（A1）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>每个 Skill 工具名都在 M2 存在（grep 通过）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>8 篇 SKILL.md 写完，frontmatter 三字段齐全，与 <code>Domain</code> 7 值一一对应</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>listing_for</code> 预筛正确，<code>config-change-first</code> 恒在，空/未知 domains 退化为全量</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>映射表 key 与 M6 <code>Domain</code> 字面值逐字一致（两边 grep 核对通过）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>每篇 SOP 引用的工具名都在 M7 已接入的 7 个里（grep 校验通过）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>read_skill</code> 有 name 白名单，路径穿越被拒</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-5" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>versions()</code> 可用（M12 评估的依赖）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-0-6" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>skills_enabled=False</code> 时 lead 不注入（A1）</span></label></li>
 </ul>
 </section>
-<section class="glass-card reveal" id="section-任务-t11-2-chroma-知识库-快速路径" data-od-id="section-任务-t11-2-chroma-知识库-快速路径"><h2 data-od-id="section-任务-t11-2-chroma-知识库-快速路径">任务 T11.2 · Chroma 知识库 + 快速路径</h2>
+<section class="glass-card reveal" id="section-任务-t11-2-chroma-知识库-沉淀门槛" data-od-id="section-任务-t11-2-chroma-知识库-沉淀门槛"><h2 data-od-id="section-任务-t11-2-chroma-知识库-沉淀门槛">任务 T11.2 · Chroma 知识库 + 沉淀门槛</h2>
 <div class="meta-strip"><p><strong>id</strong>：T11.2 ｜ <strong>所属模块</strong>：M11 ｜ <strong>优先级</strong>：P0</p></div>
-<p><strong>一句话目标</strong>：从 0 接 Chroma 做案例检索与沉淀，并让相似案例命中走快速路径。</p>
+<p><strong>一句话目标</strong>：接 Chroma 做案例检索与沉淀，用<strong>真实跑出来的报告</strong>当第一条案例，并卡住"只有好案例才进库"的门槛。</p>
 <p><strong>前置知识（≤2 新概念）</strong></p>
 <ul>
-<li><strong>向量检索（Chroma）</strong>：把案例症状 embedding 后存库，新告警按症状检索最相似的历史案例。<em>Java 类比</em>：像一个"按语义相似度"的搜索引擎，检索键是症状不是关键词。📖 <a href="https://docs.langchain.com/oss/python/integrations/vectorstores/chroma" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/integrations/vectorstores/chroma</a> （需核实锚点）· video-2 P104-111「Embeddings·语义搜索案例」</li>
-<li><strong>沉淀门槛（只入好案例）</strong>：只有 verdict=pass 且获批的案例才入向量库，驳回的只落 Markdown 作负样本。<em>Java 类比</em>：只把复核通过的记录入正式知识库，废案单独归档。📖（自研）</li>
+<li><strong>向量检索（Chroma）与"检索键是症状"</strong>
+<ol>
+<li>把案例的<strong>症状段</strong>（看到了什么现象）embedding 后入库，新告警拿自己的症状去检索。</li>
+<li><strong>不要向量化结论</strong>：新事故进来时你只有症状、没有结论，用结论当检索键等于用答案找答案。</li>
+<li><code>similarity = 1 - distance</code>（Chroma 默认返回距离），阈值判断前先确认你用的距离度量是不是余弦。</li>
+<li><em>Java 类比</em>：一个按语义相似度的搜索引擎，索引字段选错了整个检索就废了。</li>
+<li>📖 <a href="https://docs.langchain.com/oss/python/integrations/vectorstores/chroma" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/integrations/vectorstores/chroma</a> （需核实锚点）· video-2 P104-111「Embeddings·语义搜索案例」</li>
+</ol>
+</li>
+<li><strong>沉淀门槛（只入好案例）</strong>
+<ol>
+<li>只有 <code>verdict == pass</code> <strong>且</strong> <code>approval.approved == True</code> 的案例才 <code>add_case</code> 进向量库。</li>
+<li>被驳回的只落 Markdown 归档，不进库——错误案例进了库会被后续事故检索到，污染是<strong>累积</strong>的。</li>
+<li><em>Java 类比</em>：只把复核通过的记录入正式知识库，废案单独归档。</li>
+</ol>
+</li>
 </ul>
-<h3 data-od-id="section-第-1-段-复刻-8" id="section-第-1-段-复刻-8">🟢 第 1 段 · 复刻</h3>
+<h3 data-od-id="section-第-1-段-改造-用真实报告做第一条案例-7" id="section-第-1-段-改造-用真实报告做第一条案例-7">🟡 第 1 段 · 改造（用真实报告做第一条案例）</h3>
+<ol>
+<li>先跑一次 M8 的完整流程，拿到一份<strong>真实</strong>的 <code>report.md</code> + 结构化字段——这就是第一条案例的原料，不要手编一条样例入库。</li>
+<li>写 <code>knowledge.py</code>：</li>
+</ol>
+<div class="code-shell" data-od-id="code-4"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">class KnowledgeHit(BaseModel):
+    """一次检索命中的历史案例摘要，写进 IncidentState.matched_cases."""
+
+    case_id: str        # 案例 id，等于当初那次事故的 incident_id
+    similarity: float   # 1 - distance，越大越像；与 settings.fast_path_similarity 比较
+    summary: str        # 案例的症状段摘要，给 triage/lead 看的
+    root_service: str   # 当初的根因服务
+    root_cause: str     # 当初的根因分类
+
+
+def add_case(case_id: str, symptom_text: str, metadata: dict) -&gt; None:
+    """把一条案例写进 collection 'cases'。
+    embedding 走 M3 的 get_embeddings()；向量化的是 symptom_text（症状段），
+    metadata 里放 root_service/root_cause/report_path 等结论侧信息（只做过滤和回显，不参与检索）。"""
+
+
+def search(symptom_text: str, k: int = 3) -&gt; list[KnowledgeHit]:
+    """按症状检索最相似的 k 条案例，按 similarity 降序。
+    检索异常（Chroma 挂了/embedding 服务不可用）一律返回 [] 并打日志，
+    绝不向上抛——知识库是加速器不是必需品，它挂了诊断照样得跑。"""
+</code></pre></div>
+<ol start="3">
+<li>案例 Markdown 模板（落 <code>runs/knowledge/cases/{case_id}.md</code>），五段：
+<ol>
+<li><strong>症状</strong>（← 这一段是向量化的文本）：告警内容 + 关键指标现象；</li>
+<li><strong>根因</strong>：<code>root_service</code> + <code>root_cause</code> + <code>root_detail</code>；</li>
+<li><strong>证据</strong>：<code>evidence_ids</code> 及各自摘要；</li>
+<li><strong>修复</strong>：实际执行的动作与结果；</li>
+<li><strong>人工备注</strong>：审批人留言（可为空）。</li>
+</ol>
+</li>
+<li><code>nodes/knowledge_match.py</code>：从 <code>alerts_ref</code> 读原始告警 → 组装症状文本 → <code>search(k=3)</code> → 写 <code>state["matched_cases"]</code>；接在图里 <strong>triage 之前</strong>（triage 要用它判快慢路径）。</li>
+</ol>
+<h3 data-od-id="section-第-2-段-自研-沉淀门槛-快慢路径-8" id="section-第-2-段-自研-沉淀门槛-快慢路径-8">🔴 第 2 段 · 自研（沉淀门槛 + 快慢路径）</h3>
+<p><strong>从空文件</strong>写 <code>nodes/knowledge_update.py</code>：</p>
+<ol>
+<li>门槛判断：<code>verdict == PASS and approval and approval.approved</code> 才 <code>add_case</code>；</li>
+<li>不满足门槛 → <strong>只</strong>写 <code>runs/knowledge/cases/{id}.md</code>（正文里标注"未入库：&lt;原因&gt;"），不碰向量库；</li>
+<li>接在图的末尾（M12 的 approval 之后）。</li>
+</ol>
+<p><strong>在 <code>state.py</code> 里给 <code>TriageResult</code> 补上 M6 留白的两个字段</strong>：</p>
+<div class="code-shell" data-od-id="code-5"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">class TriageResult(BaseModel):
+    severity: Severity
+    suspected_domains: list[Domain]
+    # 以下两个字段由 M11 补齐——它们依赖 matched_cases，M6 时还没有真实来源
+    fast_path: bool = False          # 命中高相似度历史案例时为 True，走"优先最小取证验证候选根因"
+    candidate_root: str | None = None  # 命中案例的 root_service/root_cause，作为待验证的候选根因
+</code></pre></div>
+<p><strong>在 <code>nodes/triage.py</code> 里填快慢路径</strong>（纯代码判断，不劳烦模型）：</p>
 <ul>
-<li><strong>读什么</strong>：langchain-chroma 官方 <code>PersistentClient</code> + <code>add</code> + <code>similarity_search</code> 最小样例。</li>
-<li><strong>跑什么</strong>：照样例 add 两条、search 一次，看相似度排序——先证明向量检索能用。</li>
+<li><code>matched_cases and matched_cases[0].similarity &gt;= settings.fast_path_similarity</code> → <code>fast_path=True</code>，<code>candidate_root</code> 取该案例的 <code>root_service</code> + <code>root_cause</code>。</li>
 </ul>
-<h3 data-od-id="section-第-2-段-改造-9" id="section-第-2-段-改造-9">🟡 第 2 段 · 改造</h3>
-<ul>
-<li>写 <code>store.py</code>：collection <code>cases</code>，<code>add_case(case_id,text,metadata)</code> / <code>search(text,k=3)-&gt;KnowledgeHit[]</code>（embedding 走 <code>get_embeddings()</code>，similarity=1-distance，检索异常返回 <code>[]</code> 不阻塞）；<code>cases.py</code> 案例 Markdown 模板（向量化文本=症状段）。</li>
-</ul>
-<h3 data-od-id="section-第-3-段-自研-10" id="section-第-3-段-自研-10">🔴 第 3 段 · 自研</h3>
-<ul>
-<li><strong>从空文件</strong>写 <code>knowledge_match</code>（告警→search→matched_cases）、<code>knowledge_update</code>（门槛：pass 且 approved 才 add_case，驳回只落 Markdown）；快速路径：<code>triage.fast_path</code> True 时 lead 注入"候选根因，优先最小取证验证"。</li>
-</ul>
+<p><strong>在 <code>lead.py</code> 里消费</strong>：<code>fast_path=True</code> 时 instructions 追加一段——"历史上有高度相似的案例，候选根因是 X；<strong>优先用最小取证验证这个候选</strong>，验证不成立再走完整流程"。注意措辞是"优先验证"不是"直接采信"，否则第一次判错的案例会被永久复制。</p>
 <p><strong>落笔顺序</strong></p>
 <ol class="steps">
-<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻 chroma 官方 add/search 样例。</div></li>
-<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造出 store + 案例模板。</div></li>
-<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发请求：knowledge_match 对新告警检索。</div></li>
-<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 update 门槛 + 快速路径注入。</div></li>
-<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证二次同类故障步数下降。</div></li>
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">跑一次 M8 完整流程，拿到一份真实报告。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">写 <code>knowledge.py</code> 的 <code>add_case</code>，把这份真实报告作为第一条案例入库。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">写 <code>search</code>，用同一份告警的症状检索一次，确认能命中自己（similarity 应该很高）。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">再入一条<strong>不同故障</strong>的案例，检索时确认排序正确（同类在前）。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">写 <code>knowledge_match</code> 节点，接在 triage 之前。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">给 <code>TriageResult</code> 补两个字段，在 triage 里填快慢路径，测阈值边界（0.849 不触发 / 0.851 触发）。</div></li>
+<li><span aria-hidden="true" class="step-badge">7</span><div class="step-card">在 lead 里消费 <code>fast_path</code>，注入候选根因提示。</div></li>
+<li><span aria-hidden="true" class="step-badge">8</span><div class="step-card">写 <code>knowledge_update</code> + 门槛，测驳回路径。</div></li>
+<li><span aria-hidden="true" class="step-badge">9</span><div class="step-card">端到端：同一故障注入两次，对比网关审计步数。</div></li>
 </ol>
 <p><strong>关键提示（≤3）</strong></p>
 <ul>
-<li>向量化的是<strong>症状</strong>不是结论（检索键是"看到什么"，不是"结论是什么"）。</li>
-<li>检索异常返回空、不阻塞主流程。</li>
-<li>只有 pass+approved 入库，防错误案例污染知识库。</li>
+<li>向量化的是<strong>症状</strong>不是结论——检索键是"看到什么"，不是"答案是什么"。</li>
+<li>检索异常返回空、不阻塞主流程；知识库挂了顶多退化成第一次那样慢，不能让事故诊断跟着挂。</li>
+<li>快速路径的措辞是"优先验证候选根因"，不是"直接采信"——否则一次误判会被知识库永久放大。</li>
 </ul>
 <p><strong>卡住降级路径（30 分钟没思路）</strong></p>
 <ul>
-<li>检索不准：确认 embedding 模型可用、向量化的是症状段。</li>
-<li>视频：video-1 P112-116「嵌入模型·向量库·Milvus」兜底（本项目用 Chroma，概念通用）。</li>
-<li>问 AI：「langchain-chroma 里我想按案例症状检索相似历史案例，metadata 存根因，add_case 和 search 怎么组织？相似度阈值怎么定 fast_path？」</li>
+<li>检索命不中自己：确认入库和检索用的是同一个 embedding 模型，且向量化的都是症状段。</li>
+<li>similarity 数值看着不对：确认 Chroma 返回的是距离还是相似度、用的是哪种距离度量，<code>1-distance</code> 的前提是余弦距离。</li>
+<li>步数没下降：看 lead 有没有真的读到 <code>fast_path</code> 提示；再看它是不是照样把三个 subagent 都派了一遍（提示里要写明"先只派验证候选所需的那一个"）。</li>
+<li>视频：video-1 P112-116「嵌入模型·向量库」兜底（本项目用 Chroma，概念通用）。</li>
+<li>问 AI：「langchain-chroma 里我想按案例症状检索相似历史案例、metadata 存根因，<code>add_case</code> 和 <code>search</code> 怎么组织？相似度阈值怎么定 fast_path？」</li>
 </ul>
 <p><strong>真实 HTTP 验收（含异常路径）</strong></p>
-<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 首次注入某故障 → 完整闭环 → 获批入库
-curl -XPOST localhost:8000/webhook/alertmanager -d @fault-A.json   # 首次，记步数
-# 再次注入同类 → 走快速路径
-curl -XPOST localhost:8000/webhook/alertmanager -d @fault-A.json   # 二次
-# 网关审计对比步数
-sqlite3 tool-gateway/data/*.db "select incident_id,count(*) from audit_log group by incident_id"  # 二次显著低于首次
-# 异常路径：驳回的 incident → 不进向量库、只落 Markdown
+<div class="code-shell" data-od-id="code-6"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+uv run uvicorn agent.app:app --port 8000
+
+# ① 首次注入某故障 → 完整闭环 → 审批通过 → 入库
+curl -s -XPOST localhost:8000/webhook/alertmanager -d @fault-A.json
+sqlite3 tool-gateway/data/*.db "select count(*) from audit_log where incident_id='inc-A';"  # 记下首次步数
+ls runs/knowledge/cases/                    # 案例 Markdown 落盘
+
+# ② 再次注入同类故障 → 应命中快速路径
+curl -s -XPOST localhost:8000/webhook/alertmanager -d @fault-A.json    # 注意换 fingerprint 避开 M5 去重
+sqlite3 tool-gateway/data/*.db "select incident_id, count(*) from audit_log group by 1;"
+# 期望：二次的步数显著低于首次（把两个数字都记进笔记，这是可讲的成果）
+
+# 异常路径 ①：把某个 incident 审批驳回 → 只落 Markdown，向量库条数不增
+# 异常路径 ②：把 Chroma 目录改成不可读 → search 返回 []，诊断流程照常跑完不崩
 </code></pre></div>
-<p>判定特征：add→search 命中且相似度排序正确；二次同类步数下降；驳回案例不入向量库。依赖真实服务：embedding（DashScope）、M2 网关。</p>
+<p>判定特征：真实 embedding 下 add→search 命中且排序正确；二次同类步数下降（有两个真实数字）；驳回案例不入库；检索异常不阻塞。依赖真实服务：embedding（DashScope）、M2 网关、全链路模型。</p>
 <p><strong>完成判定</strong></p>
 <ul class="checklist">
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>chroma add/search 样例复现（复刻段）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>案例按症状向量化、检索命中且排序正确</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>只有 pass+approved 入库，驳回只落 Markdown</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>快速路径命中时二次步数下降（记两个数字）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>检索异常返回空不抛</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>第一条入库案例来自 M8 <strong>真实跑出来</strong>的报告，不是手编样例</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>KnowledgeHit</code> 5 字段定义完整；向量化的是症状段，结论放 metadata</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>search</code> 异常返回 <code>[]</code> 不抛，实测验证过</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>TriageResult</code> 补上 <code>fast_path</code>/<code>candidate_root</code>，阈值边界（0.849/0.851）正确</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>knowledge_match</code> 接在 triage <strong>之前</strong>，<code>knowledge_update</code> 接在 approval <strong>之后</strong></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-5" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>只有 <code>verdict=pass</code> 且 <code>approved</code> 才入库，驳回只落 Markdown（实测验证过）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-6" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>二次同类故障步数下降，两个真实数字记录在案</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m11-learning-guide-check-1-7" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>lead 的快速路径措辞是"优先验证候选"而非"直接采信"</span></label></li>
 </ul>
-<p class="closing-note"><em>版本 C 特征：知识闭环全靠"复刻官方 SKILL.md/chroma 样例 → 改造成本项目 SOP 与案例库 → 自研 loader/门槛/快速路径"。</em></p>
+<p class="closing-note"><em>版本 C 特征：知识闭环全靠"照官方格式直接写本项目 SOP → 用真跑出来的报告做第一条案例 → 自研 loader、沉淀门槛与快速路径"，让系统第二次遇到同类故障时真的更快，且这个"更快"有两个可被质证的数字。</em></p>
 </section>
       </article>
       <aside class="toc" data-od-id="table-of-contents">
@@ -947,14 +1106,14 @@ sqlite3 tool-gateway/data/*.db "select incident_id,count(*) from audit_log group
             <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
             <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
             <li><a href="#section-任务-t11-1-skills-机制-渐进披露-loader">任务 T11.1 · Skills 机制（渐进披露）+ loader</a></li>
-            <li><a href="#section-任务-t11-2-chroma-知识库-快速路径">任务 T11.2 · Chroma 知识库 + 快速路径</a></li>
+            <li><a href="#section-任务-t11-2-chroma-知识库-沉淀门槛">任务 T11.2 · Chroma 知识库 + 沉淀门槛</a></li>
           </ol>
         </details>
       </aside>
     </div>
   </main>
 
-  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgMTEgwrcgU2tpbGxzKFNPUCkgKyBDaHJvbWEg55+l6K+G5bqTICsg5b+r6YCf6Lev5b6EIOKAlCDniYjmnKwgQwoKPiBncmVlbmZpZWxk44CC8J+fouWkjeWIu+WumOaWueagvOW8jy/moLfkvosg4oaSIPCfn6HmlLnpgKDmiJDmnKzpobnnm64gU09QIOS4juahiOS+i+W6kyDihpIg8J+UtOiHqueglCBsb2FkZXIg5LiO5b+r6YCf6Lev5b6E44CCCgojIyDlrablrozmnKzmqKHlnZfkvaDog73lgZrliLDnmoQgMyDku7bkuosKMS4g55SoIGFudGhyb3BpY3Mvc2tpbGxzIOeahCBTS0lMTC5tZCDmoLzlvI/lhpnpoobln58gU09Q77yM5bm25oyJIHRyaWFnZSDnlpHkvLzln58qKua4kOi/m+aKq+mcsioq77yI5Y+q57uZ55u45YWz55qE77yJ44CCCjIuIOeUqCBDaHJvbWEg5oqK5Y6G5Y+y5qGI5L6L5ZCR6YeP5YyW44CB5oyJ55eH54q25qOA57Si55u45Ly85qGI5L6L44CCCjMuIOiuqeebuOS8vOahiOS+i+WRveS4reaXtui1sCLlv6vpgJ/ot6/lvoQi77yM5LqM5qyh5ZCM57G75pWF6Zqc55qE5o6S5p+l5q2l5pWw5Y+v6KeC5rWL5Zyw5LiL6ZmN44CCCgojIyDmnKzmqKHlnZfkuqTku5jnianmuIXljZXvvIjmlofku7bot6/lvoTnuqfvvIkKLSBgc3JjLy4uLi9za2lsbHMvbG9hZGVyLnB5YCArIGBzcmMvLi4uL3NraWxscy8qL1NLSUxMLm1kYO+8iDcg5LiqIFNPUO+8iQotIGBzcmMvLi4uL2tub3dsZWRnZS9zdG9yZS5weWDvvIhDaHJvbWHvvIkrIGBzcmMvLi4uL2tub3dsZWRnZS9jYXNlcy5weWAKLSBgc3JjLy4uLi9ncmFwaC9ub2Rlcy97a25vd2xlZGdlX21hdGNoLGtub3dsZWRnZV91cGRhdGV9LnB5YAoKLS0tCgojIyDku7vliqEgVDExLjEgwrcgU2tpbGxzIOacuuWItu+8iOa4kOi/m+aKq+mcsu+8iSsgbG9hZGVyCgoqKmlkKirvvJpUMTEuMSDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk0xMSDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5LuOIDAg5YaZIFNLSUxMLm1kIOWKoOi9vS/pooTnrZsv5oyJ6ZyA6K+75Y+W5py65Yi2ICsg56ys5LiA5Liq6YCa55SoIFNraWxs44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKlNraWxscyDmuJDov5vmiqvpnLLvvIhTS0lMTC5tZCDkuInmrrXlvI/vvIkqKu+8muWFiOe7mSBsZWFkIOS4gOS7vSLlhajpg6ggU2tpbGwg55qEIG5hbWUrZGVzY3JpcHRpb24g5LiA6KeIIu+8jOWRveS4reeWkeS8vOWfn+aJjeazqOWFpeWFt+S9kyBTa2lsbCDlhajmlofjgIIqSmF2YSDnsbvmr5Qq77ya5YOP5oyJ6ZyA5Yqg6L2955qEIFNPUC/nrZbnlaXmlofmoaPigJTigJTlhYjnnIvnm67lvZXvvIznlKjliLDlk6rnr4fmiY3or7vmraPmlofvvIznnIHkuIrkuIvmlofjgILwn5OWIGh0dHBzOi8vZ2l0aHViLmNvbS9hbnRocm9waWNzL3NraWxscyDvvIhTS0lMTC5tZCDmoLzlvI/vvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0zIFAxLTbjgIzku4DkuYjmmK8gU2tpbGxzwrfkuKTnp43mnrbmnoTku6PnoIHlrp7miJjjgI0KLSAqKueWkeS8vOWfn+mihOetm+aYoOWwhCoq77yadHJpYWdlIOeahOeWkeS8vOWfn++8iGRiL3RocmVhZHBvb2wvanZtLy4uLu+8ieKGkiDlr7nlupQgU2tpbGwg5YiX6KGo77ybY29uZmlnLWNoYW5nZS1maXJzdCDmoIci6YCa55So77yM5Lu75L2V6K+K5pat5b+F5YiXIuOAgipKYXZhIOexu+avlCrvvJrmjInmoIfnrb7ot6/nlLHliLDnm7jlhbPop4TliJnpm4bjgILwn5OW77yI6Ieq56CU77yJCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mmFudGhyb3BpY3Mvc2tpbGxzIOS7k+W6k+mHjOS4gOS4quecn+WuniBTS0lMTC5tZCDnmoQgZnJvbnRtYXR0ZXLvvIhuYW1lL2Rlc2NyaXB0aW9u77yJKyDmraPmlofnu5PmnoTjgIIKLSAqKui3keS7gOS5iCoq77ya54Wn5qC85byP5omL5YaZ5LiA5Lu9IGBjb25maWctY2hhbmdlLWZpcnN0L1NLSUxMLm1kYO+8iOWIpOWIq+a1geeoiy/moLnlm6DihpLor4Hmja7opoHmsYIv5L+u5aSN5bu66K6u77yJ77yM5YWI6LeR6YCaIuiDveiiq+ino+aekCLjgIIKCiMjIyDwn5+hIOesrCAyIOautSDCtyDmlLnpgKAKLSDlhpkgYGxvYWRlci5weWDvvJrmiasgYHNraWxscy8qL1NLSUxMLm1kYCDop6PmnpAgZnJvbnRtYXR0ZXLvvJtgbGlzdGluZ19mb3IoZG9tYWlucylgIOaMieeWkeS8vOWfn+mihOetm++8iOaYoOWwhOihqCBkYuKGkltteXNxbC1zbG93LXF1ZXJ5XSDnrYnvvIxjb25maWctY2hhbmdlLWZpcnN0IOaBkuWIl++8ie+8m2ByZWFkX3NraWxsKG5hbWUpYCDov5Tlm57lhajmlofvvJvlhoXlrrnph4zlt6XlhbflkI3lhajnlKggTTIg55qE5qih5p2/5ZCN44CCCgojIyMg8J+UtCDnrKwgMyDmrrUgwrcg6Ieq56CUCi0gKirku47nqbrmlofku7YqKuWGmSBmcm9udG1hdHRlciDop6PmnpDvvIhgLS0tYCDliIblibLvvIx5YW1sIOaJi+aSleS4pOihjO+8jOS4jeW8lSBweXRob24tZnJvbnRtYXR0ZXLvvInvvJtgbGlzdGluZygpYCDlhajph4/kuIDop4jvvJtgdmVyc2lvbnMoKWDvvIjkvpsgTTEyIOivhOS8sOiusCBtZXRhZGF0Ye+8ie+8m2Bza2lsbHNfZW5hYmxlZD1GYWxzZWAg5pe2IGxlYWQg5LiN5rOo5YWl77yIQTEg5raI6J6N77yJ44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWkjeWIuyBhbnRocm9waWNzL3NraWxscyDmoLzlvI/vvIzmiYvlhpnnrKzkuIDkuKogU0tJTEwubWTjgIIKMi4g5pS56YCg5Ye6IGxvYWRlciArIOmihOetm+aYoOWwhOOAggozLiDlj5HkuIDmrKHosIPnlKjvvJrnu5nkuIDnu4TnlpHkvLzln5/vvIznnIsgbGlzdGluZ19mb3Ig6L+U5Zue5a+55LiN5a+544CCCjQuIOiHqueglCBmcm9udG1hdHRlciDop6PmnpAgKyBBMSDlvIDlhbPjgIIKNS4g6aqM6K+BIHJlYWRfc2tpbGwg5YWo5paH5Y+v6K+744CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOeWkeS8vOWfn+aemuS4vuS4jiBNNiB0cmlhZ2Ug55qEKirpgJDlrZfkuIDoh7QqKu+8jOWQpuWImemihOetm+WkseeBteOAggotIGNvbmZpZy1jaGFuZ2UtZmlyc3Qg5oGS5Zyo5YiX77yI5Lu75L2V6K+K5pat5YWI6ZeuIuacgOi/keaUueS6huS7gOS5iCLvvInjgIIKLSDmr4/kuKogU2tpbGwg5byV55So55qE5bel5YW35ZCN5b+F6aG75ZyoIE0yIOecn+WunuWtmOWcqO+8iOWGmeWujCBncmVwIOagoemqjOS4gOmBje+8ieOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOmihOetm+S4jeWvue+8muaJk+WNsCBsaXN0aW5nX2ZvciDovpPlhaXnmoQgZG9tYWlucyDlkozmmKDlsITooajvvIzpgJDmnaHlr7njgIIKLSDop4bpopHvvJp2aWRlby00IFA344CMU2tpbGxzIOiHquaIkei/m+WMluOAjSsgUDIwLTIxIOW7uueriyBTa2lsbHMg55u06KeJ77yI5pys6aG555uu5LiN5YGa6Ieq6L+b5YyW77yM5LuF5riQ6L+b5oqr6Zyy77yJ44CCCi0g6ZeuIEFJ77ya44CM5oiR6KaB5YaZ5LiA5LiqIFNLSUxMLm1kIGxvYWRlcu+8jOino+aekCBmcm9udG1hdHRlciDnmoQgbmFtZS9kZXNjcmlwdGlvbu+8jOaMieS8oOWFpeeahOeWkeS8vOWfn+i/lOWbnuebuOWFsyBTa2lsbCDliJfooajvvIzkuKTooYwgeWFtbCDmiYvmkpXmgI7kuYjlhpnmnIDnroDvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaAp1diBydW4gcHl0aG9uIC1jICJmcm9tIC4uLnNraWxscy5sb2FkZXIgaW1wb3J0IGxpc3RpbmdfZm9yOyBwcmludChsaXN0aW5nX2ZvcihbJ2RiJ10pKSIgICAjIOWQqyBteXNxbC1zbG93LXF1ZXJ5ICsgY29uZmlnLWNoYW5nZS1maXJzdAp1diBydW4gcHl0aG9uIC1jICJmcm9tIC4uLnNraWxscy5sb2FkZXIgaW1wb3J0IHJlYWRfc2tpbGw7IHByaW50KHJlYWRfc2tpbGwoJ2NvbmZpZy1jaGFuZ2UtZmlyc3QnKVs6MjAwXSkiICAjIOWFqOaWhwojIOW8guW4uOi3r+W+hO+8mnNraWxsc19lbmFibGVkPUZhbHNlIOKGkiBsZWFkIHByb21wdCDkuI3lkKsgc2tpbGwg5YiX6KGo77yIQTHvvIkKYGBgCuWIpOWumueJueW+ge+8mumihOetm+aYoOWwhOato+ehruS4lCBjb25maWctY2hhbmdlLWZpcnN0IOaBkuWcqO+8m3JlYWRfc2tpbGwg6L+U5Zue5YWo5paH77ybQTEg5YWz6Zet5pe25LiN5rOo5YWl44CC5L6d6LWW55yf5a6e5aSW6YOo5pyN5Yqh77ya5peg77yI57qv5pys5Zyw5py65Yi277yJ44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGFudGhyb3BpY3Mvc2tpbGxzIOagvOW8j+eahOesrOS4gOS4qiBTS0lMTC5tZCDlj6/op6PmnpDvvIjlpI3liLvmrrXvvIkKLSBbIF0gbG9hZGVyIOmihOetm+aYoOWwhOato+ehruOAgWNvbmZpZy1jaGFuZ2UtZmlyc3Qg5oGS5ZyoCi0gWyBdIOeWkeS8vOWfn+aemuS4vuS4jiBNNiDkuIDoh7QKLSBbIF0gc2tpbGxzX2VuYWJsZWQ9RmFsc2Ug5pe25LiN5rOo5YWl77yIQTHvvIkKLSBbIF0g5q+P5LiqIFNraWxsIOW3peWFt+WQjemDveWcqCBNMiDlrZjlnKjvvIhncmVwIOmAmui/h++8iQoKLS0tCgojIyDku7vliqEgVDExLjIgwrcgQ2hyb21hIOefpeivhuW6kyArIOW/q+mAn+i3r+W+hAoKKippZCoq77yaVDExLjIg772cICoq5omA5bGe5qih5Z2XKirvvJpNMTEg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8muS7jiAwIOaOpSBDaHJvbWEg5YGa5qGI5L6L5qOA57Si5LiO5rKJ5reA77yM5bm26K6p55u45Ly85qGI5L6L5ZG95Lit6LWw5b+r6YCf6Lev5b6E44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKuWQkemHj+ajgOe0ou+8iENocm9tYe+8iSoq77ya5oqK5qGI5L6L55eH54q2IGVtYmVkZGluZyDlkI7lrZjlupPvvIzmlrDlkYrorabmjInnl4fnirbmo4DntKLmnIDnm7jkvLznmoTljoblj7LmoYjkvovjgIIqSmF2YSDnsbvmr5Qq77ya5YOP5LiA5LiqIuaMieivreS5ieebuOS8vOW6piLnmoTmkJzntKLlvJXmk47vvIzmo4DntKLplK7mmK/nl4fnirbkuI3mmK/lhbPplK7or43jgILwn5OWIGh0dHBzOi8vZG9jcy5sYW5nY2hhaW4uY29tL29zcy9weXRob24vaW50ZWdyYXRpb25zL3ZlY3RvcnN0b3Jlcy9jaHJvbWEg77yI6ZyA5qC45a6e6ZSa54K577yJwrcgdmlkZW8tMiBQMTA0LTExMeOAjEVtYmVkZGluZ3PCt+ivreS5ieaQnOe0ouahiOS+i+OAjQotICoq5rKJ5reA6Zeo5qeb77yI5Y+q5YWl5aW95qGI5L6L77yJKirvvJrlj6rmnIkgdmVyZGljdD1wYXNzIOS4lOiOt+aJueeahOahiOS+i+aJjeWFpeWQkemHj+W6k++8jOmps+WbnueahOWPquiQvSBNYXJrZG93biDkvZzotJ/moLfmnKzjgIIqSmF2YSDnsbvmr5Qq77ya5Y+q5oqK5aSN5qC46YCa6L+H55qE6K6w5b2V5YWl5q2j5byP55+l6K+G5bqT77yM5bqf5qGI5Y2V54us5b2S5qGj44CC8J+Tlu+8iOiHqueglO+8iQoKIyMjIPCfn6Ig56ysIDEg5q61IMK3IOWkjeWIuwotICoq6K+75LuA5LmIKirvvJpsYW5nY2hhaW4tY2hyb21hIOWumOaWuSBgUGVyc2lzdGVudENsaWVudGAgKyBgYWRkYCArIGBzaW1pbGFyaXR5X3NlYXJjaGAg5pyA5bCP5qC35L6L44CCCi0gKirot5Hku4DkuYgqKu+8mueFp+agt+S+iyBhZGQg5Lik5p2h44CBc2VhcmNoIOS4gOasoe+8jOeci+ebuOS8vOW6puaOkuW6j+KAlOKAlOWFiOivgeaYjuWQkemHj+ajgOe0ouiDveeUqOOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIOWGmSBgc3RvcmUucHlg77yaY29sbGVjdGlvbiBgY2FzZXNg77yMYGFkZF9jYXNlKGNhc2VfaWQsdGV4dCxtZXRhZGF0YSlgIC8gYHNlYXJjaCh0ZXh0LGs9MyktPktub3dsZWRnZUhpdFtdYO+8iGVtYmVkZGluZyDotbAgYGdldF9lbWJlZGRpbmdzKClg77yMc2ltaWxhcml0eT0xLWRpc3RhbmNl77yM5qOA57Si5byC5bi46L+U5ZueIGBbXWAg5LiN6Zi75aGe77yJ77ybYGNhc2VzLnB5YCDmoYjkvosgTWFya2Rvd24g5qih5p2/77yI5ZCR6YeP5YyW5paH5pysPeeXh+eKtuaute+8ieOAggoKIyMjIPCflLQg56ysIDMg5q61IMK3IOiHqueglAotICoq5LuO56m65paH5Lu2KirlhpkgYGtub3dsZWRnZV9tYXRjaGDvvIjlkYrorabihpJzZWFyY2jihpJtYXRjaGVkX2Nhc2Vz77yJ44CBYGtub3dsZWRnZV91cGRhdGVg77yI6Zeo5qeb77yacGFzcyDkuJQgYXBwcm92ZWQg5omNIGFkZF9jYXNl77yM6amz5Zue5Y+q6JC9IE1hcmtkb3du77yJ77yb5b+r6YCf6Lev5b6E77yaYHRyaWFnZS5mYXN0X3BhdGhgIFRydWUg5pe2IGxlYWQg5rOo5YWlIuWAmemAieagueWboO+8jOS8mOWFiOacgOWwj+WPluivgemqjOivgSLjgIIKCioq6JC956yU6aG65bqPKioKMS4g5aSN5Yi7IGNocm9tYSDlrpjmlrkgYWRkL3NlYXJjaCDmoLfkvovjgIIKMi4g5pS56YCg5Ye6IHN0b3JlICsg5qGI5L6L5qih5p2/44CCCjMuIOWPkeivt+axgu+8mmtub3dsZWRnZV9tYXRjaCDlr7nmlrDlkYrorabmo4DntKLjgIIKNC4g6Ieq56CUIHVwZGF0ZSDpl6jmp5sgKyDlv6vpgJ/ot6/lvoTms6jlhaXjgIIKNS4g6aqM6K+B5LqM5qyh5ZCM57G75pWF6Zqc5q2l5pWw5LiL6ZmN44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOWQkemHj+WMlueahOaYryoq55eH54q2KirkuI3mmK/nu5PorrrvvIjmo4DntKLplK7mmK8i55yL5Yiw5LuA5LmIIu+8jOS4jeaYryLnu5PorrrmmK/ku4DkuYgi77yJ44CCCi0g5qOA57Si5byC5bi46L+U5Zue56m644CB5LiN6Zi75aGe5Li75rWB56iL44CCCi0g5Y+q5pyJIHBhc3MrYXBwcm92ZWQg5YWl5bqT77yM6Ziy6ZSZ6K+v5qGI5L6L5rGh5p+T55+l6K+G5bqT44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g5qOA57Si5LiN5YeG77ya56Gu6K6kIGVtYmVkZGluZyDmqKHlnovlj6/nlKjjgIHlkJHph4/ljJbnmoTmmK/nl4fnirbmrrXjgIIKLSDop4bpopHvvJp2aWRlby0xIFAxMTItMTE244CM5bWM5YWl5qih5Z6LwrflkJHph4/lupPCt01pbHZ1c+OAjeWFnOW6le+8iOacrOmhueebrueUqCBDaHJvbWHvvIzmpoLlv7XpgJrnlKjvvInjgIIKLSDpl64gQUnvvJrjgIxsYW5nY2hhaW4tY2hyb21hIOmHjOaIkeaDs+aMieahiOS+i+eXh+eKtuajgOe0ouebuOS8vOWOhuWPsuahiOS+i++8jG1ldGFkYXRhIOWtmOagueWboO+8jGFkZF9jYXNlIOWSjCBzZWFyY2gg5oCO5LmI57uE57uH77yf55u45Ly85bqm6ZiI5YC85oCO5LmI5a6aIGZhc3RfcGF0aO+8n+OAjQoKKirnnJ/lrp4gSFRUUCDpqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCiMg6aaW5qyh5rOo5YWl5p+Q5pWF6ZqcIOKGkiDlrozmlbTpl63njq8g4oaSIOiOt+aJueWFpeW6kwpjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAZmF1bHQtQS5qc29uICAgIyDpppbmrKHvvIzorrDmraXmlbAKIyDlho3mrKHms6jlhaXlkIznsbsg4oaSIOi1sOW/q+mAn+i3r+W+hApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAZmF1bHQtQS5qc29uICAgIyDkuozmrKEKIyDnvZHlhbPlrqHorqHlr7nmr5TmraXmlbAKc3FsaXRlMyB0b29sLWdhdGV3YXkvZGF0YS8qLmRiICJzZWxlY3QgaW5jaWRlbnRfaWQsY291bnQoKikgZnJvbSBhdWRpdF9sb2cgZ3JvdXAgYnkgaW5jaWRlbnRfaWQiICAjIOS6jOasoeaYvuiRl+S9juS6jummluasoQojIOW8guW4uOi3r+W+hO+8mumps+WbnueahCBpbmNpZGVudCDihpIg5LiN6L+b5ZCR6YeP5bqT44CB5Y+q6JC9IE1hcmtkb3duCmBgYArliKTlrprnibnlvoHvvJphZGTihpJzZWFyY2gg5ZG95Lit5LiU55u45Ly85bqm5o6S5bqP5q2j56Gu77yb5LqM5qyh5ZCM57G75q2l5pWw5LiL6ZmN77yb6amz5Zue5qGI5L6L5LiN5YWl5ZCR6YeP5bqT44CC5L6d6LWW55yf5a6e5pyN5Yqh77yaZW1iZWRkaW5n77yIRGFzaFNjb3Bl77yJ44CBTTIg572R5YWz44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGNocm9tYSBhZGQvc2VhcmNoIOagt+S+i+WkjeeOsO+8iOWkjeWIu+aute+8iQotIFsgXSDmoYjkvovmjInnl4fnirblkJHph4/ljJbjgIHmo4DntKLlkb3kuK3kuJTmjpLluo/mraPnoa4KLSBbIF0g5Y+q5pyJIHBhc3MrYXBwcm92ZWQg5YWl5bqT77yM6amz5Zue5Y+q6JC9IE1hcmtkb3duCi0gWyBdIOW/q+mAn+i3r+W+hOWRveS4reaXtuS6jOasoeatpeaVsOS4i+mZje+8iOiusOS4pOS4quaVsOWtl++8iQotIFsgXSDmo4DntKLlvILluLjov5Tlm57nqbrkuI3mipsKCi0tLQoq54mI5pysIEMg54m55b6B77ya55+l6K+G6Zet546v5YWo6Z2gIuWkjeWIu+WumOaWuSBTS0lMTC5tZC9jaHJvbWEg5qC35L6LIOKGkiDmlLnpgKDmiJDmnKzpobnnm64gU09QIOS4juahiOS+i+W6kyDihpIg6Ieq56CUIGxvYWRlci/pl6jmp5sv5b+r6YCf6Lev5b6EIuOAgioK</script>
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgMTEgwrcgU2tpbGxzKFNPUCkgKyBDaHJvbWEg55+l6K+G5bqTICsg5b+r6YCf6Lev5b6EIOKAlCDniYjmnKwgQwoKPiDnvJbmjpLnkIblv7XvvJrwn5+h5Zyo5pys6aG555uu55yf5a6e5Luj56CB5LiK5pS56YCg77yI54WnIGFudGhyb3BpY3Mvc2tpbGxzIOagvOW8j+ebtOaOpeWGmeacrOmhueebrueahCBTT1DvvJvnlKggTTgg55yf6LeR5Ye65p2l55qE5oql5ZGK5b2T56ys5LiA5p2h5YWl5bqT5qGI5L6L77yJ4oaSIPCflLToh6rnoJQgbG9hZGVy44CB5rKJ5reA6Zeo5qeb5LiO5b+r6YCf6Lev5b6E44CCCgoqKuacrOaooeWdl+eahOiDveWKm+i+ueeVjO+8iOWFiOWvuem9kO+8iSoqCi0gKirlhaXlj6PmmK8gTTUg55qEIEZhc3RBUEnvvIznq6/lj6MgODAwMCoq77ybbGVhZO+8iE0xMO+8ieW3suWcqOi3ke+8jFNraWxscyDms6jlhaXnmoTlr7nosaHlsLHmmK/lroPjgIIKLSAqKmBUcmlhZ2VSZXN1bHRgIOeahCBgZmFzdF9wYXRoYCAvIGBjYW5kaWRhdGVfcm9vdGAg5Lik5Liq5a2X5q615Zyo5pys5qih5Z2X6KGl6b2QKirvvJpNNiDlj6rlrprkuYnkuoYgYHNldmVyaXR5YCAvIGBzdXNwZWN0ZWRfZG9tYWluc2DvvIzlm6DkuLrov5nkuKTkuKrlrZfmrrXkvp3otZYgYG1hdGNoZWRfY2FzZXNg77yM6ICMIGBtYXRjaGVkX2Nhc2VzYCDopoHnrYnmnKzmqKHlnZfnmoQgQ2hyb21hIOajgOe0ouaJjeacieecn+Wunuadpea6kOOAgueOsOWcqOacieS6hu+8jOaJjei9ruWIsOWGmeWug+S7rOOAggotICoqYERvbWFpbmAg55qEIDcg5Liq5a2X6Z2i5YC85pivIE02IOWumueahCoq77yIYGRiYC9gdGhyZWFkcG9vbGAvYGp2bWAvYHJlc291cmNlYC9gY29udGFpbmVyYC9gY29uZmlnYC9gY2FjaGVg77yJ77yM5pys5qih5Z2X55qE6aKE562b5pig5bCE6KGo5b+F6aG75LiO5a6D6YCQ5a2X5a+56b2Q4oCU4oCU5YaZ5a6M5Lik6L655ZCEIGdyZXAg5LiA5qyh44CCCi0gKirlt6Xlhbfpm4bkuI3lj5gqKu+8mk03IOW3suaKiiA3IOS4quW3peWFt+WFqOmDqOaOpeWFpe+8m1NraWxscyDkuI7nn6Xor4blupPpg73kuI3mlrDlop7lt6XlhbfvvIzlroPku6zmlLnlj5jnmoTmmK8qKuazqOWFpSBsZWFkIOeahOS4iuS4i+aWhyoq44CCCi0gKirkuI3pgKDlgYfmoYjkvosqKu+8muesrOS4gOadoeWFpeW6k+ahiOS+i+W/hemhu+aYryBNOCDnnJ/lrp7ot5Hlh7rmnaXnmoTpgqPku73miqXlkYrvvIzkuI3mmK/miYvnvJbnmoTmoLfkvovjgIIKCiMjIOWtpuWujOacrOaooeWdl+S9oOiDveWBmuWIsOeahCAzIOS7tuS6iwoxLiDnlKggYW50aHJvcGljcy9za2lsbHMg55qEIFNLSUxMLm1kIOagvOW8j+WGmemihuWfnyBTT1DvvIzlubbmjIkgdHJpYWdlIOeahOeWkeS8vOWfnyoq5riQ6L+b5oqr6ZyyKirvvIjlj6rnu5nnm7jlhbPnmoTvvIzkuI3mmK/lhajloZ7ov5vljrvvvInjgIIKMi4g55SoIENocm9tYSDmiorljoblj7LmoYjkvovmjIkqKueXh+eKtioq5ZCR6YeP5YyW44CB5qOA57Si55u45Ly85qGI5L6L77yM5bm25Y+q6K6pIumqjOaUtumAmui/h+S4lOiOt+aJuSLnmoTmoYjkvovov5vlupPjgIIKMy4g6K6p55u45Ly85qGI5L6L5ZG95Lit5pe26LWwIuW/q+mAn+i3r+W+hCLvvIzkuozmrKHlkIznsbvmlYXpmpznmoTmjpLmn6XmraXmlbDlj6/op4LmtYvlnLDkuIvpmY3vvIjorrDkuKTkuKrnnJ/lrp7mlbDlrZfvvInjgIIKCiMjIOacrOaooeWdl+S6pOS7mOeJqea4heWNle+8iOaWh+S7tui3r+W+hOe6p++8iQotIGBpcmlzLWFnZW50LXBsYXRmb3JtL3NyYy9hZ2VudC9za2lsbHMvbG9hZGVyLnB5YO+8iCoq5paw5bu6KirvvIkrIGBzcmMvYWdlbnQvc2tpbGxzLyovU0tJTEwubWRg77yIKirmlrDlu7oqKu+8mjcg5LiqIFNPUO+8jOS4jiBgRG9tYWluYCDkuIDkuIDlr7nlupQgKyAxIOS4quaBkuWIl+eahOmAmueUqCBTT1DvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQva25vd2xlZGdlLnB5YO+8iCoq5paw5bu6KirvvJpDaHJvbWEg5a2Y5Y+WICsgYEtub3dsZWRnZUhpdGDvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvbm9kZXMva25vd2xlZGdlX21hdGNoLnB5YOOAgWBrbm93bGVkZ2VfdXBkYXRlLnB5YO+8iCoq5paw5bu6KirvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvc3RhdGUucHlg77yIKirmlLnpgKAqKu+8mmBUcmlhZ2VSZXN1bHRgIOihpSBgZmFzdF9wYXRoYC9gY2FuZGlkYXRlX3Jvb3Rg77yb5paw5aKeIGBLbm93bGVkZ2VIaXRg77yJCi0gYGlyaXMtYWdlbnQtcGxhdGZvcm0vc3JjL2FnZW50L25vZGVzL3RyaWFnZS5weWDvvIgqKuaUuemAoCoq77ya6K+7IGBtYXRjaGVkX2Nhc2VzYCDloavlv6vmhaLot6/lvoTvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvbGVhZC5weWDvvIgqKuaUuemAoCoq77ya5rOo5YWlIFNraWxscyDliJfooaggKyDlv6vpgJ/ot6/lvoTmj5DnpLrvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvY29uZmlnLnB5YO+8iCoq5pS56YCgKirvvJpgc2tpbGxzX2VuYWJsZWRg77yIQTHvvInjgIFgZmFzdF9wYXRoX3NpbWlsYXJpdHlg77yJCi0gYHJ1bnMva25vd2xlZGdlL2Nocm9tYS9g44CBYHJ1bnMva25vd2xlZGdlL2Nhc2VzLyoubWRg77yI6L+Q6KGM5pe25Lqn54mp77yJCgotLS0KCiMjIOS7u+WKoSBUMTEuMSDCtyBTa2lsbHMg5py65Yi277yI5riQ6L+b5oqr6Zyy77yJKyBsb2FkZXIKCioqaWQqKu+8mlQxMS4xIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTExIO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrlhpnlh7rmnKzpobnnm67nmoQgU09QIOaWh+S7tuS4juWKoOi9vS/pooTnrZsv5oyJ6ZyA6K+75Y+W5py65Yi277yM6K6pIGxlYWQg5Y+q5ou/5Yiw6Lef5pys5qyh5LqL5pWF55u45YWz55qE6YKj5Yeg56+H44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKlNraWxscyDmuJDov5vmiqvpnLLvvIhTS0lMTC5tZCDkuInmrrXlvI/vvIkqKgogIDEuIOWFiOe7mSBsZWFkIOS4gOS7vSLlhajpg6ggU2tpbGwg55qEIG5hbWUgKyBkZXNjcmlwdGlvbiDkuIDop4gi77yI5q+P56+H5LiA6KGM77yM5b6I5L6/5a6c77yJ44CCCiAgMi4gbGVhZCDliKTmlq3pnIDopoHlk6rnr4fvvIzmiY3osIMgYHJlYWRfc2tpbGwobmFtZSlgIOaLv+WFqOaWh++8iOavj+evhyDiiaQ2MDAgdG9rZW7vvInjgIIKICAzLiDlpb3lpITmmK/kuIrkuIvmloflj6rkuLoqKueUqOWIsOeahCoq6YKj5Yeg56+H5LuY6LS577yb5Z2P5aSE5piv5aSa5LiA6L2u5bel5YW36LCD55So4oCU4oCU5omA5LulIGRlc2NyaXB0aW9uIOW/hemhu+WGmeW+l+iuqSBsZWFkIOS4gOecvOWIpOW+l+WHuuivpeS4jeivpeivu+OAggogIDQuICpKYXZhIOexu+avlCrvvJrmjInpnIDliqDovb3nmoQgU09QIOaWh+aho+KAlOKAlOWFiOeci+ebruW9le+8jOeUqOWIsOWTquevh+aJjeivu+ato+aWh+OAggogIDUuIPCfk5YgaHR0cHM6Ly9naXRodWIuY29tL2FudGhyb3BpY3Mvc2tpbGxzIO+8iFNLSUxMLm1kIOagvOW8j++8jOmcgOaguOWunumUmueCue+8icK3IHZpZGVvLTMgUDEtNuOAjOS7gOS5iOaYryBTa2lsbHPCt+S4pOenjeaetuaehOS7o+eggeWunuaImOOAjQotICoq55aR5Ly85Z+f6aKE562b5pig5bCEKioKICAxLiBNNiDnmoQgdHJpYWdlIOWIpOWHuueahCBgc3VzcGVjdGVkX2RvbWFpbnNgIOKGkiDlr7nlupTnmoQgU2tpbGwg5YiX6KGo77yM6L+Z5LiA5q2l5ZyoKirku6PnoIHph4wqKuWBmu+8jOS4jeWKs+eDpuaooeWei+OAggogIDIuIGBjb25maWctY2hhbmdlLWZpcnN0YCDmoIfmiJAi6YCa55SoIu+8jCoq5Lu75L2V6K+K5pat6YO95oGS5YiXKirigJTigJQi5pyA6L+R5pS55LqG5LuA5LmIIuaYryBTUkUg5o6S5p+l55qE56ys5LiA6Zeu77yM5LiN6IO9562J5qih5Z6L5oOz6LW35p2l44CCCiAgMy4g6aKE562b55qE6L6T5YWl5piv5p6a5Li+5YC877yM5pig5bCE6KGo55qEIGtleSDlv4XpobvkuI4gYERvbWFpbmAg6YCQ5a2X5LiA6Ie077yM5YaZ6ZSZ5LiN5oql6ZSZ44CB5Y+q5piv6Z2Z6buY6L+U5Zue56m65YiX6KGo44CCCiAgNC4gKkphdmEg57G75q+UKu+8muaMieagh+etvui3r+eUseWIsOebuOWFs+inhOWImembhuOAggoKIyMjIPCfn6Eg56ysIDEg5q61IMK3IOaUuemAoO+8iOeFp+WumOaWueagvOW8j+WGmeacrOmhueebrueahCBTT1DvvIkKCjEuIOivu+S4gOS7vSBhbnRocm9waWNzL3NraWxscyDku5PlupPph4znnJ/lrp4gU0tJTEwubWQg55qE57uT5p6E77yM54S25ZCOKirnm7TmjqXlhpnmnKzpobnnm67nmoTnrKzkuIDnr4cqKiBgc2tpbGxzL2NvbmZpZy1jaGFuZ2UtZmlyc3QvU0tJTEwubWRg4oCU4oCU5LiN6KaB5YWI5YaZ5LiA5Liq57uD5omL55qE5qC35L6L5paH5Lu244CCZnJvbnRtYXR0ZXIg5LiJ5Liq5a2X5q6177yaCgpgYGBtYXJrZG93bgotLS0KbmFtZTogY29uZmlnLWNoYW5nZS1maXJzdApkZXNjcmlwdGlvbjog5Lu75L2V5pWF6Zqc6K+K5pat55qE56ys5LiA6Zeu4oCU4oCU5pyA6L+R5pyJ5rKh5pyJ6YWN572u5Y+R5biD44CB5byA5YWz5Y+Y5pu044CB54mI5pys5LiK57q/44CC6YCC55So5LqO5omA5pyJ55aR5Ly85Z+f77yM5oGS5YiX44CCCnZlcnNpb246IDEKLS0tCgojIyDliKTliKvmtYHnqIsKMS4g55SoIHF1ZXJ5X2NoYW5nZXMg5p+l5ZGK6K2m5pe26Ze054K55YmNIDEg5bCP5pe25YaF5pys5pyN5Yqh5Y+K5YW255u05o6l5LiL5ri455qE5Y+Y5pu06K6w5b2V44CCCjIuIOacieWPmOabtCDihpIg55SoIHF1ZXJ5X21ldHJpY3Mg5a+55q+U5Y+Y5pu05YmN5ZCO55qEIGVycm9yX3JhdGUvcDk577yM56Gu6K6k5pe26Ze055u45YWz5oCn44CCCjMuIOaXoOWPmOabtCDihpIg5piO56Gu5o6S6Zmk6YWN572u57G75qC55Zug77yM5ZyoIGh5cG90aGVzZXMg6YeM6K6w5LiA5p2hIuW3suaOkumZpCLvvIzkuI3opoHnlZnnnYDmgqznqbrjgIIKCiMjIOagueWboCDihpIg6K+B5o2u6KaB5rGCCi0g6YWN572u5Y+Y5pu05a+86Ie077ya6ZyA6KaBIOKRoOWPmOabtOiusOW9le+8iOaXtumXtCArIGRhdGFJZCArIOaTjeS9nOS6uu+8ieKRoeWPmOabtOWJjeWQjuaMh+agh+WvueavlCDkuKTnsbvor4Hmja7jgIIKCiMjIOS/ruWkjeW7uuiurgotIOehruiupOS4uumFjee9ruWPmOabtOWvvOiHtCDihpIg5bu66K6uIHJldmVydF9jb25maWfvvIhNMTIg55qE5Y+X5o6n5Yqo5L2c77yM6aG757uP5Lq65bel5a6h5om577yJ44CCCmBgYAoKMi4g54Wn5ZCM5LiA5qC85byP5YaZ5Y+m5aSWIDcg56+H77yM5LiOIGBEb21haW5gIOeahCA3IOS4quWAvOS4gOS4gOWvueW6lO+8iGBkYmAg4oaSIGBteXNxbC1zbG93LXF1ZXJ5YOOAgWB0aHJlYWRwb29sYCDihpIgYHRocmVhZHBvb2wtZXhoYXVzdGlvbmDjgIFganZtYCDihpIgYGp2bS1nYy1wcmVzc3VyZWDjgIFgcmVzb3VyY2VgIOKGkiBgaG9zdC1yZXNvdXJjZS1zYXR1cmF0aW9uYOOAgWBjb250YWluZXJgIOKGkiBgY29udGFpbmVyLWNyYXNobG9vcGDjgIFgY29uZmlnYCDihpIgYGNvbmZpZy1jaGFuZ2UtZmlyc3Rg77yI5aSN55So77yJ44CBYGNhY2hlYCDihpIgYHJlZGlzLWNhY2hlLWZhaWx1cmVg77yJ44CCCjMuICoq5q+P56+H5byV55So55qE5bel5YW35ZCN5b+F6aG75ZyoIE03IOW3suaOpeWFpeeahCA3IOS4qumHjOecn+WunuWtmOWcqCoq77yIYHF1ZXJ5X21ldHJpY3NgL2BxdWVyeV9sb2dzYC9gcXVlcnlfdHJhY2VgL2BxdWVyeV9jbWRiYC9gcXVlcnlfY2hhbmdlc2AvYHF1ZXJ5X21ldHJpY3NfcmF3YC9gcXVlcnlfbG9nc19yYXdg77yJ77yM5YaZ5a6MIGdyZXAg5qCh6aqM5LiA6YGN4oCU4oCUU09QIOmHjOWGmeS4gOS4quS4jeWtmOWcqOeahOW3peWFt+WQje+8jOetieS6juaVmeaooeWei+WOu+aSnuWimeOAggoKIyMjIPCflLQg56ysIDIg5q61IMK3IOiHqueglO+8iGxvYWRlcu+8iQoKKirku47nqbrmlofku7YqKuWGmSBgc2tpbGxzL2xvYWRlci5weWDvvIznrb7lkI3lhYjlrprmrbvvvJoKCmBgYHB5dGhvbgpkZWYgbGlzdGluZygpIC0+IGxpc3RbU2tpbGxNZXRhXToKICAgICIiIuaJqyBza2lsbHMvKi9TS0lMTC5tZO+8jOino+aekCBmcm9udG1hdHRlciDov5Tlm57lhajpg6ggU2tpbGwg55qEIG5hbWUvZGVzY3JpcHRpb24vdmVyc2lvbiDkuIDop4guIiIiCgoKZGVmIGxpc3RpbmdfZm9yKGRvbWFpbnM6IGxpc3RbRG9tYWluXSkgLT4gbGlzdFtTa2lsbE1ldGFdOgogICAgIiIi5oyJ55aR5Ly85Z+f6aKE562b44CC6KeE5YiZ77yaCiAgICAxLiDpgJDkuKogZG9tYWluIOafpSBfRE9NQUlOX1RPX1NLSUxMUyDmmKDlsITooajlj5blubbpm4bvvJsKICAgIDIuIGNvbmZpZy1jaGFuZ2UtZmlyc3Qg5oGS5YiX77yI5peg6K66IGRvbWFpbnMg5piv5LuA5LmI77yJ77ybCiAgICAzLiBkb21haW5zIOS4uuepuuaIluWFqOaYr+acquefpeWAvOaXtu+8jOmAgOWMluS4uiBsaXN0aW5nKCnvvIjlhajph4/nu5nvvIzlroHmu6Xli7/nvLrvvInjgIIKICAgICIiIgoKCmRlZiByZWFkX3NraWxsKG5hbWU6IHN0cikgLT4gc3RyOgogICAgIiIi6L+U5Zue5p+Q56+HIFNLSUxMLm1kIOeahOato+aWh+WFqOaWh++8iOS4jeWQqyBmcm9udG1hdHRlcu+8ie+8jOKJpDYwMCB0b2tlbuOAggogICAgbmFtZSDkvJrooqvmi7zov5vot6/lvoTvvIzlhYjov4fnmb3lkI3ljZXmraPliJkgXlthLXpdW2EtejAtOS1dKiQg5YaN5ou877yM6Ziy6Lev5b6E56m/6LaK44CCIiIiCgoKZGVmIHZlcnNpb25zKCkgLT4gZGljdFtzdHIsIGludF06CiAgICAiIiJ7c2tpbGxfbmFtZTogdmVyc2lvbn3vvIxNMTIg55qE6K+E5Lyw6KaB5oqK5a6D6K6w6L+bIHJ1biBtZXRhZGF0Ye+8jAogICAg6L+Z5qC3Iui/measoeivhOS8sOeUqOeahOaYr+WTqueJiCBTT1Ai5LqL5ZCO5p+l5b6X5YiwLiIiIgpgYGAKCmZyb250bWF0dGVyIOino+aekCoq5omL5pKV5Lik6KGMKirljbPlj6/vvIjmjIkgYC0tLWAg5YiH5LiJ5q6144CB6YCQ6KGMIGBzcGxpdCgiOiIsIDEpYO+8ie+8jOS4jeW8lSBgcHl0aG9uLWZyb250bWF0dGVyYOKAlOKAlOWPquacieS4ieS4quWtl+aute+8jOWkmuS4gOS4quS+nei1luS4jeWIkueul+OAggoKQTEg5raI6J6N77yaYHNldHRpbmdzLnNraWxsc19lbmFibGVkPUZhbHNlYCDml7YgbGVhZCDkuI3ms6jlhaXku7vkvZUgU2tpbGwg5YiX6KGo77yIYGxlYWQucHlgIOmHjOWIpOaWre+8jOS4jeaYr+WcqCBsb2FkZXIg6YeM6L+U5Zue56m64oCU4oCUbG9hZGVyIOS/neaMgee6r+eyue+8ieOAggoKKirokL3nrJTpobrluo8qKgoxLiDlhpkgYGNvbmZpZy1jaGFuZ2UtZmlyc3QvU0tJTEwubWRg77yM5YWI5Y+q5pyJ6L+Z5LiA56+H44CCCjIuIOWGmSBgbGlzdGluZygpYO+8jOi3keS4gOasoeehruiupOiDveino+aekOWHuiBmcm9udG1hdHRlciDkuInlrZfmrrXjgIIKMy4g6KGl6b2Q5Y+m5aSWIDcg56+HIFNLSUxMLm1k44CCCjQuIOWGmSBgX0RPTUFJTl9UT19TS0lMTFNgIOaYoOWwhOihqCArIGBsaXN0aW5nX2ZvcmDvvIznlKggYFtEb21haW4uREJdYCDor5XkuIDmrKHvvIznoa7orqTov5Tlm54gYG15c3FsLXNsb3ctcXVlcnlgICsgYGNvbmZpZy1jaGFuZ2UtZmlyc3Rg44CCCjUuIOWGmSBgcmVhZF9za2lsbGDvvIzor5UgYHJlYWRfc2tpbGwoIi4uLy4uL2V0Yy9wYXNzd2QiKWAg56Gu6K6k6KKr5ouS44CCCjYuIOaOpei/myBgbGVhZC5weWDvvJrms6jlhaUgbGlzdGluZ19mb3Ig55qE57uT5p6cICsg5oqKIGByZWFkX3NraWxsYCDkvZzkuLrlt6Xlhbfnu5kgbGVhZOOAggo3LiDot5HkuIDmrKHnnJ/lrp7kuovmlYXvvIznnIsgbGVhZCDmnInmsqHmnInkuLvliqjor7vkuobnm7jlhbPpgqPnr4fjgIIKOC4g5YWz5o6JIGBza2lsbHNfZW5hYmxlZGAg5YaN6LeR5LiA5qyh77yIQTEg5a+554Wn77yJ44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOaYoOWwhOihqOeahCBrZXkg5LiOIE02IGBEb21haW5gIOeahCA3IOS4quWtl+mdouWAvCoq6YCQ5a2X5LiA6Ie0KirvvIzkuKTovrnlkIQgZ3JlcCDkuIDmrKHmoLjlr7nvvIhgZGJgIOS4jeiDveS4gOi+ueWGmeaIkCBgZGF0YWJhc2Vg77yJ44CCCi0gYGNvbmZpZy1jaGFuZ2UtZmlyc3RgIOaBkuWcqOWIl+KAlOKAlOS7u+S9leiviuaWreWFiOmXriLmnIDov5HmlLnkuobku4DkuYgi44CCCi0gZGVzY3JpcHRpb24g5piv57uZ5qih5Z6L5YGa5Yik5pat55So55qE77yM6KaB5YaZIuS7gOS5iOaXtuWAmeivpeivu+aIkSLvvIzkuI3mmK/lhpki5oiR5piv5LuA5LmIIuOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOmihOetm+i/lOWbnuepuu+8muaJk+WNsOS8oOi/m+adpeeahCBgZG9tYWluc2Ag5ZKM5pig5bCE6KGo55qEIGtleXPvvIzlr7nkuIDpgY3lrZfpnaLlgLzjgIIKLSBsZWFkIOS7juadpeS4jeivuyBTa2lsbO+8mmRlc2NyaXB0aW9uIOWkquesvOe7n++8jOaKiuinpuWPkeadoeS7tuWGmeWFt+S9k++8iCLlvZPnlpHkvLzln5/lkKsgZGIg5oiW55yL5Yiw5oWi5p+l6K+i55u45YWz5pel5b+X5pe26K+75oiRIu+8ieOAggotIOinhumike+8mnZpZGVvLTQgUDfjgIxTa2lsbHMg6Ieq5oiR6L+b5YyW44CNKyBQMjAtMjEg5bu656uLIFNraWxscyDnm7Top4nvvIjmnKzpobnnm67kuI3lgZroh6rov5vljJbvvIzlj6rlgZrmuJDov5vmiqvpnLLvvInjgIIKLSDpl64gQUnvvJrjgIzmiJHopoHlhpnkuIDkuKogU0tJTEwubWQgbG9hZGVy77yM6Kej5p6QIGZyb250bWF0dGVyIOeahCBuYW1lL2Rlc2NyaXB0aW9uL3ZlcnNpb27vvIzmjInkvKDlhaXnmoTnlpHkvLzln5/ov5Tlm57nm7jlhbMgU2tpbGwg5YiX6KGo77yM5Lik6KGMIHlhbWwg5omL5pKV5oCO5LmI5YaZ5pyA566A77yf44CNCgoqKuecn+WunumqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKY2QgaXJpcy1hZ2VudC1wbGF0Zm9ybQp1diBydW4gcHl0aG9uIC1jICIKZnJvbSBhZ2VudC5zdGF0ZSBpbXBvcnQgRG9tYWluCmZyb20gYWdlbnQuc2tpbGxzLmxvYWRlciBpbXBvcnQgbGlzdGluZywgbGlzdGluZ19mb3IsIHJlYWRfc2tpbGwsIHZlcnNpb25zCnByaW50KFtzLm5hbWUgZm9yIHMgaW4gbGlzdGluZ19mb3IoW0RvbWFpbi5EQl0pXSkgICAgICAjIFsnbXlzcWwtc2xvdy1xdWVyeScsICdjb25maWctY2hhbmdlLWZpcnN0J10KcHJpbnQoW3MubmFtZSBmb3IgcyBpbiBsaXN0aW5nX2ZvcihbXSldKSAgICAgICAgICAgICAgICMg6YCA5YyW5Li65YWo6YePCnByaW50KHJlYWRfc2tpbGwoJ2NvbmZpZy1jaGFuZ2UtZmlyc3QnKVs6MjAwXSkKcHJpbnQodmVyc2lvbnMoKSkKIgojIOW3peWFt+WQjeagoemqjO+8mlNPUCDph4zlh7rnjrDnmoTlt6XlhbflkI3lv4Xpobvpg73lnKjnnJ/lrp7lrprkuYnph4wKZ3JlcCAtb0UgJ3F1ZXJ5X1thLXpfXSsnIHNyYy9hZ2VudC9za2lsbHMvKi9TS0lMTC5tZCB8IHNvcnQgLXUKZ3JlcCAtb0UgJ0B0b29sXChcIlthLXpfXSsnIHNyYy9hZ2VudC90b29scy9kZWZpbmV0aW9ucy5weSB8IHNvcnQgLXUgICAjIOS4pOi+ueWvueeFp++8jOWJjeiAheaYr+WQjuiAheeahOWtkOmbhgoKIyDlvILluLjot6/lvoQg4pGg77yacmVhZF9za2lsbCgnLi4vLi4vZXRjL3Bhc3N3ZCcpIOKGkiDmipvlvILluLjvvIzkuI3or7vliLDmlofku7YKIyDlvILluLjot6/lvoQg4pGh77yac2tpbGxzX2VuYWJsZWQ9RmFsc2Ug6LeR5LiA5qyh55yf5a6e5LqL5pWFIOKGkiBsZWFkIOeahCBwcm9tcHQg6YeM5LiN5ZCrIHNraWxsIOWIl+ihqO+8iEEx77yJCmBgYArliKTlrprnibnlvoHvvJrpooTnrZvmmKDlsITmraPnoa7kuJQgYGNvbmZpZy1jaGFuZ2UtZmlyc3RgIOaBkuWcqO+8m1NPUCDph4znmoTlt6XlhbflkI3pg73nnJ/lrp7lrZjlnKjvvJtBMSDlhbPpl63ml7bkuI3ms6jlhaXjgILkvp3otZbnnJ/lrp7lpJbpg6jmnI3liqHvvJrml6DvvIjnuq/mnKzlnLDmnLrliLbvvIzkvYbms6jlhaXmlYjmnpzopoHlnKjnnJ/lrp7kuovmlYXph4znnIvvvInjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0gOCDnr4cgU0tJTEwubWQg5YaZ5a6M77yMZnJvbnRtYXR0ZXIg5LiJ5a2X5q616b2Q5YWo77yM5LiOIGBEb21haW5gIDcg5YC85LiA5LiA5a+55bqUCi0gWyBdIGBsaXN0aW5nX2ZvcmAg6aKE562b5q2j56Gu77yMYGNvbmZpZy1jaGFuZ2UtZmlyc3RgIOaBkuWcqO+8jOepui/mnKrnn6UgZG9tYWlucyDpgIDljJbkuLrlhajph48KLSBbIF0g5pig5bCE6KGoIGtleSDkuI4gTTYgYERvbWFpbmAg5a2X6Z2i5YC86YCQ5a2X5LiA6Ie077yI5Lik6L65IGdyZXAg5qC45a+56YCa6L+H77yJCi0gWyBdIOavj+evhyBTT1Ag5byV55So55qE5bel5YW35ZCN6YO95ZyoIE03IOW3suaOpeWFpeeahCA3IOS4qumHjO+8iGdyZXAg5qCh6aqM6YCa6L+H77yJCi0gWyBdIGByZWFkX3NraWxsYCDmnIkgbmFtZSDnmb3lkI3ljZXvvIzot6/lvoTnqb/otorooqvmi5IKLSBbIF0gYHZlcnNpb25zKClgIOWPr+eUqO+8iE0xMiDor4TkvLDnmoTkvp3otZbvvIkKLSBbIF0gYHNraWxsc19lbmFibGVkPUZhbHNlYCDml7YgbGVhZCDkuI3ms6jlhaXvvIhBMe+8iQoKLS0tCgojIyDku7vliqEgVDExLjIgwrcgQ2hyb21hIOefpeivhuW6kyArIOayiea3gOmXqOanmwoKKippZCoq77yaVDExLjIg772cICoq5omA5bGe5qih5Z2XKirvvJpNMTEg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8muaOpSBDaHJvbWEg5YGa5qGI5L6L5qOA57Si5LiO5rKJ5reA77yM55SoKirnnJ/lrp7ot5Hlh7rmnaXnmoTmiqXlkYoqKuW9k+esrOS4gOadoeahiOS+i++8jOW5tuWNoeS9jyLlj6rmnInlpb3moYjkvovmiY3ov5vlupMi55qE6Zeo5qeb44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKuWQkemHj+ajgOe0ou+8iENocm9tYe+8ieS4jiLmo4DntKLplK7mmK/nl4fnirYiKioKICAxLiDmiormoYjkvovnmoQqKueXh+eKtuautSoq77yI55yL5Yiw5LqG5LuA5LmI546w6LGh77yJZW1iZWRkaW5nIOWQjuWFpeW6k++8jOaWsOWRiuitpuaLv+iHquW3seeahOeXh+eKtuWOu+ajgOe0ouOAggogIDIuICoq5LiN6KaB5ZCR6YeP5YyW57uT6K66KirvvJrmlrDkuovmlYXov5vmnaXml7bkvaDlj6rmnInnl4fnirbjgIHmsqHmnInnu5PorrrvvIznlKjnu5PorrrlvZPmo4DntKLplK7nrYnkuo7nlKjnrZTmoYjmib7nrZTmoYjjgIIKICAzLiBgc2ltaWxhcml0eSA9IDEgLSBkaXN0YW5jZWDvvIhDaHJvbWEg6buY6K6k6L+U5Zue6Led56a777yJ77yM6ZiI5YC85Yik5pat5YmN5YWI56Gu6K6k5L2g55So55qE6Led56a75bqm6YeP5piv5LiN5piv5L2Z5bym44CCCiAgNC4gKkphdmEg57G75q+UKu+8muS4gOS4quaMieivreS5ieebuOS8vOW6pueahOaQnOe0ouW8leaTju+8jOe0ouW8leWtl+autemAiemUmeS6huaVtOS4quajgOe0ouWwseW6n+S6huOAggogIDUuIPCfk5YgaHR0cHM6Ly9kb2NzLmxhbmdjaGFpbi5jb20vb3NzL3B5dGhvbi9pbnRlZ3JhdGlvbnMvdmVjdG9yc3RvcmVzL2Nocm9tYSDvvIjpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFAxMDQtMTEx44CMRW1iZWRkaW5nc8K36K+t5LmJ5pCc57Si5qGI5L6L44CNCi0gKirmsonmt4Dpl6jmp5vvvIjlj6rlhaXlpb3moYjkvovvvIkqKgogIDEuIOWPquaciSBgdmVyZGljdCA9PSBwYXNzYCAqKuS4lCoqIGBhcHByb3ZhbC5hcHByb3ZlZCA9PSBUcnVlYCDnmoTmoYjkvovmiY0gYGFkZF9jYXNlYCDov5vlkJHph4/lupPjgIIKICAyLiDooqvpqbPlm57nmoTlj6rokL0gTWFya2Rvd24g5b2S5qGj77yM5LiN6L+b5bqT4oCU4oCU6ZSZ6K+v5qGI5L6L6L+b5LqG5bqT5Lya6KKr5ZCO57ut5LqL5pWF5qOA57Si5Yiw77yM5rGh5p+T5pivKirntK/np68qKueahOOAggogIDMuICpKYXZhIOexu+avlCrvvJrlj6rmiorlpI3moLjpgJrov4fnmoTorrDlvZXlhaXmraPlvI/nn6Xor4blupPvvIzlup/moYjljZXni6zlvZLmoaPjgIIKCiMjIyDwn5+hIOesrCAxIOautSDCtyDmlLnpgKDvvIjnlKjnnJ/lrp7miqXlkYrlgZrnrKzkuIDmnaHmoYjkvovvvIkKCjEuIOWFiOi3keS4gOasoSBNOCDnmoTlrozmlbTmtYHnqIvvvIzmi7/liLDkuIDku70qKuecn+Wunioq55qEIGByZXBvcnQubWRgICsg57uT5p6E5YyW5a2X5q614oCU4oCU6L+Z5bCx5piv56ys5LiA5p2h5qGI5L6L55qE5Y6f5paZ77yM5LiN6KaB5omL57yW5LiA5p2h5qC35L6L5YWl5bqT44CCCjIuIOWGmSBga25vd2xlZGdlLnB5YO+8mgoKYGBgcHl0aG9uCmNsYXNzIEtub3dsZWRnZUhpdChCYXNlTW9kZWwpOgogICAgIiIi5LiA5qyh5qOA57Si5ZG95Lit55qE5Y6G5Y+y5qGI5L6L5pGY6KaB77yM5YaZ6L+bIEluY2lkZW50U3RhdGUubWF0Y2hlZF9jYXNlcy4iIiIKCiAgICBjYXNlX2lkOiBzdHIgICAgICAgICMg5qGI5L6LIGlk77yM562J5LqO5b2T5Yid6YKj5qyh5LqL5pWF55qEIGluY2lkZW50X2lkCiAgICBzaW1pbGFyaXR5OiBmbG9hdCAgICMgMSAtIGRpc3RhbmNl77yM6LaK5aSn6LaK5YOP77yb5LiOIHNldHRpbmdzLmZhc3RfcGF0aF9zaW1pbGFyaXR5IOavlOi+gwogICAgc3VtbWFyeTogc3RyICAgICAgICAjIOahiOS+i+eahOeXh+eKtuauteaRmOimge+8jOe7mSB0cmlhZ2UvbGVhZCDnnIvnmoQKICAgIHJvb3Rfc2VydmljZTogc3RyICAgIyDlvZPliJ3nmoTmoLnlm6DmnI3liqEKICAgIHJvb3RfY2F1c2U6IHN0ciAgICAgIyDlvZPliJ3nmoTmoLnlm6DliIbnsbsKCgpkZWYgYWRkX2Nhc2UoY2FzZV9pZDogc3RyLCBzeW1wdG9tX3RleHQ6IHN0ciwgbWV0YWRhdGE6IGRpY3QpIC0+IE5vbmU6CiAgICAiIiLmiorkuIDmnaHmoYjkvovlhpnov5sgY29sbGVjdGlvbiAnY2FzZXMn44CCCiAgICBlbWJlZGRpbmcg6LWwIE0zIOeahCBnZXRfZW1iZWRkaW5ncygp77yb5ZCR6YeP5YyW55qE5pivIHN5bXB0b21fdGV4dO+8iOeXh+eKtuaute+8ie+8jAogICAgbWV0YWRhdGEg6YeM5pS+IHJvb3Rfc2VydmljZS9yb290X2NhdXNlL3JlcG9ydF9wYXRoIOetiee7k+iuuuS+p+S/oeaBr++8iOWPquWBmui/h+a7pOWSjOWbnuaYvu+8jOS4jeWPguS4juajgOe0ou+8ieOAgiIiIgoKCmRlZiBzZWFyY2goc3ltcHRvbV90ZXh0OiBzdHIsIGs6IGludCA9IDMpIC0+IGxpc3RbS25vd2xlZGdlSGl0XToKICAgICIiIuaMieeXh+eKtuajgOe0ouacgOebuOS8vOeahCBrIOadoeahiOS+i++8jOaMiSBzaW1pbGFyaXR5IOmZjeW6j+OAggogICAg5qOA57Si5byC5bi477yIQ2hyb21hIOaMguS6hi9lbWJlZGRpbmcg5pyN5Yqh5LiN5Y+v55So77yJ5LiA5b6L6L+U5ZueIFtdIOW5tuaJk+aXpeW/l++8jAogICAg57ud5LiN5ZCR5LiK5oqb4oCU4oCU55+l6K+G5bqT5piv5Yqg6YCf5Zmo5LiN5piv5b+F6ZyA5ZOB77yM5a6D5oyC5LqG6K+K5pat54Wn5qC35b6X6LeR44CCIiIiCmBgYAoKMy4g5qGI5L6LIE1hcmtkb3duIOaooeadv++8iOiQvSBgcnVucy9rbm93bGVkZ2UvY2FzZXMve2Nhc2VfaWR9Lm1kYO+8ie+8jOS6lOaute+8mgogICAxLiAqKueXh+eKtioq77yI4oaQIOi/meS4gOauteaYr+WQkemHj+WMlueahOaWh+acrO+8ie+8muWRiuitpuWGheWuuSArIOWFs+mUruaMh+agh+eOsOixoe+8mwogICAyLiAqKuagueWboCoq77yaYHJvb3Rfc2VydmljZWAgKyBgcm9vdF9jYXVzZWAgKyBgcm9vdF9kZXRhaWxg77ybCiAgIDMuICoq6K+B5o2uKirvvJpgZXZpZGVuY2VfaWRzYCDlj4rlkIToh6rmkZjopoHvvJsKICAgNC4gKirkv67lpI0qKu+8muWunumZheaJp+ihjOeahOWKqOS9nOS4jue7k+aenO+8mwogICA1LiAqKuS6uuW3peWkh+azqCoq77ya5a6h5om55Lq655WZ6KiA77yI5Y+v5Li656m677yJ44CCCjQuIGBub2Rlcy9rbm93bGVkZ2VfbWF0Y2gucHlg77ya5LuOIGBhbGVydHNfcmVmYCDor7vljp/lp4vlkYroraYg4oaSIOe7hOijheeXh+eKtuaWh+acrCDihpIgYHNlYXJjaChrPTMpYCDihpIg5YaZIGBzdGF0ZVsibWF0Y2hlZF9jYXNlcyJdYO+8m+aOpeWcqOWbvumHjCAqKnRyaWFnZSDkuYvliY0qKu+8iHRyaWFnZSDopoHnlKjlroPliKTlv6vmhaLot6/lvoTvvInjgIIKCiMjIyDwn5S0IOesrCAyIOautSDCtyDoh6rnoJTvvIjmsonmt4Dpl6jmp5sgKyDlv6vmhaLot6/lvoTvvIkKCioq5LuO56m65paH5Lu2KirlhpkgYG5vZGVzL2tub3dsZWRnZV91cGRhdGUucHlg77yaCjEuIOmXqOanm+WIpOaWre+8mmB2ZXJkaWN0ID09IFBBU1MgYW5kIGFwcHJvdmFsIGFuZCBhcHByb3ZhbC5hcHByb3ZlZGAg5omNIGBhZGRfY2FzZWDvvJsKMi4g5LiN5ruh6Laz6Zeo5qebIOKGkiAqKuWPqioq5YaZIGBydW5zL2tub3dsZWRnZS9jYXNlcy97aWR9Lm1kYO+8iOato+aWh+mHjOagh+azqCLmnKrlhaXlupPvvJo85Y6f5ZugPiLvvInvvIzkuI3norDlkJHph4/lupPvvJsKMy4g5o6l5Zyo5Zu+55qE5pyr5bC+77yITTEyIOeahCBhcHByb3ZhbCDkuYvlkI7vvInjgIIKCioq5ZyoIGBzdGF0ZS5weWAg6YeM57uZIGBUcmlhZ2VSZXN1bHRgIOihpeS4iiBNNiDnlZnnmb3nmoTkuKTkuKrlrZfmrrUqKu+8mgoKYGBgcHl0aG9uCmNsYXNzIFRyaWFnZVJlc3VsdChCYXNlTW9kZWwpOgogICAgc2V2ZXJpdHk6IFNldmVyaXR5CiAgICBzdXNwZWN0ZWRfZG9tYWluczogbGlzdFtEb21haW5dCiAgICAjIOS7peS4i+S4pOS4quWtl+auteeUsSBNMTEg6KGl6b2Q4oCU4oCU5a6D5Lus5L6d6LWWIG1hdGNoZWRfY2FzZXPvvIxNNiDml7bov5jmsqHmnInnnJ/lrp7mnaXmupAKICAgIGZhc3RfcGF0aDogYm9vbCA9IEZhbHNlICAgICAgICAgICMg5ZG95Lit6auY55u45Ly85bqm5Y6G5Y+y5qGI5L6L5pe25Li6IFRydWXvvIzotbAi5LyY5YWI5pyA5bCP5Y+W6K+B6aqM6K+B5YCZ6YCJ5qC55ZugIgogICAgY2FuZGlkYXRlX3Jvb3Q6IHN0ciB8IE5vbmUgPSBOb25lICAjIOWRveS4reahiOS+i+eahCByb290X3NlcnZpY2Uvcm9vdF9jYXVzZe+8jOS9nOS4uuW+hemqjOivgeeahOWAmemAieagueWboApgYGAKCioq5ZyoIGBub2Rlcy90cmlhZ2UucHlgIOmHjOWhq+W/q+aFoui3r+W+hCoq77yI57qv5Luj56CB5Yik5pat77yM5LiN5Yqz54Om5qih5Z6L77yJ77yaCi0gYG1hdGNoZWRfY2FzZXMgYW5kIG1hdGNoZWRfY2FzZXNbMF0uc2ltaWxhcml0eSA+PSBzZXR0aW5ncy5mYXN0X3BhdGhfc2ltaWxhcml0eWAg4oaSIGBmYXN0X3BhdGg9VHJ1ZWDvvIxgY2FuZGlkYXRlX3Jvb3RgIOWPluivpeahiOS+i+eahCBgcm9vdF9zZXJ2aWNlYCArIGByb290X2NhdXNlYOOAggoKKirlnKggYGxlYWQucHlgIOmHjOa2iOi0uSoq77yaYGZhc3RfcGF0aD1UcnVlYCDml7YgaW5zdHJ1Y3Rpb25zIOi/veWKoOS4gOauteKAlOKAlCLljoblj7LkuIrmnInpq5jluqbnm7jkvLznmoTmoYjkvovvvIzlgJnpgInmoLnlm6DmmK8gWO+8myoq5LyY5YWI55So5pyA5bCP5Y+W6K+B6aqM6K+B6L+Z5Liq5YCZ6YCJKirvvIzpqozor4HkuI3miJDnq4vlho3otbDlrozmlbTmtYHnqIsi44CC5rOo5oSP5o6q6L6e5pivIuS8mOWFiOmqjOivgSLkuI3mmK8i55u05o6l6YeH5L+hIu+8jOWQpuWImeesrOS4gOasoeWIpOmUmeeahOahiOS+i+S8muiiq+awuOS5heWkjeWItuOAggoKKirokL3nrJTpobrluo8qKgoxLiDot5HkuIDmrKEgTTgg5a6M5pW05rWB56iL77yM5ou/5Yiw5LiA5Lu955yf5a6e5oql5ZGK44CCCjIuIOWGmSBga25vd2xlZGdlLnB5YCDnmoQgYGFkZF9jYXNlYO+8jOaKiui/meS7veecn+WunuaKpeWRiuS9nOS4uuesrOS4gOadoeahiOS+i+WFpeW6k+OAggozLiDlhpkgYHNlYXJjaGDvvIznlKjlkIzkuIDku73lkYrorabnmoTnl4fnirbmo4DntKLkuIDmrKHvvIznoa7orqTog73lkb3kuK3oh6rlt7HvvIhzaW1pbGFyaXR5IOW6lOivpeW+iOmrmO+8ieOAggo0LiDlho3lhaXkuIDmnaEqKuS4jeWQjOaVhemanCoq55qE5qGI5L6L77yM5qOA57Si5pe256Gu6K6k5o6S5bqP5q2j56Gu77yI5ZCM57G75Zyo5YmN77yJ44CCCjUuIOWGmSBga25vd2xlZGdlX21hdGNoYCDoioLngrnvvIzmjqXlnKggdHJpYWdlIOS5i+WJjeOAggo2LiDnu5kgYFRyaWFnZVJlc3VsdGAg6KGl5Lik5Liq5a2X5q6177yM5ZyoIHRyaWFnZSDph4zloavlv6vmhaLot6/lvoTvvIzmtYvpmIjlgLzovrnnlYzvvIgwLjg0OSDkuI3op6blj5EgLyAwLjg1MSDop6blj5HvvInjgIIKNy4g5ZyoIGxlYWQg6YeM5raI6LS5IGBmYXN0X3BhdGhg77yM5rOo5YWl5YCZ6YCJ5qC55Zug5o+Q56S644CCCjguIOWGmSBga25vd2xlZGdlX3VwZGF0ZWAgKyDpl6jmp5vvvIzmtYvpqbPlm57ot6/lvoTjgIIKOS4g56uv5Yiw56uv77ya5ZCM5LiA5pWF6Zqc5rOo5YWl5Lik5qyh77yM5a+55q+U572R5YWz5a6h6K6h5q2l5pWw44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOWQkemHj+WMlueahOaYryoq55eH54q2KirkuI3mmK/nu5PorrrigJTigJTmo4DntKLplK7mmK8i55yL5Yiw5LuA5LmIIu+8jOS4jeaYryLnrZTmoYjmmK/ku4DkuYgi44CCCi0g5qOA57Si5byC5bi46L+U5Zue56m644CB5LiN6Zi75aGe5Li75rWB56iL77yb55+l6K+G5bqT5oyC5LqG6aG25aSa6YCA5YyW5oiQ56ys5LiA5qyh6YKj5qC35oWi77yM5LiN6IO96K6p5LqL5pWF6K+K5pat6Lef552A5oyC44CCCi0g5b+r6YCf6Lev5b6E55qE5o6q6L6e5pivIuS8mOWFiOmqjOivgeWAmemAieagueWboCLvvIzkuI3mmK8i55u05o6l6YeH5L+hIuKAlOKAlOWQpuWImeS4gOasoeivr+WIpOS8muiiq+efpeivhuW6k+awuOS5heaUvuWkp+OAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOajgOe0ouWRveS4jeS4reiHquW3se+8muehruiupOWFpeW6k+WSjOajgOe0oueUqOeahOaYr+WQjOS4gOS4qiBlbWJlZGRpbmcg5qih5Z6L77yM5LiU5ZCR6YeP5YyW55qE6YO95piv55eH54q25q6144CCCi0gc2ltaWxhcml0eSDmlbDlgLznnIvnnYDkuI3lr7nvvJrnoa7orqQgQ2hyb21hIOi/lOWbnueahOaYr+i3neemu+i/mOaYr+ebuOS8vOW6puOAgeeUqOeahOaYr+WTquenjei3neemu+W6pumHj++8jGAxLWRpc3RhbmNlYCDnmoTliY3mj5DmmK/kvZnlvKbot53nprvjgIIKLSDmraXmlbDmsqHkuIvpmY3vvJrnnIsgbGVhZCDmnInmsqHmnInnnJ/nmoTor7vliLAgYGZhc3RfcGF0aGAg5o+Q56S677yb5YaN55yL5a6D5piv5LiN5piv54Wn5qC35oqK5LiJ5LiqIHN1YmFnZW50IOmDvea0vuS6huS4gOmBje+8iOaPkOekuumHjOimgeWGmeaYjiLlhYjlj6rmtL7pqozor4HlgJnpgInmiYDpnIDnmoTpgqPkuIDkuKoi77yJ44CCCi0g6KeG6aKR77yadmlkZW8tMSBQMTEyLTExNuOAjOW1jOWFpeaooeWei8K35ZCR6YeP5bqT44CN5YWc5bqV77yI5pys6aG555uu55SoIENocm9tYe+8jOamguW/temAmueUqO+8ieOAggotIOmXriBBSe+8muOAjGxhbmdjaGFpbi1jaHJvbWEg6YeM5oiR5oOz5oyJ5qGI5L6L55eH54q25qOA57Si55u45Ly85Y6G5Y+y5qGI5L6L44CBbWV0YWRhdGEg5a2Y5qC55Zug77yMYGFkZF9jYXNlYCDlkowgYHNlYXJjaGAg5oCO5LmI57uE57uH77yf55u45Ly85bqm6ZiI5YC85oCO5LmI5a6aIGZhc3RfcGF0aO+8n+OAjQoKKirnnJ/lrp4gSFRUUCDpqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCmNkIGlyaXMtYWdlbnQtcGxhdGZvcm0KdXYgcnVuIHV2aWNvcm4gYWdlbnQuYXBwOmFwcCAtLXBvcnQgODAwMAoKIyDikaAg6aaW5qyh5rOo5YWl5p+Q5pWF6ZqcIOKGkiDlrozmlbTpl63njq8g4oaSIOWuoeaJuemAmui/hyDihpIg5YWl5bqTCmN1cmwgLXMgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kIEBmYXVsdC1BLmpzb24Kc3FsaXRlMyB0b29sLWdhdGV3YXkvZGF0YS8qLmRiICJzZWxlY3QgY291bnQoKikgZnJvbSBhdWRpdF9sb2cgd2hlcmUgaW5jaWRlbnRfaWQ9J2luYy1BJzsiICAjIOiusOS4i+mmluasoeatpeaVsApscyBydW5zL2tub3dsZWRnZS9jYXNlcy8gICAgICAgICAgICAgICAgICAgICMg5qGI5L6LIE1hcmtkb3duIOiQveebmAoKIyDikaEg5YaN5qyh5rOo5YWl5ZCM57G75pWF6ZqcIOKGkiDlupTlkb3kuK3lv6vpgJ/ot6/lvoQKY3VybCAtcyAtWFBPU1QgbG9jYWxob3N0OjgwMDAvd2ViaG9vay9hbGVydG1hbmFnZXIgLWQgQGZhdWx0LUEuanNvbiAgICAjIOazqOaEj+aNoiBmaW5nZXJwcmludCDpgb/lvIAgTTUg5Y676YeNCnNxbGl0ZTMgdG9vbC1nYXRld2F5L2RhdGEvKi5kYiAic2VsZWN0IGluY2lkZW50X2lkLCBjb3VudCgqKSBmcm9tIGF1ZGl0X2xvZyBncm91cCBieSAxOyIKIyDmnJ/mnJvvvJrkuozmrKHnmoTmraXmlbDmmL7okZfkvY7kuo7pppbmrKHvvIjmiorkuKTkuKrmlbDlrZfpg73orrDov5vnrJTorrDvvIzov5nmmK/lj6/orrLnmoTmiJDmnpzvvIkKCiMg5byC5bi46Lev5b6EIOKRoO+8muaKiuafkOS4qiBpbmNpZGVudCDlrqHmibnpqbPlm54g4oaSIOWPquiQvSBNYXJrZG93bu+8jOWQkemHj+W6k+adoeaVsOS4jeWingojIOW8guW4uOi3r+W+hCDikaHvvJrmioogQ2hyb21hIOebruW9leaUueaIkOS4jeWPr+ivuyDihpIgc2VhcmNoIOi/lOWbniBbXe+8jOiviuaWrea1geeoi+eFp+W4uOi3keWujOS4jeW0qQpgYGAK5Yik5a6a54m55b6B77ya55yf5a6eIGVtYmVkZGluZyDkuIsgYWRk4oaSc2VhcmNoIOWRveS4reS4lOaOkuW6j+ato+ehru+8m+S6jOasoeWQjOexu+atpeaVsOS4i+mZje+8iOacieS4pOS4quecn+WunuaVsOWtl++8ie+8m+mps+WbnuahiOS+i+S4jeWFpeW6k++8m+ajgOe0ouW8guW4uOS4jemYu+WhnuOAguS+nei1luecn+WunuacjeWKoe+8mmVtYmVkZGluZ++8iERhc2hTY29wZe+8ieOAgU0yIOe9keWFs+OAgeWFqOmTvui3r+aooeWei+OAggoKKirlrozmiJDliKTlrpoqKgotIFsgXSDnrKzkuIDmnaHlhaXlupPmoYjkvovmnaXoh6ogTTggKirnnJ/lrp7ot5Hlh7rmnaUqKueahOaKpeWRiu+8jOS4jeaYr+aJi+e8luagt+S+iwotIFsgXSBgS25vd2xlZGdlSGl0YCA1IOWtl+auteWumuS5ieWujOaVtO+8m+WQkemHj+WMlueahOaYr+eXh+eKtuaute+8jOe7k+iuuuaUviBtZXRhZGF0YQotIFsgXSBgc2VhcmNoYCDlvILluLjov5Tlm54gYFtdYCDkuI3mipvvvIzlrp7mtYvpqozor4Hov4cKLSBbIF0gYFRyaWFnZVJlc3VsdGAg6KGl5LiKIGBmYXN0X3BhdGhgL2BjYW5kaWRhdGVfcm9vdGDvvIzpmIjlgLzovrnnlYzvvIgwLjg0OS8wLjg1Me+8ieato+ehrgotIFsgXSBga25vd2xlZGdlX21hdGNoYCDmjqXlnKggdHJpYWdlICoq5LmL5YmNKirvvIxga25vd2xlZGdlX3VwZGF0ZWAg5o6l5ZyoIGFwcHJvdmFsICoq5LmL5ZCOKioKLSBbIF0g5Y+q5pyJIGB2ZXJkaWN0PXBhc3NgIOS4lCBgYXBwcm92ZWRgIOaJjeWFpeW6k++8jOmps+WbnuWPquiQvSBNYXJrZG93bu+8iOWunua1i+mqjOivgei/h++8iQotIFsgXSDkuozmrKHlkIznsbvmlYXpmpzmraXmlbDkuIvpmY3vvIzkuKTkuKrnnJ/lrp7mlbDlrZforrDlvZXlnKjmoYgKLSBbIF0gbGVhZCDnmoTlv6vpgJ/ot6/lvoTmjqrovp7mmK8i5LyY5YWI6aqM6K+B5YCZ6YCJIuiAjOmdniLnm7TmjqXph4fkv6EiCgotLS0KKueJiOacrCBDIOeJueW+ge+8muefpeivhumXreeOr+WFqOmdoCLnhaflrpjmlrnmoLzlvI/nm7TmjqXlhpnmnKzpobnnm64gU09QIOKGkiDnlKjnnJ/ot5Hlh7rmnaXnmoTmiqXlkYrlgZrnrKzkuIDmnaHmoYjkvosg4oaSIOiHqueglCBsb2FkZXLjgIHmsonmt4Dpl6jmp5vkuI7lv6vpgJ/ot6/lvoQi77yM6K6p57O757uf56ys5LqM5qyh6YGH5Yiw5ZCM57G75pWF6Zqc5pe255yf55qE5pu05b+r77yM5LiU6L+Z5LiqIuabtOW/qyLmnInkuKTkuKrlj6/ooqvotKjor4HnmoTmlbDlrZfjgIIqCg==</script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
   <script>
     (function () {

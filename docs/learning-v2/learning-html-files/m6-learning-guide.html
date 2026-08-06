@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="source-sha256" content="01ee11c989a5556bd488468294ca6b42e17a1e04dfdb6acfb46f65429a453189">
+  <meta name="source-sha256" content="b7bc9c472d53ed0be83eacdc19a5db19fd0c292971981edbe01c93fa29bdf783">
   <title>模块 6 · 分诊节点 triage — 版本 C</title>
   <style>
     :root {
@@ -802,79 +802,175 @@
       <article class="document" id="document-content" data-od-id="document-content">
 <header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 6 · 分诊节点 triage — 版本 C</h1></header>
 <blockquote>
-<p>编排理念：🟢复刻结构化输出官方样例 → 🟡改造成 TriageResult 分诊 → 🔴自研失败降级 + 快慢路径。</p>
+<p>编排理念：🟡在本项目真实代码上改造（把 M4 塞在 <code>graph.py</code> 里的占位节点拆进 <code>nodes/</code> 子包，再加第一个真正用 LLM 的节点）→ 🔴自研结构化输出的失败降级。<strong>这是第一次把 LLM 的自由文本变成可靠契约。</strong></p>
 </blockquote>
+<p><strong>本模块的能力边界（先对齐）</strong></p>
+<ul>
+<li><strong>入口是 M5 的自建 FastAPI，端口 8000</strong>：所有验收都走 <code>POST /webhook/alertmanager</code>，<code>langgraph dev</code>/2024 从 M5 起只作 Studio 调试用。</li>
+<li><strong>checkpointer 已经有了</strong>（M5 T5.2），所以可以直接 <code>sqlite3 runs/checkpoints.db</code> 看某个 thread 的 state 里 triage 字段长什么样。</li>
+<li><strong>工具集不变</strong>：仍只有 <code>query_metrics</code>，triage 节点本来也不调工具（它只看告警文本）。其余 6 个工具在 <strong>M7</strong> 接入。</li>
+<li><strong>本模块只定义 <code>TriageResult</code> 的前两个字段</strong>：<code>fast_path</code> / <code>candidate_root</code> 依赖 <code>matched_cases</code>，而 <code>matched_cases</code> 要等 <strong>M11</strong> 的 Chroma 检索才有真实来源——在这里写它们只能靠手造假相似度验证，所以整块留给 M11。</li>
+</ul>
 <section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
 <ol>
-<li>让轻模型（DashScope）把一组告警判成结构化的 <code>TriageResult</code>（严重度 + 疑似域 + 快慢路径）。</li>
+<li>建出 <code>nodes/</code> 子包，把图的节点从 <code>graph.py</code> 里拆出来，<code>langgraph.json</code> 一个字不改。</li>
+<li>让轻模型（DashScope）把一组真实告警判成结构化的 <code>TriageResult</code>（严重度 + 疑似域），并说清疑似域枚举为什么必须和后面的 Skills 预筛逐字一致。</li>
 <li>模型输出解析失败时自动降级为"全面排查"，绝不让流程卡死。</li>
-<li>命中历史相似案例时走"快速路径"，为后面 M11 的知识闭环埋点。</li>
 </ol>
 </section>
 <section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<blockquote>
+<p>从本模块开始建 <code>nodes/</code> 子包（M4 时只有一个节点，不值得拆；现在节点开始变多了）。<code>state.py</code>/<code>graph.py</code>/<code>guard.py</code> <strong>仍留在包顶层</strong>，所以 <code>langgraph.json</code> 的 <code>./src/agent/graph.py:graph</code> 永远不用改。</p>
+</blockquote>
 <ul>
-<li><code>src/.../graph/nodes/triage.py</code></li>
-<li>（复用）<code>src/.../graph/state.py</code> 的 <code>TriageResult</code></li>
+<li><code>iris-agent-platform/src/agent/nodes/__init__.py</code>（<strong>新建</strong>）</li>
+<li><code>iris-agent-platform/src/agent/nodes/triage.py</code>（<strong>新建</strong>：triage 节点）</li>
+<li><code>iris-agent-platform/src/agent/nodes/investigate.py</code>、<code>verify.py</code>、<code>report.py</code>（<strong>搬迁</strong>：M4 写在 <code>graph.py</code> 里的三个节点原样搬过来，逻辑不动）</li>
+<li><code>iris-agent-platform/src/agent/state.py</code>（<strong>改造</strong>：新增 <code>Severity</code> / <code>Domain</code> / <code>TriageResult</code>，把 <code>IncidentState.triage</code> 的类型从 <code>dict | None</code> 收紧成 <code>TriageResult | None</code>）</li>
+<li><code>iris-agent-platform/src/agent/graph.py</code>（<strong>改造</strong>：只剩装配，节点实现全部 import 自 <code>nodes/</code>；把 triage 接在 investigate 之前）</li>
 </ul>
 </section>
-<section class="glass-card reveal" id="section-任务-t6-1-triage-结构化输出-降级-快慢路径" data-od-id="section-任务-t6-1-triage-结构化输出-降级-快慢路径"><h2 data-od-id="section-任务-t6-1-triage-结构化输出-降级-快慢路径">任务 T6.1 · triage 结构化输出 + 降级 + 快慢路径</h2>
+<section class="glass-card reveal" id="section-任务-t6-1-拆-nodes-子包-triage-结构化输出-解析失败降级" data-od-id="section-任务-t6-1-拆-nodes-子包-triage-结构化输出-解析失败降级"><h2 data-od-id="section-任务-t6-1-拆-nodes-子包-triage-结构化输出-解析失败降级">任务 T6.1 · 拆 nodes 子包 + triage 结构化输出 + 解析失败降级</h2>
 <div class="meta-strip"><p><strong>id</strong>：T6.1 ｜ <strong>所属模块</strong>：M6 ｜ <strong>优先级</strong>：P0</p></div>
-<p><strong>一句话目标</strong>：把"一堆告警"变成一个可靠的结构化分诊结果，且永不因解析失败而卡死。</p>
+<p><strong>一句话目标</strong>：把"一堆真实告警"变成一个结构化的分诊结果，且永不因模型解析失败而卡死。</p>
 <p><strong>前置知识（≤2 新概念）</strong></p>
 <ul>
-<li><strong>结构化输出 with_structured_output(Pydantic)</strong>：让 LLM 直接产出符合 Pydantic 模型的对象，而非自由文本再解析。<em>Java 类比</em>：像让接口把响应反序列化进一个 DTO（<code>@RequestBody</code> 的反向），schema 就是契约。📖 <a href="https://docs.langchain.com/oss/python/langchain/structured-output" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/structured-output</a> （需核实锚点）· video-2 P85-88「输出解析和结构化」</li>
-<li><strong>快慢路径 + 疑似域预筛</strong>：命中历史相似案例（相似度≥阈值）走快速验证；疑似域（db/threadpool/jvm/...）用于 M11 的 Skills 预筛。<em>Java 类比</em>：像缓存命中走快路径、未命中走全量查询；疑似域像给下游打的路由标签。📖（自研；阈值 <code>fast_path_similarity</code> 配置）</li>
+<li><strong>结构化输出 <code>with_structured_output(Pydantic)</code></strong>
+<ol>
+<li>让 LLM 直接产出符合 Pydantic 模型的对象，而不是自由文本再正则解析。</li>
+<li>底层是把 Pydantic schema 转成 tool/JSON schema 交给模型，所以<strong>模型必须支持工具调用或 JSON 模式</strong>——DashScope 与 OpenRouter 各家族能力不同，先确认再用。</li>
+<li>它<strong>不保证一定成功</strong>：模型可能返回不在枚举里的值或缺字段，抛的是 Pydantic <code>ValidationError</code>，必须自己接住（这就是第 2 段的降级）。</li>
+<li><em>Java 类比</em>：像让接口把响应反序列化进一个 DTO，schema 就是契约；但对方是个不太守规矩的第三方，校验失败要有兜底。</li>
+<li>📖 <a href="https://docs.langchain.com/oss/python/langchain/structured-output" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/structured-output</a> （需核实锚点）· video-2 P85-88「输出解析和结构化」</li>
+</ol>
+</li>
+<li><strong>疑似域（Domain）作为下游路由标签</strong>
+<ol>
+<li>triage 判出的疑似域不是给人看的，是给 <strong>M11 的 Skills 预筛</strong>当路由键用的。</li>
+<li>所以枚举值必须和 M11 的映射表<strong>逐字一致</strong>（<code>db</code> 不能一边写成 <code>database</code>），否则预筛静默失灵——查都查不出来。</li>
+<li>判不准时宁可多列几个域（宁滥勿缺），漏掉才是真损失。</li>
+<li><em>Java 类比</em>：给下游打的路由标签，标签值是两边的硬契约。</li>
+</ol>
+</li>
 </ul>
-<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
-<ul>
-<li><strong>读什么</strong>：LangChain <code>with_structured_output</code> 官方最小样例（喂一段文本→产出一个 Pydantic 对象）。</li>
-<li><strong>跑什么</strong>：照样例用 DashScope 轻模型跑一次，拿到一个结构化对象——先证明结构化输出在你这条模型上能成。</li>
-</ul>
-<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
-<ul>
-<li>写 <code>triage.py</code>：prompt = 告警列表 + matched_cases 摘要 + 疑似域候选（固定枚举 <code>db|threadpool|jvm|resource|container|config|cache</code>）；<code>get_model("triage").with_structured_output(TriageResult)</code>。</li>
-</ul>
-<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
-<ul>
-<li><strong>从空文件</strong>写降级与快路径：解析失败重试 1 次，再失败返回默认 <code>TriageResult(severity="P2", suspected_domains=&lt;全部&gt;, fast_path=False)</code>；<code>matched_cases[0].similarity &gt;= settings.fast_path_similarity</code> 时 <code>fast_path=True, candidate_root=...</code>。</li>
-</ul>
+<h3 data-od-id="section-第-1-段-改造-a-先把节点拆出来-再加新节点-4" id="section-第-1-段-改造-a-先把节点拆出来-再加新节点-4">🟡 第 1 段 · 改造 A（先把节点拆出来，再加新节点）</h3>
+<p>M4 为了让条件边跑起来，把 <code>investigate_once</code>/<code>verify</code>/<code>report</code> 三个节点都写在了 <code>graph.py</code> 里。现在要加第四个节点，先把它们拆出去，否则 <code>graph.py</code> 会越滚越大：</p>
+<ol>
+<li>建 <code>src/agent/nodes/</code>，把三个节点函数<strong>原样</strong>搬进 <code>investigate.py</code>/<code>verify.py</code>/<code>report.py</code>，逻辑一行不改；</li>
+<li><code>graph.py</code> 只保留装配：<code>build_graph()</code> 里 import 节点、<code>add_node</code>、<code>add_conditional_edges</code>；</li>
+<li><strong>先跑一次 webhook 确认拆完还是通的</strong>，再动新代码——把"搬家"和"加功能"分成两次可回滚的改动。</li>
+</ol>
+<h3 data-od-id="section-第-2-段-改造-b-写-triage-节点-5" id="section-第-2-段-改造-b-写-triage-节点-5">🟡 第 2 段 · 改造 B（写 triage 节点）</h3>
+<p>先在 <code>state.py</code> 里补上本模块负责的三个模型：</p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">class Severity(StrEnum):
+    """事故严重度，由 triage 判定；注意它和 Alertmanager labels.severity 不是一回事——
+    AM 的是告警规则作者预设的静态标签，这个是模型看完整组告警后给的判断."""
+
+    P0 = "P0"  # 核心链路不可用，用户大面积受影响
+    P1 = "P1"  # 核心功能明显劣化（错误率/时延突破阈值），仍可部分服务
+    P2 = "P2"  # 局部劣化或非核心链路，默认降级值也是它
+    P3 = "P3"  # 观察级，暂不影响用户
+
+
+class Domain(StrEnum):
+    """疑似根因所属的技术域。
+
+    ⚠ 这 7 个字面值是与 M11 Skills 预筛映射表的硬契约，改任何一个都要同步改 M11 的
+    loader.listing_for()，否则预筛会静默返回空列表。
+    """
+
+    DB = "db"                  # 数据库层：慢查询、锁等待、连接池打满
+    THREADPOOL = "threadpool"  # 线程池/下游超时：池耗尽、队列堆积
+    JVM = "jvm"                # JVM 层：GC 压力、堆内存、类加载
+    RESOURCE = "resource"      # 宿主资源：CPU/磁盘/网络饱和
+    CONTAINER = "container"    # 容器/实例：宕掉、CrashLoop、副本数不足
+    CONFIG = "config"          # 配置变更：Nacos 发布、开关误改
+    CACHE = "cache"            # 缓存：Redis 不可用、击穿/雪崩
+
+
+class TriageResult(BaseModel):
+    """轻模型对一组告警做的初步分诊结果，由 M6 的 triage 节点写入 IncidentState.triage."""
+
+    severity: Severity                # 事故严重度，降级默认值为 P2
+    suspected_domains: list[Domain]   # 疑似技术域，可多选；降级默认值为全部 7 个（宁滥勿缺）
+    # fast_path / candidate_root 两个字段在 M11 补——它们依赖 matched_cases，
+    # 而 matched_cases 要等 M11 的 Chroma 检索才有真实来源。
+</code></pre></div>
+<p>再把 <code>IncidentState.triage</code> 的类型从 M4 的占位 <code>dict | None</code> 收紧成 <code>TriageResult | None</code>。</p>
+<p>然后写 <code>nodes/triage.py</code>：</p>
+<ol>
+<li><strong>输入</strong>：<code>state["alerts_ref"]</code> 指向的 <code>alert.json</code>（M5 落的原始告警）里读出 <code>alertname</code>/<code>service</code>/<code>labels</code>/<code>annotations</code>——读盘不读 state，因为 state 里只有引用；</li>
+<li><strong>prompt</strong>：告警列表摘要 + 7 个 Domain 的字面值和各自含义（<strong>把枚举含义写进 prompt</strong>，别指望模型从字段名猜）；</li>
+<li><strong>调用</strong>：<code>get_model(AgentRole.TRIAGE).with_structured_output(TriageResult)</code>；</li>
+<li><strong>输出</strong>：<code>{"triage": result}</code> 写回 state；</li>
+<li><strong>接线</strong>：<code>START → triage → investigate_once → verify → ...</code>，triage 排在 investigate 前面（M4 的条件边不动）。</li>
+</ol>
+<h3 data-od-id="section-第-3-段-自研-解析失败的两级降级-6" id="section-第-3-段-自研-解析失败的两级降级-6">🔴 第 3 段 · 自研（解析失败的两级降级）</h3>
+<p><strong>从空文件</strong>写降级逻辑：</p>
+<ol>
+<li><code>with_structured_output</code> 抛 <code>ValidationError</code> / 返回 None → <strong>重试 1 次</strong>（第二次 prompt 里追加一句"上次输出不合法，请严格只输出 schema 要求的字段"）；</li>
+<li>再失败 → 返回<strong>降级默认值</strong>并在 state 里留痕：</li>
+</ol>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">TRIAGE_FALLBACK = TriageResult(
+    severity=Severity.P2,              # 不敢判高也不敢判低，取中间
+    suspected_domains=list(Domain),    # 全部 7 个域全开 = 全面排查，保证不漏
+)
+</code></pre></div>
+<ol start="3">
+<li>降级时把 <code>degraded_reason="triage_fallback"</code> 一并写回 state——M8 的报告里要能看出"这次分诊是兜底来的"，不能静默；</li>
+<li><strong>不许因为分诊失败就中断流程</strong>：triage 是加速器不是守门员，它挂了后面照样得查。</li>
+</ol>
 <p><strong>落笔顺序</strong></p>
 <ol class="steps">
-<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻官方结构化输出样例跑通。</div></li>
-<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成 triage prompt + TriageResult。</div></li>
-<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：喂真实告警 fixture，看 suspected_domains 对不对。</div></li>
-<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研降级分支：喂一个会让模型乱答的输入，验证走默认值不崩。</div></li>
-<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">自研 fast_path：构造 similarity 0.849/0.851 两个边界。</div></li>
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">建 <code>nodes/</code> 子包，把 M4 的三个节点原样搬进去，跑一次 webhook 确认没搬坏。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">在 <code>state.py</code> 写 <code>Severity</code>/<code>Domain</code>/<code>TriageResult</code> 三个模型。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">写 <code>nodes/triage.py</code>，先只 return 一个写死的 <code>TriageResult</code>，把节点接进图跑通。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">换成真实 <code>with_structured_output</code> 调用，用某个故障的真实告警 fixture 打一次，看 <code>suspected_domains</code> 判得对不对。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">自研降级：把 prompt 故意改坏（比如让它输出一段散文），验证重试 1 次后走默认值、流程继续。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">把 prompt 改回去，确认正常路径没被降级逻辑影响。</div></li>
 </ol>
 <p><strong>关键提示（≤3）</strong></p>
 <ul>
-<li>模型经<strong>依赖注入</strong>传入节点（不在节点内 get_model），这样 M12 消融和测试都好切。</li>
-<li>疑似域枚举必须和 M11 的 Skills 预筛映射表<strong>逐字一致</strong>，否则预筛失灵。</li>
-<li>降级默认值要"全面排查"（疑似域全开），保证不漏。</li>
+<li>模型经<strong>参数</strong>传进节点（<code>triage_node(state, model)</code>），别在节点内部直接 <code>get_model()</code>——M12 的消融开关和临时换模型都靠这个注入点。</li>
+<li><code>Domain</code> 的 7 个字面值与 M11 的预筛映射表是硬契约，写完在两边各 grep 一次核对。</li>
+<li>降级默认值必须是"全面排查"（疑似域全开），不能是"空列表"——空列表会让 M11 的预筛什么 Skill 都不给，等于比没有分诊还糟。</li>
 </ul>
 <p><strong>卡住降级路径（30 分钟没思路）</strong></p>
 <ul>
-<li>结构化输出老失败：确认该模型支持 tool/JSON 模式；换 prompt 让字段更明确。</li>
+<li>结构化输出老失败：先确认该模型支持 tool/JSON 模式；再把枚举的<strong>含义</strong>写进 prompt（只给字段名模型猜不出 <code>threadpool</code> 和 <code>jvm</code> 的边界）。</li>
+<li>严重度总是判 P0：prompt 里给出每一级的判定标准（影响面 + 是否可服务），别只给枚举名。</li>
 <li>视频：video-2 P86-87「输出解析和结构化」逐步讲解；video-1 P42-44「Pydantic 高级特性」兜底。</li>
-<li>问 AI：「DashScope qwen 用 with_structured_output(TriageResult)，severity 字段老是返回不在枚举里的值，我的 Pydantic 定义和 prompt 这样（贴出），怎么约束它？」</li>
+<li>问 AI：「DashScope qwen 用 <code>with_structured_output(TriageResult)</code>，severity 字段老是返回不在枚举里的值，我的 Pydantic 定义和 prompt 这样（贴出），怎么约束它？」</li>
 </ul>
 <p><strong>真实 HTTP 验收（含异常路径）</strong></p>
-<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 用某故障的真实告警 fixture 触发，只跑到 triage 观察
-curl -XPOST localhost:8000/webhook/alertmanager -d @slow-query-alert.json
-# 查 state 里的 triage：suspected_domains 应含 "db"
-sqlite3 runs/checkpoints.db "... triage ..."
-# 异常路径：喂一段畸形/无关告警 → triage 走默认值（severity=P2，疑似域全开），流程继续
+<div class="code-shell" data-od-id="code-3"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+uv run uvicorn agent.app:app --port 8000
+
+# 正常路径：用某个真实故障（如 pm-question 慢查询）的告警 fixture
+curl -s -XPOST localhost:8000/webhook/alertmanager -d @slow-query-alert.json
+# 从 checkpointer 里捞这次事故的 state，看 triage 字段
+sqlite3 runs/checkpoints.db \
+  "select checkpoint from checkpoints where thread_id='inc-YYYYMMDD-001' order by rowid desc limit 1;"
+# 期望：triage.suspected_domains 含 "db"；triage.severity 落在 P0~P3 里
+# （state 不好读时，改成在 triage 节点里打一行结构化日志核对，别为了看字段去写临时脚本）
+
+# 异常路径：喂一段畸形/与任何服务无关的告警
+curl -s -XPOST localhost:8000/webhook/alertmanager -d @garbage-alert.json
+# 期望：重试 1 次后走降级 → severity=P2、suspected_domains 全部 7 个、
+#       degraded_reason="triage_fallback"，且流程继续走到 investigate，不卡死
 </code></pre></div>
-<p>判定特征：真实告警分诊出正确疑似域；畸形输入走默认值不卡死；fast_path 阈值边界正确。依赖真实服务：DashScope。</p>
+<p>判定特征：真实告警分诊出正确疑似域；畸形输入走默认值且留痕；流程在任何情况下都不因 triage 失败中断。依赖真实服务：DashScope（triage 轻模型）、M5 的 webhook 入口。</p>
 <p><strong>完成判定</strong></p>
 <ul class="checklist">
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>官方结构化输出样例复现（复刻段）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>真实告警分诊出正确 suspected_domains</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>两次解析失败 → 走默认值，流程不卡死</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>fast_path 阈值边界（0.849 不触发 / 0.851 触发）正确</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>疑似域枚举与 M11 Skills 预筛映射一致</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>nodes/</code> 子包建好，M4 的三个节点原样搬入，<code>graph.py</code> 只剩装配，<code>langgraph.json</code> 未改</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>Severity</code>（4 值）/ <code>Domain</code>（7 值）/ <code>TriageResult</code>（2 字段）定义在 <code>state.py</code>，且<strong>没有</strong>提前写 <code>fast_path</code>/<code>candidate_root</code></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>IncidentState.triage</code> 类型已从 <code>dict | None</code> 收紧为 <code>TriageResult | None</code></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>真实告警分诊出正确 <code>suspected_domains</code></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>解析失败重试 1 次 → 再失败走全域默认值，<code>degraded_reason="triage_fallback"</code> 留痕</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-5" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>模型是参数注入而非节点内 <code>get_model()</code></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m6-learning-guide-check-0-6" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>Domain</code> 的 7 个字面值已与 M11 预筛映射表约定一致（M11 落地时再 grep 复核）</span></label></li>
 </ul>
-<p class="closing-note"><em>版本 C 特征：分诊全靠"复刻结构化输出样例 → 改造成 TriageResult → 自研降级与快慢路径"，第一次把 LLM 的输出变成可靠契约。</em></p>
+<p class="closing-note"><em>版本 C 特征：分诊全靠"在真实工程上先拆 nodes 子包 → 改造出第一个 LLM 节点 → 自研两级降级"长出来，第一次把 LLM 的输出变成可靠契约，同时把只有以后才有数据源的快慢路径留给 M11。</em></p>
 </section>
       </article>
       <aside class="toc" data-od-id="table-of-contents">
@@ -887,14 +983,14 @@ sqlite3 runs/checkpoints.db "... triage ..."
           <ol class="toc-list" id="toc-list">
             <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
             <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
-            <li><a href="#section-任务-t6-1-triage-结构化输出-降级-快慢路径">任务 T6.1 · triage 结构化输出 + 降级 + 快慢路径</a></li>
+            <li><a href="#section-任务-t6-1-拆-nodes-子包-triage-结构化输出-解析失败降级">任务 T6.1 · 拆 nodes 子包 + triage 结构化输出 + 解析失败降级</a></li>
           </ol>
         </details>
       </aside>
     </div>
   </main>
 
-  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNiDCtyDliIbor4roioLngrkgdHJpYWdlIOKAlCDniYjmnKwgQwoKPiDnvJbmjpLnkIblv7XvvJrwn5+i5aSN5Yi757uT5p6E5YyW6L6T5Ye65a6Y5pa55qC35L6LIOKGkiDwn5+h5pS56YCg5oiQIFRyaWFnZVJlc3VsdCDliIbor4og4oaSIPCflLToh6rnoJTlpLHotKXpmY3nuqcgKyDlv6vmhaLot6/lvoTjgIIKCiMjIOWtpuWujOacrOaooeWdl+S9oOiDveWBmuWIsOeahCAzIOS7tuS6iwoxLiDorqnovbvmqKHlnovvvIhEYXNoU2NvcGXvvInmiorkuIDnu4TlkYrorabliKTmiJDnu5PmnoTljJbnmoQgYFRyaWFnZVJlc3VsdGDvvIjkuKXph43luqYgKyDnlpHkvLzln58gKyDlv6vmhaLot6/lvoTvvInjgIIKMi4g5qih5Z6L6L6T5Ye66Kej5p6Q5aSx6LSl5pe26Ieq5Yqo6ZmN57qn5Li6IuWFqOmdouaOkuafpSLvvIznu53kuI3orqnmtYHnqIvljaHmrbvjgIIKMy4g5ZG95Lit5Y6G5Y+y55u45Ly85qGI5L6L5pe26LWwIuW/q+mAn+i3r+W+hCLvvIzkuLrlkI7pnaIgTTExIOeahOefpeivhumXreeOr+Wfi+eCueOAggoKIyMg5pys5qih5Z2X5Lqk5LuY54mp5riF5Y2V77yI5paH5Lu26Lev5b6E57qn77yJCi0gYHNyYy8uLi4vZ3JhcGgvbm9kZXMvdHJpYWdlLnB5YAotIO+8iOWkjeeUqO+8iWBzcmMvLi4uL2dyYXBoL3N0YXRlLnB5YCDnmoQgYFRyaWFnZVJlc3VsdGAKCi0tLQoKIyMg5Lu75YqhIFQ2LjEgwrcgdHJpYWdlIOe7k+aehOWMlui+k+WHuiArIOmZjee6pyArIOW/q+aFoui3r+W+hAoKKippZCoq77yaVDYuMSDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk02IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrmiooi5LiA5aCG5ZGK6K2mIuWPmOaIkOS4gOS4quWPr+mdoOeahOe7k+aehOWMluWIhuiviue7k+aenO+8jOS4lOawuOS4jeWboOino+aekOWksei0peiAjOWNoeatu+OAggoKKirliY3nva7nn6Xor4bvvIjiiaQyIOaWsOamguW/te+8iSoqCi0gKirnu5PmnoTljJbovpPlh7ogd2l0aF9zdHJ1Y3R1cmVkX291dHB1dChQeWRhbnRpYykqKu+8muiuqSBMTE0g55u05o6l5Lqn5Ye656ym5ZCIIFB5ZGFudGljIOaooeWei+eahOWvueixoe+8jOiAjOmdnuiHqueUseaWh+acrOWGjeino+aekOOAgipKYXZhIOexu+avlCrvvJrlg4/orqnmjqXlj6Pmiorlk43lupTlj43luo/liJfljJbov5vkuIDkuKogRFRP77yIYEBSZXF1ZXN0Qm9keWAg55qE5Y+N5ZCR77yJ77yMc2NoZW1hIOWwseaYr+Wlkee6puOAgvCfk5YgaHR0cHM6Ly9kb2NzLmxhbmdjaGFpbi5jb20vb3NzL3B5dGhvbi9sYW5nY2hhaW4vc3RydWN0dXJlZC1vdXRwdXQg77yI6ZyA5qC45a6e6ZSa54K577yJwrcgdmlkZW8tMiBQODUtODjjgIzovpPlh7rop6PmnpDlkoznu5PmnoTljJbjgI0KLSAqKuW/q+aFoui3r+W+hCArIOeWkeS8vOWfn+mihOetmyoq77ya5ZG95Lit5Y6G5Y+y55u45Ly85qGI5L6L77yI55u45Ly85bqm4oml6ZiI5YC877yJ6LWw5b+r6YCf6aqM6K+B77yb55aR5Ly85Z+f77yIZGIvdGhyZWFkcG9vbC9qdm0vLi4u77yJ55So5LqOIE0xMSDnmoQgU2tpbGxzIOmihOetm+OAgipKYXZhIOexu+avlCrvvJrlg4/nvJPlrZjlkb3kuK3otbDlv6vot6/lvoTjgIHmnKrlkb3kuK3otbDlhajph4/mn6Xor6LvvJvnlpHkvLzln5/lg4/nu5nkuIvmuLjmiZPnmoTot6/nlLHmoIfnrb7jgILwn5OW77yI6Ieq56CU77yb6ZiI5YC8IGBmYXN0X3BhdGhfc2ltaWxhcml0eWAg6YWN572u77yJCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mkxhbmdDaGFpbiBgd2l0aF9zdHJ1Y3R1cmVkX291dHB1dGAg5a6Y5pa55pyA5bCP5qC35L6L77yI5ZaC5LiA5q615paH5pys4oaS5Lqn5Ye65LiA5LiqIFB5ZGFudGljIOWvueixoe+8ieOAggotICoq6LeR5LuA5LmIKirvvJrnhafmoLfkvovnlKggRGFzaFNjb3BlIOi9u+aooeWei+i3keS4gOasoe+8jOaLv+WIsOS4gOS4que7k+aehOWMluWvueixoeKAlOKAlOWFiOivgeaYjue7k+aehOWMlui+k+WHuuWcqOS9oOi/meadoeaooeWei+S4iuiDveaIkOOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIOWGmSBgdHJpYWdlLnB5YO+8mnByb21wdCA9IOWRiuitpuWIl+ihqCArIG1hdGNoZWRfY2FzZXMg5pGY6KaBICsg55aR5Ly85Z+f5YCZ6YCJ77yI5Zu65a6a5p6a5Li+IGBkYnx0aHJlYWRwb29sfGp2bXxyZXNvdXJjZXxjb250YWluZXJ8Y29uZmlnfGNhY2hlYO+8ie+8m2BnZXRfbW9kZWwoInRyaWFnZSIpLndpdGhfc3RydWN0dXJlZF9vdXRwdXQoVHJpYWdlUmVzdWx0KWDjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJQKLSAqKuS7juepuuaWh+S7tioq5YaZ6ZmN57qn5LiO5b+r6Lev5b6E77ya6Kej5p6Q5aSx6LSl6YeN6K+VIDEg5qyh77yM5YaN5aSx6LSl6L+U5Zue6buY6K6kIGBUcmlhZ2VSZXN1bHQoc2V2ZXJpdHk9IlAyIiwgc3VzcGVjdGVkX2RvbWFpbnM9POWFqOmDqD4sIGZhc3RfcGF0aD1GYWxzZSlg77ybYG1hdGNoZWRfY2FzZXNbMF0uc2ltaWxhcml0eSA+PSBzZXR0aW5ncy5mYXN0X3BhdGhfc2ltaWxhcml0eWAg5pe2IGBmYXN0X3BhdGg9VHJ1ZSwgY2FuZGlkYXRlX3Jvb3Q9Li4uYOOAggoKKirokL3nrJTpobrluo8qKgoxLiDlpI3liLvlrpjmlrnnu5PmnoTljJbovpPlh7rmoLfkvovot5HpgJrjgIIKMi4g5pS56YCg5oiQIHRyaWFnZSBwcm9tcHQgKyBUcmlhZ2VSZXN1bHTjgIIKMy4g5Y+R5LiA5qyh6K+35rGC77ya5ZaC55yf5a6e5ZGK6K2mIGZpeHR1cmXvvIznnIsgc3VzcGVjdGVkX2RvbWFpbnMg5a+55LiN5a+544CCCjQuIOiHqueglOmZjee6p+WIhuaUr++8muWWguS4gOS4quS8muiuqeaooeWei+S5seetlOeahOi+k+WFpe+8jOmqjOivgei1sOm7mOiupOWAvOS4jeW0qeOAggo1LiDoh6rnoJQgZmFzdF9wYXRo77ya5p6E6YCgIHNpbWlsYXJpdHkgMC44NDkvMC44NTEg5Lik5Liq6L6555WM44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOaooeWei+e7jyoq5L6d6LWW5rOo5YWlKirkvKDlhaXoioLngrnvvIjkuI3lnKjoioLngrnlhoUgZ2V0X21vZGVs77yJ77yM6L+Z5qC3IE0xMiDmtojono3lkozmtYvor5Xpg73lpb3liIfjgIIKLSDnlpHkvLzln5/mnprkuL7lv4XpobvlkowgTTExIOeahCBTa2lsbHMg6aKE562b5pig5bCE6KGoKirpgJDlrZfkuIDoh7QqKu+8jOWQpuWImemihOetm+WkseeBteOAggotIOmZjee6p+m7mOiupOWAvOimgSLlhajpnaLmjpLmn6Ui77yI55aR5Ly85Z+f5YWo5byA77yJ77yM5L+d6K+B5LiN5ryP44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g57uT5p6E5YyW6L6T5Ye66ICB5aSx6LSl77ya56Gu6K6k6K+l5qih5Z6L5pSv5oyBIHRvb2wvSlNPTiDmqKHlvI/vvJvmjaIgcHJvbXB0IOiuqeWtl+auteabtOaYjuehruOAggotIOinhumike+8mnZpZGVvLTIgUDg2LTg344CM6L6T5Ye66Kej5p6Q5ZKM57uT5p6E5YyW44CN6YCQ5q2l6K6y6Kej77ybdmlkZW8tMSBQNDItNDTjgIxQeWRhbnRpYyDpq5jnuqfnibnmgKfjgI3lhZzlupXjgIIKLSDpl64gQUnvvJrjgIxEYXNoU2NvcGUgcXdlbiDnlKggd2l0aF9zdHJ1Y3R1cmVkX291dHB1dChUcmlhZ2VSZXN1bHQp77yMc2V2ZXJpdHkg5a2X5q616ICB5piv6L+U5Zue5LiN5Zyo5p6a5Li+6YeM55qE5YC877yM5oiR55qEIFB5ZGFudGljIOWumuS5ieWSjCBwcm9tcHQg6L+Z5qC377yI6LS05Ye677yJ77yM5oCO5LmI57qm5p2f5a6D77yf44CNCgoqKuecn+WuniBIVFRQIOmqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKIyDnlKjmn5DmlYXpmpznmoTnnJ/lrp7lkYroraYgZml4dHVyZSDop6blj5HvvIzlj6rot5HliLAgdHJpYWdlIOinguWvnwpjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAc2xvdy1xdWVyeS1hbGVydC5qc29uCiMg5p+lIHN0YXRlIOmHjOeahCB0cmlhZ2XvvJpzdXNwZWN0ZWRfZG9tYWlucyDlupTlkKsgImRiIgpzcWxpdGUzIHJ1bnMvY2hlY2twb2ludHMuZGIgIi4uLiB0cmlhZ2UgLi4uIgojIOW8guW4uOi3r+W+hO+8muWWguS4gOauteeVuOW9oi/ml6DlhbPlkYroraYg4oaSIHRyaWFnZSDotbDpu5jorqTlgLzvvIhzZXZlcml0eT1QMu+8jOeWkeS8vOWfn+WFqOW8gO+8ie+8jOa1geeoi+e7p+e7rQpgYGAK5Yik5a6a54m55b6B77ya55yf5a6e5ZGK6K2m5YiG6K+K5Ye65q2j56Gu55aR5Ly85Z+f77yb55W45b2i6L6T5YWl6LWw6buY6K6k5YC85LiN5Y2h5q2777ybZmFzdF9wYXRoIOmYiOWAvOi+ueeVjOato+ehruOAguS+nei1luecn+WunuacjeWKoe+8mkRhc2hTY29wZeOAggoKKirlrozmiJDliKTlrpoqKgotIFsgXSDlrpjmlrnnu5PmnoTljJbovpPlh7rmoLfkvovlpI3njrDvvIjlpI3liLvmrrXvvIkKLSBbIF0g55yf5a6e5ZGK6K2m5YiG6K+K5Ye65q2j56GuIHN1c3BlY3RlZF9kb21haW5zCi0gWyBdIOS4pOasoeino+aekOWksei0pSDihpIg6LWw6buY6K6k5YC877yM5rWB56iL5LiN5Y2h5q27Ci0gWyBdIGZhc3RfcGF0aCDpmIjlgLzovrnnlYzvvIgwLjg0OSDkuI3op6blj5EgLyAwLjg1MSDop6blj5HvvInmraPnoa4KLSBbIF0g55aR5Ly85Z+f5p6a5Li+5LiOIE0xMSBTa2lsbHMg6aKE562b5pig5bCE5LiA6Ie0CgotLS0KKueJiOacrCBDIOeJueW+ge+8muWIhuiviuWFqOmdoCLlpI3liLvnu5PmnoTljJbovpPlh7rmoLfkvosg4oaSIOaUuemAoOaIkCBUcmlhZ2VSZXN1bHQg4oaSIOiHqueglOmZjee6p+S4juW/q+aFoui3r+W+hCLvvIznrKzkuIDmrKHmioogTExNIOeahOi+k+WHuuWPmOaIkOWPr+mdoOWlkee6puOAgioK</script>
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNiDCtyDliIbor4roioLngrkgdHJpYWdlIOKAlCDniYjmnKwgQwoKPiDnvJbmjpLnkIblv7XvvJrwn5+h5Zyo5pys6aG555uu55yf5a6e5Luj56CB5LiK5pS56YCg77yI5oqKIE00IOWhnuWcqCBgZ3JhcGgucHlgIOmHjOeahOWNoOS9jeiKgueCueaLhui/myBgbm9kZXMvYCDlrZDljIXvvIzlho3liqDnrKzkuIDkuKrnnJ/mraPnlKggTExNIOeahOiKgueCue+8ieKGkiDwn5S06Ieq56CU57uT5p6E5YyW6L6T5Ye655qE5aSx6LSl6ZmN57qn44CCKirov5nmmK/nrKzkuIDmrKHmioogTExNIOeahOiHqueUseaWh+acrOWPmOaIkOWPr+mdoOWlkee6puOAgioqCgoqKuacrOaooeWdl+eahOiDveWKm+i+ueeVjO+8iOWFiOWvuem9kO+8iSoqCi0gKirlhaXlj6PmmK8gTTUg55qE6Ieq5bu6IEZhc3RBUEnvvIznq6/lj6MgODAwMCoq77ya5omA5pyJ6aqM5pS26YO96LWwIGBQT1NUIC93ZWJob29rL2FsZXJ0bWFuYWdlcmDvvIxgbGFuZ2dyYXBoIGRldmAvMjAyNCDku44gTTUg6LW35Y+q5L2cIFN0dWRpbyDosIPor5XnlKjjgIIKLSAqKmNoZWNrcG9pbnRlciDlt7Lnu4/mnInkuoYqKu+8iE01IFQ1LjLvvInvvIzmiYDku6Xlj6/ku6Xnm7TmjqUgYHNxbGl0ZTMgcnVucy9jaGVja3BvaW50cy5kYmAg55yL5p+Q5LiqIHRocmVhZCDnmoQgc3RhdGUg6YeMIHRyaWFnZSDlrZfmrrXplb/ku4DkuYjmoLfjgIIKLSAqKuW3peWFt+mbhuS4jeWPmCoq77ya5LuN5Y+q5pyJIGBxdWVyeV9tZXRyaWNzYO+8jHRyaWFnZSDoioLngrnmnKzmnaXkuZ/kuI3osIPlt6XlhbfvvIjlroPlj6rnnIvlkYrorabmlofmnKzvvInjgILlhbbkvZkgNiDkuKrlt6XlhbflnKggKipNNyoqIOaOpeWFpeOAggotICoq5pys5qih5Z2X5Y+q5a6a5LmJIGBUcmlhZ2VSZXN1bHRgIOeahOWJjeS4pOS4quWtl+autSoq77yaYGZhc3RfcGF0aGAgLyBgY2FuZGlkYXRlX3Jvb3RgIOS+nei1liBgbWF0Y2hlZF9jYXNlc2DvvIzogIwgYG1hdGNoZWRfY2FzZXNgIOimgeetiSAqKk0xMSoqIOeahCBDaHJvbWEg5qOA57Si5omN5pyJ55yf5a6e5p2l5rqQ4oCU4oCU5Zyo6L+Z6YeM5YaZ5a6D5Lus5Y+q6IO96Z2g5omL6YCg5YGH55u45Ly85bqm6aqM6K+B77yM5omA5Lul5pW05Z2X55WZ57uZIE0xMeOAggoKIyMg5a2m5a6M5pys5qih5Z2X5L2g6IO95YGa5Yiw55qEIDMg5Lu25LqLCjEuIOW7uuWHuiBgbm9kZXMvYCDlrZDljIXvvIzmiorlm77nmoToioLngrnku44gYGdyYXBoLnB5YCDph4zmi4blh7rmnaXvvIxgbGFuZ2dyYXBoLmpzb25gIOS4gOS4quWtl+S4jeaUueOAggoyLiDorqnovbvmqKHlnovvvIhEYXNoU2NvcGXvvInmiorkuIDnu4TnnJ/lrp7lkYrorabliKTmiJDnu5PmnoTljJbnmoQgYFRyaWFnZVJlc3VsdGDvvIjkuKXph43luqYgKyDnlpHkvLzln5/vvInvvIzlubbor7TmuIXnlpHkvLzln5/mnprkuL7kuLrku4DkuYjlv4XpobvlkozlkI7pnaLnmoQgU2tpbGxzIOmihOetm+mAkOWtl+S4gOiHtOOAggozLiDmqKHlnovovpPlh7rop6PmnpDlpLHotKXml7boh6rliqjpmY3nuqfkuLoi5YWo6Z2i5o6S5p+lIu+8jOe7neS4jeiuqea1geeoi+WNoeatu+OAggoKIyMg5pys5qih5Z2X5Lqk5LuY54mp5riF5Y2V77yI5paH5Lu26Lev5b6E57qn77yJCgo+IOS7juacrOaooeWdl+W8gOWni+W7uiBgbm9kZXMvYCDlrZDljIXvvIhNNCDml7blj6rmnInkuIDkuKroioLngrnvvIzkuI3lgLzlvpfmi4bvvJvnjrDlnKjoioLngrnlvIDlp4vlj5jlpJrkuobvvInjgIJgc3RhdGUucHlgL2BncmFwaC5weWAvYGd1YXJkLnB5YCAqKuS7jeeVmeWcqOWMhemhtuWxgioq77yM5omA5LulIGBsYW5nZ3JhcGguanNvbmAg55qEIGAuL3NyYy9hZ2VudC9ncmFwaC5weTpncmFwaGAg5rC46L+c5LiN55So5pS544CCCgotIGBpcmlzLWFnZW50LXBsYXRmb3JtL3NyYy9hZ2VudC9ub2Rlcy9fX2luaXRfXy5weWDvvIgqKuaWsOW7uioq77yJCi0gYGlyaXMtYWdlbnQtcGxhdGZvcm0vc3JjL2FnZW50L25vZGVzL3RyaWFnZS5weWDvvIgqKuaWsOW7uioq77yadHJpYWdlIOiKgueCue+8iQotIGBpcmlzLWFnZW50LXBsYXRmb3JtL3NyYy9hZ2VudC9ub2Rlcy9pbnZlc3RpZ2F0ZS5weWDjgIFgdmVyaWZ5LnB5YOOAgWByZXBvcnQucHlg77yIKirmkKzov4EqKu+8mk00IOWGmeWcqCBgZ3JhcGgucHlgIOmHjOeahOS4ieS4quiKgueCueWOn+agt+aQrOi/h+adpe+8jOmAu+i+keS4jeWKqO+8iQotIGBpcmlzLWFnZW50LXBsYXRmb3JtL3NyYy9hZ2VudC9zdGF0ZS5weWDvvIgqKuaUuemAoCoq77ya5paw5aKeIGBTZXZlcml0eWAgLyBgRG9tYWluYCAvIGBUcmlhZ2VSZXN1bHRg77yM5oqKIGBJbmNpZGVudFN0YXRlLnRyaWFnZWAg55qE57G75Z6L5LuOIGBkaWN0IHwgTm9uZWAg5pS257Sn5oiQIGBUcmlhZ2VSZXN1bHQgfCBOb25lYO+8iQotIGBpcmlzLWFnZW50LXBsYXRmb3JtL3NyYy9hZ2VudC9ncmFwaC5weWDvvIgqKuaUuemAoCoq77ya5Y+q5Ymp6KOF6YWN77yM6IqC54K55a6e546w5YWo6YOoIGltcG9ydCDoh6ogYG5vZGVzL2DvvJvmioogdHJpYWdlIOaOpeWcqCBpbnZlc3RpZ2F0ZSDkuYvliY3vvIkKCi0tLQoKIyMg5Lu75YqhIFQ2LjEgwrcg5ouGIG5vZGVzIOWtkOWMhSArIHRyaWFnZSDnu5PmnoTljJbovpPlh7ogKyDop6PmnpDlpLHotKXpmY3nuqcKCioqaWQqKu+8mlQ2LjEg772cICoq5omA5bGe5qih5Z2XKirvvJpNNiDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5oqKIuS4gOWghuecn+WunuWRiuitpiLlj5jmiJDkuIDkuKrnu5PmnoTljJbnmoTliIbor4rnu5PmnpzvvIzkuJTmsLjkuI3lm6DmqKHlnovop6PmnpDlpLHotKXogIzljaHmrbvjgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoq57uT5p6E5YyW6L6T5Ye6IGB3aXRoX3N0cnVjdHVyZWRfb3V0cHV0KFB5ZGFudGljKWAqKgogIDEuIOiuqSBMTE0g55u05o6l5Lqn5Ye656ym5ZCIIFB5ZGFudGljIOaooeWei+eahOWvueixoe+8jOiAjOS4jeaYr+iHqueUseaWh+acrOWGjeato+WImeino+aekOOAggogIDIuIOW6leWxguaYr+aKiiBQeWRhbnRpYyBzY2hlbWEg6L2s5oiQIHRvb2wvSlNPTiBzY2hlbWEg5Lqk57uZ5qih5Z6L77yM5omA5LulKirmqKHlnovlv4XpobvmlK/mjIHlt6XlhbfosIPnlKjmiJYgSlNPTiDmqKHlvI8qKuKAlOKAlERhc2hTY29wZSDkuI4gT3BlblJvdXRlciDlkITlrrbml4/og73lipvkuI3lkIzvvIzlhYjnoa7orqTlho3nlKjjgIIKICAzLiDlroMqKuS4jeS/neivgeS4gOWumuaIkOWKnyoq77ya5qih5Z6L5Y+v6IO96L+U5Zue5LiN5Zyo5p6a5Li+6YeM55qE5YC85oiW57y65a2X5q6177yM5oqb55qE5pivIFB5ZGFudGljIGBWYWxpZGF0aW9uRXJyb3Jg77yM5b+F6aG76Ieq5bex5o6l5L2P77yI6L+Z5bCx5piv56ysIDIg5q6155qE6ZmN57qn77yJ44CCCiAgNC4gKkphdmEg57G75q+UKu+8muWDj+iuqeaOpeWPo+aKiuWTjeW6lOWPjeW6j+WIl+WMlui/m+S4gOS4qiBEVE/vvIxzY2hlbWEg5bCx5piv5aWR57qm77yb5L2G5a+55pa55piv5Liq5LiN5aSq5a6I6KeE55+p55qE56ys5LiJ5pa577yM5qCh6aqM5aSx6LSl6KaB5pyJ5YWc5bqV44CCCiAgNS4g8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdjaGFpbi9zdHJ1Y3R1cmVkLW91dHB1dCDvvIjpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFA4NS04OOOAjOi+k+WHuuino+aekOWSjOe7k+aehOWMluOAjQotICoq55aR5Ly85Z+f77yIRG9tYWlu77yJ5L2c5Li65LiL5ri46Lev55Sx5qCH562+KioKICAxLiB0cmlhZ2Ug5Yik5Ye655qE55aR5Ly85Z+f5LiN5piv57uZ5Lq655yL55qE77yM5piv57uZICoqTTExIOeahCBTa2lsbHMg6aKE562bKirlvZPot6/nlLHplK7nlKjnmoTjgIIKICAyLiDmiYDku6XmnprkuL7lgLzlv4XpobvlkowgTTExIOeahOaYoOWwhOihqCoq6YCQ5a2X5LiA6Ie0KirvvIhgZGJgIOS4jeiDveS4gOi+ueWGmeaIkCBgZGF0YWJhc2Vg77yJ77yM5ZCm5YiZ6aKE562b6Z2Z6buY5aSx54G14oCU4oCU5p+l6YO95p+l5LiN5Ye65p2l44CCCiAgMy4g5Yik5LiN5YeG5pe25a6B5Y+v5aSa5YiX5Yeg5Liq5Z+f77yI5a6B5rul5Yu/57y677yJ77yM5ryP5o6J5omN5piv55yf5o2f5aSx44CCCiAgNC4gKkphdmEg57G75q+UKu+8mue7meS4i+a4uOaJk+eahOi3r+eUseagh+etvu+8jOagh+etvuWAvOaYr+S4pOi+ueeahOehrOWlkee6puOAggoKIyMjIPCfn6Eg56ysIDEg5q61IMK3IOaUuemAoCBB77yI5YWI5oqK6IqC54K55ouG5Ye65p2l77yM5YaN5Yqg5paw6IqC54K577yJCgpNNCDkuLrkuoborqnmnaHku7bovrnot5HotbfmnaXvvIzmioogYGludmVzdGlnYXRlX29uY2VgL2B2ZXJpZnlgL2ByZXBvcnRgIOS4ieS4quiKgueCuemDveWGmeWcqOS6hiBgZ3JhcGgucHlgIOmHjOOAgueOsOWcqOimgeWKoOesrOWbm+S4quiKgueCue+8jOWFiOaKiuWug+S7rOaLhuWHuuWOu++8jOWQpuWImSBgZ3JhcGgucHlgIOS8mui2iua7mui2iuWkp++8mgoKMS4g5bu6IGBzcmMvYWdlbnQvbm9kZXMvYO+8jOaKiuS4ieS4quiKgueCueWHveaVsCoq5Y6f5qC3KirmkKzov5sgYGludmVzdGlnYXRlLnB5YC9gdmVyaWZ5LnB5YC9gcmVwb3J0LnB5YO+8jOmAu+i+keS4gOihjOS4jeaUue+8mwoyLiBgZ3JhcGgucHlgIOWPquS/neeVmeijhemFje+8mmBidWlsZF9ncmFwaCgpYCDph4wgaW1wb3J0IOiKgueCueOAgWBhZGRfbm9kZWDjgIFgYWRkX2NvbmRpdGlvbmFsX2VkZ2VzYO+8mwozLiAqKuWFiOi3keS4gOasoSB3ZWJob29rIOehruiupOaLhuWujOi/mOaYr+mAmueahCoq77yM5YaN5Yqo5paw5Luj56CB4oCU4oCU5oqKIuaQrOWutiLlkowi5Yqg5Yqf6IO9IuWIhuaIkOS4pOasoeWPr+Wbnua7mueahOaUueWKqOOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoCBC77yI5YaZIHRyaWFnZSDoioLngrnvvIkKCuWFiOWcqCBgc3RhdGUucHlgIOmHjOihpeS4iuacrOaooeWdl+i0n+i0o+eahOS4ieS4quaooeWei++8mgoKYGBgcHl0aG9uCmNsYXNzIFNldmVyaXR5KFN0ckVudW0pOgogICAgIiIi5LqL5pWF5Lil6YeN5bqm77yM55SxIHRyaWFnZSDliKTlrprvvJvms6jmhI/lroPlkowgQWxlcnRtYW5hZ2VyIGxhYmVscy5zZXZlcml0eSDkuI3mmK/kuIDlm57kuovigJTigJQKICAgIEFNIOeahOaYr+WRiuitpuinhOWImeS9nOiAhemihOiuvueahOmdmeaAgeagh+etvu+8jOi/meS4quaYr+aooeWei+eci+WujOaVtOe7hOWRiuitpuWQjue7meeahOWIpOaWrS4iIiIKCiAgICBQMCA9ICJQMCIgICMg5qC45b+D6ZO+6Lev5LiN5Y+v55So77yM55So5oi35aSn6Z2i56ev5Y+X5b2x5ZONCiAgICBQMSA9ICJQMSIgICMg5qC45b+D5Yqf6IO95piO5pi+5Yqj5YyW77yI6ZSZ6K+v546HL+aXtuW7tueqgeegtOmYiOWAvO+8ie+8jOS7jeWPr+mDqOWIhuacjeWKoQogICAgUDIgPSAiUDIiICAjIOWxgOmDqOWKo+WMluaIlumdnuaguOW/g+mTvui3r++8jOm7mOiupOmZjee6p+WAvOS5n+aYr+WugwogICAgUDMgPSAiUDMiICAjIOinguWvn+e6p++8jOaaguS4jeW9seWTjeeUqOaItwoKCmNsYXNzIERvbWFpbihTdHJFbnVtKToKICAgICIiIueWkeS8vOagueWboOaJgOWxnueahOaKgOacr+Wfn+OAggoKICAgIOKaoCDov5kgNyDkuKrlrZfpnaLlgLzmmK/kuI4gTTExIFNraWxscyDpooTnrZvmmKDlsITooajnmoTnoazlpZHnuqbvvIzmlLnku7vkvZXkuIDkuKrpg73opoHlkIzmraXmlLkgTTExIOeahAogICAgbG9hZGVyLmxpc3RpbmdfZm9yKCnvvIzlkKbliJnpooTnrZvkvJrpnZnpu5jov5Tlm57nqbrliJfooajjgIIKICAgICIiIgoKICAgIERCID0gImRiIiAgICAgICAgICAgICAgICAgICMg5pWw5o2u5bqT5bGC77ya5oWi5p+l6K+i44CB6ZSB562J5b6F44CB6L+e5o6l5rGg5omT5ruhCiAgICBUSFJFQURQT09MID0gInRocmVhZHBvb2wiICAjIOe6v+eoi+axoC/kuIvmuLjotoXml7bvvJrmsaDogJflsL3jgIHpmJ/liJfloIbnp68KICAgIEpWTSA9ICJqdm0iICAgICAgICAgICAgICAgICMgSlZNIOWxgu+8mkdDIOWOi+WKm+OAgeWghuWGheWtmOOAgeexu+WKoOi9vQogICAgUkVTT1VSQ0UgPSAicmVzb3VyY2UiICAgICAgIyDlrr/kuLvotYTmupDvvJpDUFUv56OB55uYL+e9kee7nOmlseWSjAogICAgQ09OVEFJTkVSID0gImNvbnRhaW5lciIgICAgIyDlrrnlmagv5a6e5L6L77ya5a6V5o6J44CBQ3Jhc2hMb29w44CB5Ymv5pys5pWw5LiN6LazCiAgICBDT05GSUcgPSAiY29uZmlnIiAgICAgICAgICAjIOmFjee9ruWPmOabtO+8mk5hY29zIOWPkeW4g+OAgeW8gOWFs+ivr+aUuQogICAgQ0FDSEUgPSAiY2FjaGUiICAgICAgICAgICAgIyDnvJPlrZjvvJpSZWRpcyDkuI3lj6/nlKjjgIHlh7vnqb8v6Zuq5bSpCgoKY2xhc3MgVHJpYWdlUmVzdWx0KEJhc2VNb2RlbCk6CiAgICAiIiLovbvmqKHlnovlr7nkuIDnu4TlkYrorablgZrnmoTliJ3mraXliIbor4rnu5PmnpzvvIznlLEgTTYg55qEIHRyaWFnZSDoioLngrnlhpnlhaUgSW5jaWRlbnRTdGF0ZS50cmlhZ2UuIiIiCgogICAgc2V2ZXJpdHk6IFNldmVyaXR5ICAgICAgICAgICAgICAgICMg5LqL5pWF5Lil6YeN5bqm77yM6ZmN57qn6buY6K6k5YC85Li6IFAyCiAgICBzdXNwZWN0ZWRfZG9tYWluczogbGlzdFtEb21haW5dICAgIyDnlpHkvLzmioDmnK/ln5/vvIzlj6/lpJrpgInvvJvpmY3nuqfpu5jorqTlgLzkuLrlhajpg6ggNyDkuKrvvIjlroHmu6Xli7/nvLrvvIkKICAgICMgZmFzdF9wYXRoIC8gY2FuZGlkYXRlX3Jvb3Qg5Lik5Liq5a2X5q615ZyoIE0xMSDooaXigJTigJTlroPku6zkvp3otZYgbWF0Y2hlZF9jYXNlc++8jAogICAgIyDogIwgbWF0Y2hlZF9jYXNlcyDopoHnrYkgTTExIOeahCBDaHJvbWEg5qOA57Si5omN5pyJ55yf5a6e5p2l5rqQ44CCCmBgYAoK5YaN5oqKIGBJbmNpZGVudFN0YXRlLnRyaWFnZWAg55qE57G75Z6L5LuOIE00IOeahOWNoOS9jSBgZGljdCB8IE5vbmVgIOaUtue0p+aIkCBgVHJpYWdlUmVzdWx0IHwgTm9uZWDjgIIKCueEtuWQjuWGmSBgbm9kZXMvdHJpYWdlLnB5YO+8mgoxLiAqKui+k+WFpSoq77yaYHN0YXRlWyJhbGVydHNfcmVmIl1gIOaMh+WQkeeahCBgYWxlcnQuanNvbmDvvIhNNSDokL3nmoTljp/lp4vlkYrorabvvInph4zor7vlh7ogYGFsZXJ0bmFtZWAvYHNlcnZpY2VgL2BsYWJlbHNgL2Bhbm5vdGF0aW9uc2DigJTigJTor7vnm5jkuI3or7sgc3RhdGXvvIzlm6DkuLogc3RhdGUg6YeM5Y+q5pyJ5byV55So77ybCjIuICoqcHJvbXB0KirvvJrlkYrorabliJfooajmkZjopoEgKyA3IOS4qiBEb21haW4g55qE5a2X6Z2i5YC85ZKM5ZCE6Ieq5ZCr5LmJ77yIKirmiormnprkuL7lkKvkuYnlhpnov5sgcHJvbXB0KirvvIzliKvmjIfmnJvmqKHlnovku47lrZfmrrXlkI3njJzvvInvvJsKMy4gKirosIPnlKgqKu+8mmBnZXRfbW9kZWwoQWdlbnRSb2xlLlRSSUFHRSkud2l0aF9zdHJ1Y3R1cmVkX291dHB1dChUcmlhZ2VSZXN1bHQpYO+8mwo0LiAqKui+k+WHuioq77yaYHsidHJpYWdlIjogcmVzdWx0fWAg5YaZ5ZueIHN0YXRl77ybCjUuICoq5o6l57q/KirvvJpgU1RBUlQg4oaSIHRyaWFnZSDihpIgaW52ZXN0aWdhdGVfb25jZSDihpIgdmVyaWZ5IOKGkiAuLi5g77yMdHJpYWdlIOaOkuWcqCBpbnZlc3RpZ2F0ZSDliY3pnaLvvIhNNCDnmoTmnaHku7bovrnkuI3liqjvvInjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJTvvIjop6PmnpDlpLHotKXnmoTkuKTnuqfpmY3nuqfvvIkKCioq5LuO56m65paH5Lu2KirlhpnpmY3nuqfpgLvovpHvvJoKMS4gYHdpdGhfc3RydWN0dXJlZF9vdXRwdXRgIOaKmyBgVmFsaWRhdGlvbkVycm9yYCAvIOi/lOWbniBOb25lIOKGkiAqKumHjeivlSAxIOasoSoq77yI56ys5LqM5qyhIHByb21wdCDph4zov73liqDkuIDlj6Ui5LiK5qyh6L6T5Ye65LiN5ZCI5rOV77yM6K+35Lil5qC85Y+q6L6T5Ye6IHNjaGVtYSDopoHmsYLnmoTlrZfmrrUi77yJ77ybCjIuIOWGjeWksei0pSDihpIg6L+U5ZueKirpmY3nuqfpu5jorqTlgLwqKuW5tuWcqCBzdGF0ZSDph4znlZnnl5XvvJoKCmBgYHB5dGhvbgpUUklBR0VfRkFMTEJBQ0sgPSBUcmlhZ2VSZXN1bHQoCiAgICBzZXZlcml0eT1TZXZlcml0eS5QMiwgICAgICAgICAgICAgICMg5LiN5pWi5Yik6auY5Lmf5LiN5pWi5Yik5L2O77yM5Y+W5Lit6Ze0CiAgICBzdXNwZWN0ZWRfZG9tYWlucz1saXN0KERvbWFpbiksICAgICMg5YWo6YOoIDcg5Liq5Z+f5YWo5byAID0g5YWo6Z2i5o6S5p+l77yM5L+d6K+B5LiN5ryPCikKYGBgCjMuIOmZjee6p+aXtuaKiiBgZGVncmFkZWRfcmVhc29uPSJ0cmlhZ2VfZmFsbGJhY2siYCDkuIDlubblhpnlm54gc3RhdGXigJTigJRNOCDnmoTmiqXlkYrph4zopoHog73nnIvlh7oi6L+Z5qyh5YiG6K+K5piv5YWc5bqV5p2l55qEIu+8jOS4jeiDvemdmem7mO+8mwo0LiAqKuS4jeiuuOWboOS4uuWIhuiviuWksei0peWwseS4reaWrea1geeoiyoq77yadHJpYWdlIOaYr+WKoOmAn+WZqOS4jeaYr+WuiOmXqOWRmO+8jOWug+aMguS6huWQjumdoueFp+agt+W+l+afpeOAggoKKirokL3nrJTpobrluo8qKgoxLiDlu7ogYG5vZGVzL2Ag5a2Q5YyF77yM5oqKIE00IOeahOS4ieS4quiKgueCueWOn+agt+aQrOi/m+WOu++8jOi3keS4gOasoSB3ZWJob29rIOehruiupOayoeaQrOWdj+OAggoyLiDlnKggYHN0YXRlLnB5YCDlhpkgYFNldmVyaXR5YC9gRG9tYWluYC9gVHJpYWdlUmVzdWx0YCDkuInkuKrmqKHlnovjgIIKMy4g5YaZIGBub2Rlcy90cmlhZ2UucHlg77yM5YWI5Y+qIHJldHVybiDkuIDkuKrlhpnmrbvnmoQgYFRyaWFnZVJlc3VsdGDvvIzmioroioLngrnmjqXov5vlm77ot5HpgJrjgIIKNC4g5o2i5oiQ55yf5a6eIGB3aXRoX3N0cnVjdHVyZWRfb3V0cHV0YCDosIPnlKjvvIznlKjmn5DkuKrmlYXpmpznmoTnnJ/lrp7lkYroraYgZml4dHVyZSDmiZPkuIDmrKHvvIznnIsgYHN1c3BlY3RlZF9kb21haW5zYCDliKTlvpflr7nkuI3lr7njgIIKNS4g6Ieq56CU6ZmN57qn77ya5oqKIHByb21wdCDmlYXmhI/mlLnlnY/vvIjmr5TlpoLorqnlroPovpPlh7rkuIDmrrXmlaPmlofvvInvvIzpqozor4Hph43or5UgMSDmrKHlkI7otbDpu5jorqTlgLzjgIHmtYHnqIvnu6fnu63jgIIKNi4g5oqKIHByb21wdCDmlLnlm57ljrvvvIznoa7orqTmraPluLjot6/lvoTmsqHooqvpmY3nuqfpgLvovpHlvbHlk43jgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g5qih5Z6L57uPKirlj4LmlbAqKuS8oOi/m+iKgueCue+8iGB0cmlhZ2Vfbm9kZShzdGF0ZSwgbW9kZWwpYO+8ie+8jOWIq+WcqOiKgueCueWGhemDqOebtOaOpSBgZ2V0X21vZGVsKClg4oCU4oCUTTEyIOeahOa2iOiejeW8gOWFs+WSjOS4tOaXtuaNouaooeWei+mDvemdoOi/meS4quazqOWFpeeCueOAggotIGBEb21haW5gIOeahCA3IOS4quWtl+mdouWAvOS4jiBNMTEg55qE6aKE562b5pig5bCE6KGo5piv56Gs5aWR57qm77yM5YaZ5a6M5Zyo5Lik6L655ZCEIGdyZXAg5LiA5qyh5qC45a+544CCCi0g6ZmN57qn6buY6K6k5YC85b+F6aG75pivIuWFqOmdouaOkuafpSLvvIjnlpHkvLzln5/lhajlvIDvvInvvIzkuI3og73mmK8i56m65YiX6KGoIuKAlOKAlOepuuWIl+ihqOS8muiuqSBNMTEg55qE6aKE562b5LuA5LmIIFNraWxsIOmDveS4jee7me+8jOetieS6juavlOayoeacieWIhuiviui/mOezn+OAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOe7k+aehOWMlui+k+WHuuiAgeWksei0pe+8muWFiOehruiupOivpeaooeWei+aUr+aMgSB0b29sL0pTT04g5qih5byP77yb5YaN5oqK5p6a5Li+55qEKirlkKvkuYkqKuWGmei/myBwcm9tcHTvvIjlj6rnu5nlrZfmrrXlkI3mqKHlnovnjJzkuI3lh7ogYHRocmVhZHBvb2xgIOWSjCBganZtYCDnmoTovrnnlYzvvInjgIIKLSDkuKXph43luqbmgLvmmK/liKQgUDDvvJpwcm9tcHQg6YeM57uZ5Ye65q+P5LiA57qn55qE5Yik5a6a5qCH5YeG77yI5b2x5ZON6Z2iICsg5piv5ZCm5Y+v5pyN5Yqh77yJ77yM5Yir5Y+q57uZ5p6a5Li+5ZCN44CCCi0g6KeG6aKR77yadmlkZW8tMiBQODYtODfjgIzovpPlh7rop6PmnpDlkoznu5PmnoTljJbjgI3pgJDmraXorrLop6PvvJt2aWRlby0xIFA0Mi00NOOAjFB5ZGFudGljIOmrmOe6p+eJueaAp+OAjeWFnOW6leOAggotIOmXriBBSe+8muOAjERhc2hTY29wZSBxd2VuIOeUqCBgd2l0aF9zdHJ1Y3R1cmVkX291dHB1dChUcmlhZ2VSZXN1bHQpYO+8jHNldmVyaXR5IOWtl+auteiAgeaYr+i/lOWbnuS4jeWcqOaemuS4vumHjOeahOWAvO+8jOaIkeeahCBQeWRhbnRpYyDlrprkuYnlkowgcHJvbXB0IOi/meagt++8iOi0tOWHuu+8ie+8jOaAjuS5iOe6puadn+Wug++8n+OAjQoKKirnnJ/lrp4gSFRUUCDpqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCmNkIGlyaXMtYWdlbnQtcGxhdGZvcm0KdXYgcnVuIHV2aWNvcm4gYWdlbnQuYXBwOmFwcCAtLXBvcnQgODAwMAoKIyDmraPluLjot6/lvoTvvJrnlKjmn5DkuKrnnJ/lrp7mlYXpmpzvvIjlpoIgcG0tcXVlc3Rpb24g5oWi5p+l6K+i77yJ55qE5ZGK6K2mIGZpeHR1cmUKY3VybCAtcyAtWFBPU1QgbG9jYWxob3N0OjgwMDAvd2ViaG9vay9hbGVydG1hbmFnZXIgLWQgQHNsb3ctcXVlcnktYWxlcnQuanNvbgojIOS7jiBjaGVja3BvaW50ZXIg6YeM5o2e6L+Z5qyh5LqL5pWF55qEIHN0YXRl77yM55yLIHRyaWFnZSDlrZfmrrUKc3FsaXRlMyBydW5zL2NoZWNrcG9pbnRzLmRiIFwKICAic2VsZWN0IGNoZWNrcG9pbnQgZnJvbSBjaGVja3BvaW50cyB3aGVyZSB0aHJlYWRfaWQ9J2luYy1ZWVlZTU1ERC0wMDEnIG9yZGVyIGJ5IHJvd2lkIGRlc2MgbGltaXQgMTsiCiMg5pyf5pyb77yadHJpYWdlLnN1c3BlY3RlZF9kb21haW5zIOWQqyAiZGIi77ybdHJpYWdlLnNldmVyaXR5IOiQveWcqCBQMH5QMyDph4wKIyDvvIhzdGF0ZSDkuI3lpb3or7vml7bvvIzmlLnmiJDlnKggdHJpYWdlIOiKgueCuemHjOaJk+S4gOihjOe7k+aehOWMluaXpeW/l+aguOWvue+8jOWIq+S4uuS6hueci+Wtl+auteWOu+WGmeS4tOaXtuiEmuacrO+8iQoKIyDlvILluLjot6/lvoTvvJrlloLkuIDmrrXnlbjlvaIv5LiO5Lu75L2V5pyN5Yqh5peg5YWz55qE5ZGK6K2mCmN1cmwgLXMgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kIEBnYXJiYWdlLWFsZXJ0Lmpzb24KIyDmnJ/mnJvvvJrph43or5UgMSDmrKHlkI7otbDpmY3nuqcg4oaSIHNldmVyaXR5PVAy44CBc3VzcGVjdGVkX2RvbWFpbnMg5YWo6YOoIDcg5Liq44CBCiMgICAgICAgZGVncmFkZWRfcmVhc29uPSJ0cmlhZ2VfZmFsbGJhY2si77yM5LiU5rWB56iL57un57ut6LWw5YiwIGludmVzdGlnYXRl77yM5LiN5Y2h5q27CmBgYArliKTlrprnibnlvoHvvJrnnJ/lrp7lkYrorabliIbor4rlh7rmraPnoa7nlpHkvLzln5/vvJvnlbjlvaLovpPlhaXotbDpu5jorqTlgLzkuJTnlZnnl5XvvJvmtYHnqIvlnKjku7vkvZXmg4XlhrXkuIvpg73kuI3lm6AgdHJpYWdlIOWksei0peS4reaWreOAguS+nei1luecn+WunuacjeWKoe+8mkRhc2hTY29wZe+8iHRyaWFnZSDovbvmqKHlnovvvInjgIFNNSDnmoQgd2ViaG9vayDlhaXlj6PjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0gYG5vZGVzL2Ag5a2Q5YyF5bu65aW977yMTTQg55qE5LiJ5Liq6IqC54K55Y6f5qC35pCs5YWl77yMYGdyYXBoLnB5YCDlj6rlianoo4XphY3vvIxgbGFuZ2dyYXBoLmpzb25gIOacquaUuQotIFsgXSBgU2V2ZXJpdHlg77yINCDlgLzvvIkvIGBEb21haW5g77yINyDlgLzvvIkvIGBUcmlhZ2VSZXN1bHRg77yIMiDlrZfmrrXvvInlrprkuYnlnKggYHN0YXRlLnB5YO+8jOS4lCoq5rKh5pyJKirmj5DliY3lhpkgYGZhc3RfcGF0aGAvYGNhbmRpZGF0ZV9yb290YAotIFsgXSBgSW5jaWRlbnRTdGF0ZS50cmlhZ2VgIOexu+Wei+W3suS7jiBgZGljdCB8IE5vbmVgIOaUtue0p+S4uiBgVHJpYWdlUmVzdWx0IHwgTm9uZWAKLSBbIF0g55yf5a6e5ZGK6K2m5YiG6K+K5Ye65q2j56GuIGBzdXNwZWN0ZWRfZG9tYWluc2AKLSBbIF0g6Kej5p6Q5aSx6LSl6YeN6K+VIDEg5qyhIOKGkiDlho3lpLHotKXotbDlhajln5/pu5jorqTlgLzvvIxgZGVncmFkZWRfcmVhc29uPSJ0cmlhZ2VfZmFsbGJhY2siYCDnlZnnl5UKLSBbIF0g5qih5Z6L5piv5Y+C5pWw5rOo5YWl6ICM6Z2e6IqC54K55YaFIGBnZXRfbW9kZWwoKWAKLSBbIF0gYERvbWFpbmAg55qEIDcg5Liq5a2X6Z2i5YC85bey5LiOIE0xMSDpooTnrZvmmKDlsITooajnuqblrprkuIDoh7TvvIhNMTEg6JC95Zyw5pe25YaNIGdyZXAg5aSN5qC477yJCgotLS0KKueJiOacrCBDIOeJueW+ge+8muWIhuiviuWFqOmdoCLlnKjnnJ/lrp7lt6XnqIvkuIrlhYjmi4Ygbm9kZXMg5a2Q5YyFIOKGkiDmlLnpgKDlh7rnrKzkuIDkuKogTExNIOiKgueCuSDihpIg6Ieq56CU5Lik57qn6ZmN57qnIumVv+WHuuadpe+8jOesrOS4gOasoeaKiiBMTE0g55qE6L6T5Ye65Y+Y5oiQ5Y+v6Z2g5aWR57qm77yM5ZCM5pe25oqK5Y+q5pyJ5Lul5ZCO5omN5pyJ5pWw5o2u5rqQ55qE5b+r5oWi6Lev5b6E55WZ57uZIE0xMeOAgioK</script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
   <script>
     (function () {

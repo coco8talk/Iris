@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "typing-extensions>=4.16.0",
     "httpx",
+    "structlog",
 ]
 
 

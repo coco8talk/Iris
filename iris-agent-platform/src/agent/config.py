@@ -1,6 +1,7 @@
 """定义应用配置及智能体角色."""
 
 from enum import StrEnum
+from functools import cache
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -76,3 +77,17 @@ class Settings(BaseSettings):
     investigate: str = "anthropic/claude-sonnet-5"
     verify: str = "anthropic/claude-sonnet-5"
     report: str = "deepseek-v4-pro"
+
+    # ---- 单次事故预算：BudgetLedger 的默认值从这里注入 ----
+    token_budget: int = 200_000          # LLM token（prompt+completion）上限
+    tool_call_budget: int = 30           # 网关模板通道调用上限，与 M2 网关侧 RedisService.TOOL_CALLS_LIMIT 对齐
+    # ↑ 必须与网关一致：charge_tool_call 用 limit - meta.tool_calls_remaining 反推已用次数，对不上会算错
+    raw_call_budget: int = 5             # 网关 raw 通道调用上限，与 M2 网关侧 raw 预算对齐，与模板通道分开计
+    wall_clock_budget_seconds: int = 600  # 墙钟预算；guard.load_ledger() 用它算 deadline_ts
+    max_investigate_rounds: int = 2      # investigate 回流上限，条件边判断还能不能打回时用
+
+
+@cache
+def get_settings() -> Settings:
+    """读取并缓存应用配置."""
+    return Settings()

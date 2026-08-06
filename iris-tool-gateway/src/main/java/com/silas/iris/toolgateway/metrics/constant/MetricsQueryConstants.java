@@ -30,6 +30,18 @@ public final class MetricsQueryConstants {
     public static final int RESULT_SERIES_LIMIT = 20;
 
     /**
+     * {@code rate()} 区间相对采样 step 的倍数：rate 区间 = step × 本倍数。
+     * <p>
+     * 取 4 是 Prometheus 的通行经验值——step 已经不低于 scrape_interval（见
+     * {@link #DEFAULT_NATIVE_SCRAPE_INTERVAL_SECONDS}），因此 4×step 保证每个 rate 区间至少覆盖
+     * 4 个采集点，既够抵抗单点抖动与偶发漏采，又不会把区间拉长到抹平尖峰。
+     * <p>
+     * 关键是 rate 区间必须绑定 step 而不是查询窗口：绑定查询窗口时每个采样点都变成"整段查询范围的
+     * 移动平均"，突发故障会被平滑成缓慢爬坡，曲线首点回看的区间还会整个落到查询范围之外。
+     */
+    public static final int RATE_WINDOW_STEP_MULTIPLIER = 4;
+
+    /**
      * 单次查询允许的最大时间窗口（秒），对应 24 小时。
      */
     public static final int MAX_WINDOW_SECONDS = 24 * 60 * 60;

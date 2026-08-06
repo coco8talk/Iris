@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="source-sha256" content="10ffcad917c1c2ae901ce8c46f8872a1e2c5151640bd215e7a9cef9d0965fc60">
+  <meta name="source-sha256" content="a195f6cce60af27904a804269e7afcab7cd249442983cd4c7cb3fa4d96d28821">
   <title>模块 7 · 排查简版（单 Agent 直连工具）+ 证据台账 — 版本 C</title>
   <style>
     :root {
@@ -802,137 +802,533 @@
       <article class="document" id="document-content" data-od-id="document-content">
 <header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 7 · 排查简版（单 Agent 直连工具）+ 证据台账 — 版本 C</h1></header>
 <blockquote>
-<p>greenfield。🟢复刻 create_agent 官方样例 → 🟡改造成持全部工具的排查 Agent → 🔴自研证据台账。<strong>本实现永久保留为消融 A2（去 subagent 对照组）。</strong></p>
+<p>编排理念：🟡在本项目真实代码上改造（把 <code>definetions.py</code> 里躺着没接的工具真正接进图；把 M4 的单次工具调用改成 create_agent 的 ReAct 循环）→ 🔴自研证据台账与回流补证。<strong>本实现永久保留为消融 A2（去 subagent 对照组）。</strong></p>
 </blockquote>
-<section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
+<p><strong>本模块的能力边界（先对齐）</strong></p>
+<ul>
+<li><strong>入口是 M5 的自建 FastAPI，端口 8000</strong>；checkpointer 已就位，可以从 <code>runs/checkpoints.db</code> 看 state。</li>
+<li><strong>本模块是"7 个工具全部接入"的时点</strong>。当前真实状况必须先认清：
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th><code>definetions.py</code> 里有定义吗</th>
+<th>图里 bind 了吗</th>
+<th>本模块要做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query_metrics</code></td>
+<td>有</td>
+<td><strong>已 bind</strong>（M3 起）</td>
+<td>保持</td>
+</tr>
+<tr>
+<td><code>query_logs</code></td>
+<td>有</td>
+<td>否</td>
+<td><strong>T7.2 接进 tools 列表并真实调一次</strong></td>
+</tr>
+<tr>
+<td><code>query_trace</code></td>
+<td>有</td>
+<td>否</td>
+<td><strong>T7.2 接进 tools 列表并真实调一次</strong></td>
+</tr>
+<tr>
+<td><code>query_cmdb</code></td>
+<td>有</td>
+<td>否</td>
+<td><strong>T7.2 接进 tools 列表并真实调一次</strong></td>
+</tr>
+<tr>
+<td><code>query_changes</code></td>
+<td><strong>没有，定义都要新写</strong></td>
+<td>否</td>
+<td><strong>T7.2 新写定义 + 接入 + 真实调一次</strong></td>
+</tr>
+<tr>
+<td><code>query_metrics_raw</code>（= 计划里的 <code>raw_promql</code>）</td>
+<td>有</td>
+<td>否</td>
+<td><strong>T7.4 单独接入，走独立预算 + 审计高亮</strong></td>
+</tr>
+<tr>
+<td><code>query_logs_raw</code>（= 计划里的 <code>raw_logql</code>）</td>
+<td><strong>没有，定义都要新写</strong></td>
+<td>否</td>
+<td><strong>T7.4 新写定义 + 接入</strong></td>
+</tr>
+</tbody>
+</table></div>
+</li>
+<li>没有任何一步可以假设"工具都已经能用"——T7.3 的单 Agent 之所以能"持全部只读工具"，是因为 T7.2/T7.4 先把它们一个个接进来并各真实调用过一次。</li>
+</ul>
+<section class="glass-card reveal" id="section-学完本模块你能做到的-4-件事" data-od-id="section-学完本模块你能做到的-4-件事"><h2 data-od-id="section-学完本模块你能做到的-4-件事">学完本模块你能做到的 4 件事</h2>
 <ol>
-<li>用一个持有全部只读工具的单 Agent（ReAct 循环）把一次告警查到有结论。</li>
-<li>让 Agent 每次取证都把关键结果按格式登记为带编号的证据（EV-M-001…），落盘可回放。</li>
-<li>让结论必须引用 <code>[EV-*]</code>，为 M9 的反幻觉验收打地基。</li>
+<li>把 <code>definetions.py</code> 里已写好但从没被用过的工具真正接进图，并各自真实调用一次拿到真数据（含新写 <code>query_changes</code>）。</li>
+<li>用一个持有全部只读工具的单 Agent（ReAct 循环）把一次真实告警查到有结论。</li>
+<li>让 Agent 每次取证都把关键结果按格式登记为带编号的证据（EV-M-001…），落盘可回放，结论必引 <code>[EV-*]</code>。</li>
+<li>把 raw 通道（PromQL/LogQL 逃生舱）作为<strong>受限能力</strong>单独接入：独立预算、审计高亮、prompt 明示"模板不够用才准用"。</li>
 </ol>
 </section>
 <section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
 <ul>
-<li><code>src/.../agents/evidence.py</code>（EvidenceStore）</li>
-<li><code>src/.../agents/simple_investigator.py</code>（单 Agent 排查）</li>
-<li><code>src/.../graph/nodes/investigate.py</code>（investigate 节点，接单 Agent）</li>
-<li><code>runs/incidents/{id}/evidence/</code>（运行时证据产物）</li>
+<li><code>iris-agent-platform/src/agent/tools/definetions.py</code>（<strong>改造</strong>：新增 <code>make_query_changes</code> + <code>make_query_logs_raw</code> 两个定义）</li>
+<li><code>iris-agent-platform/src/agent/tools/registry.py</code>（<strong>新建</strong>：<code>make_template_tools(client)</code> / <code>make_raw_tools(client)</code>，一处装配供 M7 单 Agent 与 M10 subagent 共用）</li>
+<li><code>iris-agent-platform/src/agent/evidence.py</code>（<strong>新建</strong>：<code>EvidenceStore</code>）</li>
+<li><code>iris-agent-platform/src/agent/investigator.py</code>（<strong>新建</strong>：单 Agent 排查，消融 A2 的正式实现）</li>
+<li><code>iris-agent-platform/src/agent/nodes/investigate.py</code>（<strong>改造</strong>：从 M4 的"一次 query_metrics"换成调单 Agent）</li>
+<li><code>iris-agent-platform/src/agent/state.py</code>（<strong>改造</strong>：新增 <code>RcaReport</code>）</li>
+<li><code>runs/incidents/{id}/evidence/</code>、<code>runs/incidents/{id}/report_draft.md</code>（运行时产物）</li>
 </ul>
 </section>
 <section class="glass-card reveal" id="section-任务-t7-1-证据台账-evidencestore" data-od-id="section-任务-t7-1-证据台账-evidencestore"><h2 data-od-id="section-任务-t7-1-证据台账-evidencestore">任务 T7.1 · 证据台账 EvidenceStore</h2>
 <div class="meta-strip"><p><strong>id</strong>：T7.1 ｜ <strong>所属模块</strong>：M7 ｜ <strong>优先级</strong>：P0</p></div>
-<p><strong>一句话目标</strong>：从 0 写一个能按类型编号、落盘、防路径穿越的证据台账。</p>
+<p><strong>一句话目标</strong>：写一个能按类型编号、按 §0.6 格式落盘、且复用 M5 防穿越校验的证据台账。</p>
 <p><strong>前置知识（≤2 新概念）</strong></p>
 <ul>
-<li><strong>证据台账（可回放取证）</strong>：每次工具取证把"来源 + 摘要 + 关键摘录"写成一份带编号的证据文件，结论靠引用它们支撑。<em>Java 类比</em>：像结构化的审计日志 + 附件，每条有唯一 id 可溯源。📖（自研；格式见执行计划 §0.6）</li>
-<li><strong>防路径穿越</strong>：证据只能写进 <code>runs/incidents/{id}/</code> 子目录，拒 <code>..</code>/绝对路径/软链逃逸。<em>Java 类比</em>：文件上传时校验落地路径必须在白名单目录内，防目录穿越漏洞。📖 <a href="https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html" rel="noreferrer" target="_blank">https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html</a> （路径穿越防护，需核实锚点）</li>
+<li><strong>证据台账（可回放取证）</strong>
+<ol>
+<li>每次工具取证，把"来源 + 摘要 + 关键摘录"写成一份带编号的 Markdown 文件。</li>
+<li>结论不再靠 Agent 的记忆，而是靠<strong>引用编号</strong>支撑：报告里写 <code>[EV-M-001]</code>，任何人都能翻到那份文件复核。</li>
+<li>这是 M9 反幻觉验收的地基——M9 的确定性预检就是去 <code>evidence/</code> 里查这些编号存不存在。</li>
+<li><em>Java 类比</em>：结构化的审计日志 + 附件，每条有唯一 id 可溯源。</li>
+<li>📖（自研；格式见 <code>00-execution-plan.md</code> §0.6）</li>
+</ol>
+</li>
+<li><strong>落盘路径复用 M5 的 <code>incident_dir()</code></strong>
+<ol>
+<li>证据只能写进 <code>runs/incidents/{id}/evidence/</code> 子目录。</li>
+<li><strong>不要在这里再写一套路径校验</strong>——M5 的 <code>paths.incident_dir()</code> 已经做了"白名单正则 + <code>resolve()</code> 前缀比对"两层，直接用它当基目录。</li>
+<li>本模块要新增的是<strong>文件名维度</strong>的校验：<code>evidence_id</code> 也是拼进路径的，同样要过白名单正则 <code>^EV-[MLTS]-\d{3}$</code>。</li>
+<li><em>Java 类比</em>：基目录的安全策略由平台层统一提供，业务层只负责自己那一段文件名的合法性。</li>
+</ol>
+</li>
 </ul>
-<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
-<ul>
-<li><strong>读什么</strong>：Python 标准 <code>pathlib</code> 写文件 + 一个带 frontmatter 的 Markdown 样例结构。</li>
-<li><strong>跑什么</strong>：手写个最小函数把一份 <code>{frontmatter}\n正文</code> 写进指定目录，先证明落盘 OK。</li>
-</ul>
-<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
-<ul>
-<li>写 <code>EvidenceStore(incident_id)</code>：<code>new_id(kind: "M"|"L"|"T"|"S") -&gt; "EV-M-001"</code>（按类型递增）、<code>write(evidence_id, source, agent_role, degraded, summary, excerpt) -&gt; Path</code>（§0.6 格式）、<code>list_ids/read</code>、<code>write_alert(alerts)</code>。</li>
-</ul>
-<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
-<ul>
-<li><strong>从空文件</strong>写防穿越校验：所有写路径 <code>resolve()</code> 后必须是 <code>runs/incidents/{id}/</code> 的真实子目录，否则抛异常。自测 <code>..</code>、绝对路径、软链三种攻击都被拒。</li>
-</ul>
+<h3 data-od-id="section-第-1-段-改造-在-m5-的落盘地基上长出台账-4" id="section-第-1-段-改造-在-m5-的落盘地基上长出台账-4">🟡 第 1 段 · 改造（在 M5 的落盘地基上长出台账）</h3>
+<p>写 <code>src/agent/evidence.py</code>，签名先定死：</p>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">class EvidenceStore:
+    """一次事故的证据台账，所有证据落在 runs/incidents/{incident_id}/evidence/ 下."""
+
+    def __init__(self, incident_id: str) -&gt; None:
+        """基目录取自 M5 的 paths.incident_dir(incident_id)，路径安全由它保证."""
+
+    def new_id(self, kind: Literal["M", "L", "T", "S"]) -&gt; str:
+        """按类型分配下一个编号：M=metrics / L=logs / T=trace / S=其他(cmdb/changes)。
+        返回形如 'EV-M-001'。序号靠**扫描已有文件名**求最大值 +1，不能用内存计数器——
+        进程重启（M5 的 kill-resume 是常态）后内存计数会归零，编号就乱了。"""
+
+    def write(
+        self,
+        evidence_id: str,
+        source: str,        # 取证来源，形如 "query_metrics(template=error_rate,service=pm-question,window=1800)"
+        agent_role: str,    # 取证者角色，M7 恒为 "investigate"；M10 起是各 subagent 的角色名
+        degraded: bool,     # 网关信封的 degraded 原样带进来，不许省
+        truncated: bool,    # 网关信封 meta.truncated 原样带进来，不许省
+        summary: str,       # ≤3 句的结论式摘要（"pm-question 的 p99 在 10:12 从 80ms 涨到 2.1s"）
+        excerpt: str,       # 关键数据摘录，保留能支撑 summary 的最小片段，不要贴整个响应
+    ) -&gt; Path:
+        """写一份证据文件并返回路径。文件格式 = YAML frontmatter + 正文，见下。"""
+
+    def list_ids(self) -&gt; list[str]:
+        """列出本事故已有的全部证据编号，M9 的确定性预检和 M10 的 lead 摘要工具都用它."""
+
+    def read(self, evidence_id: str) -&gt; str:
+        """读一份证据全文。M9 verify 的 LLM 段靠它拿到证据原文."""
+</code></pre></div>
+<p>证据文件格式（§0.6）：</p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">markdown</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-markdown">---
+evidence_id: EV-M-001
+source: query_metrics(template=p99,service=pm-question,window=1800)
+agent_role: investigate
+ts: 2026-08-05T10:14:22Z
+degraded: false
+truncated: false
+---
+
+pm-question 的 p99 时延在 10:12 从 ~80ms 阶跃到 ~2.1s，之后维持高位未回落。
+
+| ts | p99_ms |
+|---|---|
+| 10:10 | 82 |
+| 10:12 | 2143 |
+| 10:14 | 2088 |
+</code></pre></div>
+<h3 data-od-id="section-第-2-段-自研-编号与文件名的安全校验-5" id="section-第-2-段-自研-编号与文件名的安全校验-5">🔴 第 2 段 · 自研（编号与文件名的安全校验）</h3>
+<p><strong>从空文件</strong>写校验：</p>
+<ol>
+<li><code>evidence_id</code> 必须匹配 <code>^EV-[MLTS]-\d{3}$</code>，否则抛 <code>ValueError</code>——它会被拼进文件名，属于路径的一部分；</li>
+<li>最终写入路径 <code>resolve()</code> 后必须仍在 <code>incident_dir(incident_id)</code> 之内（M5 的基目录校验挡住了 incident_id，这一层挡住 evidence_id）；</li>
+<li>自测三种攻击都被拒：<code>../../etc/passwd</code>、绝对路径 <code>/tmp/x</code>、指向外部的软链。</li>
+</ol>
 <p><strong>落笔顺序</strong></p>
 <ol class="steps">
-<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：pathlib 写一份带 frontmatter 的文件。</div></li>
-<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成 EvidenceStore + EV 编号。</div></li>
-<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次调用：写两条证据，看编号是否 EV-M-001/002 递增。</div></li>
-<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研防穿越：构造 <code>../../etc/x</code> 写入，验证被拒。</div></li>
-<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证 frontmatter 字段齐全。</div></li>
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">写 <code>EvidenceStore.__init__</code> + <code>new_id</code>，先只做编号，不落盘。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">连续 <code>new_id("M")</code> 两次，确认拿到 <code>EV-M-001</code>/<code>EV-M-002</code>；再 <code>new_id("L")</code> 确认是 <code>EV-L-001</code>（按 kind 分别递增，别混）。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">写 <code>write</code>，落一份带 frontmatter 的文件，肉眼核对 6 个 frontmatter 字段齐全。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card"><strong>重启进程再 <code>new_id("M")</code></strong>，确认拿到的是 <code>EV-M-003</code> 而不是 <code>EV-M-001</code>（证明是扫文件不是内存计数）。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">自研校验：用 <code>EV-M-../x</code>、<code>/tmp/x</code>、软链三种输入各试一次，确认都抛异常且没落盘。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">写 <code>list_ids</code>/<code>read</code>，供 M9 使用。</div></li>
 </ol>
 <p><strong>关键提示（≤3）</strong></p>
 <ul>
-<li>编号按 kind 分别递增（M/L/T/S），别混。</li>
-<li>防穿越用 <code>Path.resolve()</code> 后比较前缀，别用字符串拼接判断。</li>
-<li>这个类是 M9/M10 的共同依赖，格式即契约，先定死。</li>
+<li>编号按 kind 分别递增（M/L/T/S），别用一个全局计数器。</li>
+<li><code>new_id</code> 扫文件而不是内存计数——M5 的 kill-resume 会让内存计数器归零。</li>
+<li>这个类是 M9（预检查编号）/M10（subagent 共用台账）的共同依赖，<strong>格式即契约</strong>，先定死再往下走。</li>
 </ul>
 <p><strong>卡住降级路径（30 分钟没思路）</strong></p>
 <ul>
-<li>编号乱：确认 new_id 是扫描已有文件自增，不是内存计数（重启会乱）。</li>
+<li>编号乱：确认 <code>new_id</code> 是扫已有文件名求最大值，且扫的是本 incident 目录不是全局。</li>
+<li>校验没生效：确认比较的是 <code>Path.resolve()</code> 之后的对象前缀关系，不是字符串 <code>startswith</code>（软链靠字符串比对挡不住）。</li>
 <li>视频：证据台账无对口视频，以自研为主。</li>
 <li>问 AI：「Python 里我要保证写文件路径必须落在某个基目录内、防 <code>..</code> 穿越和软链逃逸，正确的校验写法是什么？给校验函数 + 3 个攻击用例。」</li>
 </ul>
-<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
-<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 用一个小脚本驱动 EvidenceStore（本任务偏库，验收用脚本 + 真机文件）
-uv run python -c "from ...agents.evidence import EvidenceStore; s=EvidenceStore('inc-t'); print(s.new_id('M'), s.new_id('M'))"  # EV-M-001 EV-M-002
-ls runs/incidents/inc-t/evidence/metrics/   # 有文件，frontmatter 字段齐全
-# 异常路径：让 write 落到 '../x' → 抛异常、不落盘
+<p><strong>真实验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-3"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+# 本任务偏库，用 REPL 直接驱动真实类（不写一次性脚本文件）
+uv run python -c "
+from agent.evidence import EvidenceStore
+s = EvidenceStore('inc-20260805-001')
+print(s.new_id('M'), s.new_id('M'), s.new_id('L'))
+"
+# 期望：EV-M-001 EV-M-002 EV-L-001
+
+ls runs/incidents/inc-20260805-001/evidence/
+head -12 runs/incidents/inc-20260805-001/evidence/EV-M-001.md   # 6 个 frontmatter 字段齐全
+
+# 异常路径：三种穿越都要被拒且不落盘
+uv run python -c "
+from agent.evidence import EvidenceStore
+s = EvidenceStore('inc-20260805-001')
+for bad in ['EV-M-../../x', '/tmp/x', 'EV-M-001/../../../etc/passwd']:
+    try: s.write(bad, source='x', agent_role='investigate', degraded=False, truncated=False, summary='x', excerpt='x')
+    except Exception as e: print('rejected:', bad, type(e).__name__)
+"
 </code></pre></div>
-<p>判定特征：EV 编号按类型递增；证据文件 frontmatter（evidence_id/source/agent_role/ts/degraded）齐全；穿越路径被拒。依赖真实外部服务：无（纯本地，但证据内容来自真实工具调用）。</p>
+<p>判定特征：EV 编号按类型递增且重启后不回退；frontmatter 6 字段齐全；三种穿越均被拒。依赖真实外部服务：无（纯本地，但 T7.3 起证据内容全部来自真实工具调用）。</p>
 <p><strong>完成判定</strong></p>
 <ul class="checklist">
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>pathlib 落盘样例跑通（复刻段）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>EV 编号按 kind 递增、落盘格式合 §0.6</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>..</code>/绝对路径/软链三种穿越均被拒</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>frontmatter 字段齐全</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>EV 编号按 kind 递增，且<strong>重启进程后不回退</strong>（扫文件而非内存计数）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>落盘格式合 §0.6，frontmatter 含 <code>evidence_id/source/agent_role/ts/degraded/truncated</code> 六字段</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>基目录复用 M5 的 <code>incident_dir()</code>，没有重复实现一套路径校验</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>evidence_id</code> 白名单正则生效，<code>..</code>/绝对路径/软链三种穿越均被拒</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>list_ids</code>/<code>read</code> 可用（M9 的依赖）</span></label></li>
 </ul>
 </section>
-<section class="glass-card reveal" id="section-任务-t7-2-单-agent-排查-simple-investigator" data-od-id="section-任务-t7-2-单-agent-排查-simple-investigator"><h2 data-od-id="section-任务-t7-2-单-agent-排查-simple-investigator">任务 T7.2 · 单 Agent 排查 simple_investigator</h2>
+<section class="glass-card reveal" id="section-任务-t7-2-接入剩余-4-个模板工具" data-od-id="section-任务-t7-2-接入剩余-4-个模板工具"><h2 data-od-id="section-任务-t7-2-接入剩余-4-个模板工具">任务 T7.2 · 接入剩余 4 个模板工具</h2>
 <div class="meta-strip"><p><strong>id</strong>：T7.2 ｜ <strong>所属模块</strong>：M7 ｜ <strong>优先级</strong>：P0</p></div>
-<p><strong>一句话目标</strong>：用 create_agent 建一个持全部只读工具的排查 Agent，取证并登记证据、输出带引用的报告。</p>
-<p><strong>前置知识（≤2 新概念）</strong></p>
+<p><strong>一句话目标</strong>：把 <code>query_logs</code>/<code>query_trace</code>/<code>query_cmdb</code> 从"定义写好了但没人用"变成"图里真实调用过"，并补写缺失的 <code>query_changes</code>。</p>
+<p><strong>前置知识（≤1 新概念）</strong></p>
 <ul>
-<li><strong>create_agent + ReAct 循环</strong>：给 Agent 一组工具，它自己决定调哪个、看结果、再调，直到能结论。<em>Java 类比</em>：一个会自己决定调哪个下游接口的循环控制器，你只给它工具和目标。📖 <a href="https://docs.langchain.com/oss/python/langchain/agents" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/agents</a> （create_agent，需核实锚点）· video-2 P10-16「创建 Agent·定义工具」</li>
-<li><strong>证据登记做成工具（而非解析自由文本）</strong>：给 Agent 一个 <code>record_evidence</code> 工具，让它主动登记，可靠性高于事后解析。<em>Java 类比</em>：让调用方显式调审计接口，而不是从日志里正则抠。📖（复用 T7.1 EvidenceStore）</li>
+<li><strong>工具装配与"被定义"≠"被接入"</strong>
+<ol>
+<li><code>@tool</code> 装饰器只是把函数变成一个可被模型调用的对象；模型能不能看见它，取决于有没有出现在 <code>bind_tools([...])</code> 或 <code>create_agent(tools=[...])</code> 的列表里。</li>
+<li>当前 <code>definetions.py</code> 里有 5 个 factory，但 <code>graph.py</code> 只 bind 了 <code>make_query_metrics</code> 一个——其余 4 个从没被真实调用过，<strong>参数契约有没有对上 M2 网关是未经验证的</strong>。</li>
+<li>所以本任务不是"改个列表"，而是"逐个真实调一次，确认返回真数据、字段名对得上"。</li>
+<li><em>Java 类比</em>：写了 Feign 接口不等于联调过；上线前每个接口都得真打一次。</li>
+</ol>
+</li>
 </ul>
-<h3 data-od-id="section-第-1-段-复刻-8" id="section-第-1-段-复刻-8">🟢 第 1 段 · 复刻</h3>
-<ul>
-<li><strong>读什么</strong>：LangChain <code>create_agent(model, tools, response_format=...)</code> 官方最小样例。</li>
-<li><strong>跑什么</strong>：照样例建一个持 1 个工具的 Agent 跑一次，看它怎么调工具、怎么结束。</li>
-</ul>
-<h3 data-od-id="section-第-2-段-改造-9" id="section-第-2-段-改造-9">🟡 第 2 段 · 改造</h3>
-<ul>
-<li>写 <code>simple_investigator.investigate(state, tools, model, evidence_store)</code>：<code>create_agent(model, tools, response_format=RcaReport)</code>；system prompt 要点——先看告警+拓扑、每次取证后调 <code>record_evidence</code> 登记、结论必引 <code>[EV-*]</code>。</li>
-</ul>
-<h3 data-od-id="section-第-3-段-自研-10" id="section-第-3-段-自研-10">🔴 第 3 段 · 自研</h3>
-<ul>
-<li><strong>从空文件</strong>写回流逻辑：<code>verifier_feedback</code> 非空时，prompt 附驳回意见并声明"增量补证、复用已有 evidence_id"；token 用量累加进 <code>budget.tokens_used</code>（从 usage metadata 读）。</li>
-</ul>
+<h3 data-od-id="section-第-1-段-改造-逐个接入-逐个真打-7" id="section-第-1-段-改造-逐个接入-逐个真打-7">🟡 第 1 段 · 改造（逐个接入 + 逐个真打）</h3>
+<ol>
+<li><strong>新建 <code>tools/registry.py</code></strong>，把"给一个 GatewayClient、返回一组工具"这件事集中到一处（M10 的 subagent 要按域挑工具，靠这里分组）：</li>
+</ol>
+<div class="code-shell" data-od-id="code-4"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">def make_template_tools(client: GatewayClient) -&gt; list[BaseTool]:
+    """5 个模板通道工具，走网关 per-incident 模板预算（上限 40）."""
+    return [
+        make_query_metrics(client),
+        make_query_logs(client),
+        make_query_trace(client),
+        make_query_cmdb(client),
+        make_query_changes(client),   # 本任务新写
+    ]
+
+
+def make_raw_tools(client: GatewayClient) -&gt; list[BaseTool]:
+    """2 个 raw 通道工具，走独立预算（上限 5）。T7.4 才接进 Agent，这里先留位."""
+    return [make_query_metrics_raw(client), make_query_logs_raw(client)]
+</code></pre></div>
+<ol start="2">
+<li><strong>新写 <code>make_query_changes</code></strong>（<code>definetions.py</code> 里目前完全没有），照现有 4 个的同一套三件套：一个 Pydantic <code>args_schema</code> + 一个 <code>@tool</code> 包装 + 内部 <code>client.call(...)</code>，参数字段照抄 M2 <code>docs/tool-contract.md</code> 里 changes 控制器的入参（<strong>需核实</strong>：路径与字段名以 M2 实际实现为准，常见形状是 <code>service</code> + <code>window</code> + 可选 <code>endOffsetSeconds</code>）。docstring 要写清它查的是"最近的配置/发布变更记录"，以及"任何诊断都应该先问一句最近改了什么"。</li>
+<li><strong>逐个真打</strong>：在 REPL 里给每个工具各调一次真实网关，核对三件事——① HTTP 通了；② 返回信封 <code>ok=true</code> 且 <code>data</code> 有真实数据；③ 你写的 Pydantic 字段名和网关实际接收的驼峰字段对得上（现有代码用的是手写映射，如 <code>templateKey</code>/<code>endOffsetSeconds</code>，写错了不会报错、只会拿到空数据）。</li>
+<li><strong>接进图</strong>：把 <code>nodes/investigate.py</code> 里 M4 那句 <code>bind_tools([query_metrics])</code> 换成 <code>bind_tools(make_template_tools(client))</code>。</li>
+</ol>
+<h3 data-od-id="section-第-2-段-自研-工具级预算计数接线-8" id="section-第-2-段-自研-工具级预算计数接线-8">🔴 第 2 段 · 自研（工具级预算计数接线）</h3>
+<p>M4 写的 <code>guard.charge_tool_call(ledger, envelope, raw=False)</code> 到现在为止只被 <code>query_metrics</code> 一条路径调用。本任务要把它接到<strong>每一个模板工具的返回路径</strong>上：</p>
+<ol>
+<li>统一在 <code>registry.py</code> 里包一层，而不是在 5 个 factory 里各抄一遍；</li>
+<li>每次调用后 <code>charge_tool_call(...)</code> 累加 <code>tool_calls_used</code>，并用信封 <code>meta.tool_calls_remaining</code> 校准；</li>
+<li><code>check_budget</code> 在每次工具调用<strong>之前</strong>执行——这一条 M4 已经定死，这里只是把它覆盖到新接入的 4 个工具上。</li>
+</ol>
 <p><strong>落笔顺序</strong></p>
 <ol class="steps">
-<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻官方 create_agent 样例跑通。</div></li>
-<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成持全部工具 + record_evidence + RcaReport 输出。</div></li>
-<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：注入一个真实故障→webhook→看 Agent 是否真调工具取证。</div></li>
-<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研回流：模拟 verifier_feedback，验证增量补证不重头再来。</div></li>
-<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证 report_draft 结论都带 [EV-*]。</div></li>
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">建 <code>registry.py</code>，先只放 M3 已有的 4 个 factory（不含 <code>query_changes</code>），跑一次确认没接坏。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">REPL 里逐个真打 <code>query_logs</code>/<code>query_trace</code>/<code>query_cmdb</code>，把返回信封贴出来核对字段。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">新写 <code>make_query_changes</code> 的 args_schema + <code>@tool</code>，真打一次。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">把 5 个工具接进 <code>investigate</code> 节点的 <code>bind_tools</code>。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">接 guard 计数，连打若干次看 <code>tool_calls_used</code> 与网关的 <code>tool_calls_remaining</code> 是否一致。</div></li>
 </ol>
 <p><strong>关键提示（≤3）</strong></p>
 <ul>
-<li>用官方 <code>create_agent</code>，<strong>别手写 Agent 循环</strong>，也别用已弃用的 <code>create_react_agent</code>。</li>
-<li>record_evidence 是工具不是解析——让 Agent 主动登记。</li>
-<li>这是消融 A2 的正式配置，M10 上线多 Agent 后靠 <code>subagents_enabled</code> 切换，别删。</li>
+<li><code>query_trace</code> 的 <code>trace_id</code> 不能凭空造：它来自 <code>query_logs</code> 返回里的 <code>distinctTraceIds</code>，验收时要按这个顺序串起来调（真实链路是 logs → trace）。</li>
+<li>Pydantic 字段名（snake_case）和网关入参（camelCase）的映射是手写的，写错不报错只返回空数据——每个工具第一次调用必须肉眼核对返回体。</li>
+<li><code>query_cmdb</code> 应该是<strong>第一个</strong>被调的：service 名对不上，后面 metrics/logs/trace 全是空。</li>
 </ul>
 <p><strong>卡住降级路径（30 分钟没思路）</strong></p>
 <ul>
-<li>Agent 不调工具：检查工具的 args_schema description 是否让 LLM 看得懂（M3 定义的）。</li>
-<li>视频：video-1 P51-55「Agent 概述·调用·绑定工具」逐步兜底；video-2 P14「工具测试和 Agent 整合」。</li>
-<li>问 AI：「LangChain create_agent 给了工具但模型总不调 record_evidence 登记证据，我的 system prompt 和工具 description 这样（贴出），怎么让它每次取证后必登记？」</li>
+<li>工具返回空 data 但 <code>ok=true</code>：八成是字段名映射错了或 service 名不在 CMDB，先用 <code>query_cmdb</code> 确认服务名。</li>
+<li>网关 400：把 <code>GatewayRequestError</code> 里带出来的 <code>body</code> 打出来，M2 的信封会写明是哪个参数不合法。</li>
+<li>视频：video-2 P12-16「智能体中定义工具」。</li>
+<li>问 AI：「我用 <code>@tool(args_schema=...)</code> 包了一个 HTTP 工具，调用返回 ok=true 但 data 是空的，我的 args_schema 和网关入参契约这样（贴出），怎么排查是不是字段映射错了？」</li>
 </ul>
 <p><strong>真实 HTTP 验收（含异常路径）</strong></p>
-<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash"># 注入某故障 → webhook → 看 investigate 产出
-curl -XPOST localhost:8000/webhook/alertmanager -d @some-fault-alert.json
-ls runs/incidents/inc-*/evidence/*/       # 生成若干 EV 证据
-cat runs/incidents/inc-*/report_draft.md  # 结论带 [EV-*] 引用
-# 异常路径：网关 degraded 时，证据仍带 degraded 标注落盘，Agent 不假装数据齐全
+<div class="code-shell" data-od-id="code-5"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+# 逐个真打，确认返回真数据（不是 mock、不是空 data）
+uv run python -c "
+from agent.config import AgentRole
+from agent.tools.GatewayClient import GatewayClient
+from agent.tools.registry import make_template_tools
+c = GatewayClient(incident_id='inc-t7-probe', agent_role=AgentRole.INVESTIGATE)
+tools = {t.name: t for t in make_template_tools(c)}
+print(tools['query_cmdb'].invoke({'service': '&lt;pm-svc&gt;'}))
+print(tools['query_changes'].invoke({'service': '&lt;pm-svc&gt;', 'window': 3600}))
+logs = tools['query_logs'].invoke({'service': '&lt;pm-svc&gt;', 'window': 1800})
+print(logs)
+tid = logs['data']['distinctTraceIds'][0]              # trace_id 来自 logs，不是编的
+print(tools['query_trace'].invoke({'trace_id': tid}))
+"
+# 期望：5 个工具（含 query_metrics）各返回 ok=true 且 data 非空
+
+# 异常路径：给一个 CMDB 里不存在的 service → 网关 400，抛 GatewayRequestError 且信息可读
 </code></pre></div>
-<p>判定特征：真实注入 → 生成证据 + report_draft（结论带引用）；degraded 被如实标注。依赖真实服务：M2 网关、Prometheus/Loki、DashScope（investigate 模型）。</p>
+<p>判定特征：5 个模板工具各真实调用一次拿到真数据；trace_id 来自 logs 的真实返回；不存在的 service 报可读错误。依赖真实服务：M2 网关、Prometheus/Loki/Tempo/Nacos。</p>
 <p><strong>完成判定</strong></p>
 <ul class="checklist">
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>官方 create_agent 样例复现（复刻段）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>单 Agent 持全部工具、真实取证并登记 EV</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>report_draft 结论都带 [EV-*]</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>回流时增量补证、复用已有 evidence_id</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>subagents_enabled</code> 切换点预留（A2 配置）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>registry.make_template_tools</code> 返回 5 个工具，<code>investigate</code> 节点已 <code>bind_tools</code> 全部 5 个</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>make_query_changes</code> 新写完成，args_schema 对齐 M2 契约</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>5 个工具各<strong>真实调用过一次</strong>并拿到非空 data（有返回体为证）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>query_trace</code> 的 trace_id 取自 <code>query_logs</code> 的 <code>distinctTraceIds</code></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>guard.check_budget</code> / <code>charge_tool_call</code> 覆盖到全部 5 个工具，本地计数与网关 <code>tool_calls_remaining</code> 一致</span></label></li>
 </ul>
-<p class="closing-note"><em>版本 C 特征：排查全靠"复刻 create_agent 样例 → 改造成持工具+登记证据 → 自研台账与回流"，第一个能自己取证的 Agent 从官方样例长出来。</em></p>
+</section>
+<section class="glass-card reveal" id="section-任务-t7-3-单-agent-排查-simple-investigator" data-od-id="section-任务-t7-3-单-agent-排查-simple-investigator"><h2 data-od-id="section-任务-t7-3-单-agent-排查-simple-investigator">任务 T7.3 · 单 Agent 排查 simple_investigator</h2>
+<div class="meta-strip"><p><strong>id</strong>：T7.3 ｜ <strong>所属模块</strong>：M7 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：把 M4 那个"调一次 query_metrics 就结束"的节点，换成 <code>create_agent</code> 的 ReAct 循环，持全部模板工具取证、登记证据、输出带引用的 <code>RcaReport</code>。</p>
+<p><strong>前置知识（≤2 新概念）</strong></p>
+<ul>
+<li><strong><code>create_agent</code> + ReAct 循环</strong>
+<ol>
+<li>给 Agent 一组工具和一个目标，它自己决定调哪个、看结果、再调，直到能给结论。</li>
+<li><code>response_format=RcaReport</code> 让它最后一步产出结构化对象而不是自由文本。</li>
+<li>用官方 <code>create_agent</code>，<strong>别手写循环</strong>，也别用已弃用的 <code>create_react_agent</code>。</li>
+<li>对比 M4：M4 是"模型选一次工具 → 我们手动调一次 → 结束"，现在是"模型自己循环到收敛"——所以 M4 那个调用粒度的 guard 从这里开始才真正派上用场（H6）。</li>
+<li>📖 <a href="https://docs.langchain.com/oss/python/langchain/agents" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langchain/agents</a> （create_agent，需核实锚点）· video-2 P10-16「创建 Agent·定义工具」</li>
+</ol>
+</li>
+<li><strong>证据登记做成工具，而不是事后解析自由文本</strong>
+<ol>
+<li>给 Agent 一个 <code>record_evidence</code> 工具，让它主动登记；比从它的输出里正则抠可靠得多。</li>
+<li><code>record_evidence</code> 内部调 T7.1 的 <code>EvidenceStore.write</code>，返回分配到的 <code>EV-*</code> 编号给 Agent，Agent 之后在结论里引用它。</li>
+<li><em>Java 类比</em>：让调用方显式调审计接口，而不是从日志里正则抠。</li>
+</ol>
+</li>
+</ul>
+<h3 data-od-id="section-第-1-段-改造-把节点换成-agent-10" id="section-第-1-段-改造-把节点换成-agent-10">🟡 第 1 段 · 改造（把节点换成 Agent）</h3>
+<p>先在 <code>state.py</code> 里补上本模块负责的模型：</p>
+<div class="code-shell" data-od-id="code-6"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">class RcaReport(BaseModel):
+    """单 Agent（或 M10 的 lead）产出的根因分析结论。M7 产出，M8 只渲染不重定义."""
+
+    root_service: str        # 根因服务名，必须是 CMDB 里的真实服务名；M12 判分的 acc@service 比对它
+    root_cause: str          # 根因分类，用短语而非长句（如 "slow_query" / "threadpool_exhausted"）；判分的 acc@class 比对它
+    root_detail: str         # 根因细节：具体是哪条 SQL / 哪个池 / 哪次配置变更
+    confidence: Literal["high", "medium", "low"]  # 置信度；M8 在验收 fail 或预算耗尽时会强制降为 low
+    causal_chain: list[str]  # 因果链，从根因到告警现象的有序步骤，每步一句话
+    evidence_ids: list[str]  # 本结论引用的全部证据编号，必须都能在 evidence/ 里找到（M9 预检就查这个）
+    summary_md: str          # 给人读的摘要 Markdown；**只有这个字段允许 M8 的 LLM 润色**
+    remediation: str | None = None  # 修复建议；M12 的审批与执行以它为输入，慢查询类只准建议人工处理
+</code></pre></div>
+<p>再写 <code>src/agent/investigator.py</code>：</p>
+<div class="code-shell" data-od-id="code-7"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">def build_simple_investigator(model, tools, evidence_store, verifier_feedback):
+    """组装消融 A2 的单 Agent：create_agent(model, tools + [record_evidence], response_format=RcaReport)."""
+</code></pre></div>
+<p>system prompt 的要点，分点写进去：</p>
+<ol>
+<li><strong>先建立地基</strong>：先 <code>query_cmdb</code> 确认服务与拓扑，再 <code>query_changes</code> 问"最近改了什么"，然后才是 metrics/logs/trace；</li>
+<li><strong>每次取证后必须调 <code>record_evidence</code> 登记</strong>，拿到 <code>EV-*</code> 编号；</li>
+<li><strong>结论里的每一条断言都要带 <code>[EV-*]</code> 引用</strong>，没有证据支撑的推测要显式标成"未验证假设"；</li>
+<li>工具返回 <code>degraded=true</code> 或 <code>truncated=true</code> 时<strong>如实反映</strong>，不许假装数据齐全；</li>
+<li>链路顺序提示：trace_id 从 <code>query_logs</code> 的 <code>distinctTraceIds</code> 里取，不要凭空构造。</li>
+</ol>
+<p><code>nodes/investigate.py</code> 改造：</p>
+<ul>
+<li>建 <code>EvidenceStore(incident_id)</code> 和 <code>GatewayClient(incident_id, agent_role="investigate")</code>；</li>
+<li><code>tools = make_template_tools(client)</code>（T7.2 接入的 5 个）；</li>
+<li>跑 Agent，把 <code>RcaReport</code> 落盘成 <code>runs/incidents/{id}/report_draft.md</code>，state 里只写 <code>draft_report_ref</code> 路径（M4 的引用式字段约定）；</li>
+<li><code>investigate_rounds</code> 仍在这里 +1（M4 定的，路由函数不改 state）。</li>
+</ul>
+<h3 data-od-id="section-第-2-段-自研-回流补证-token-计量-11" id="section-第-2-段-自研-回流补证-token-计量-11">🔴 第 2 段 · 自研（回流补证 + token 计量）</h3>
+<p><strong>从空文件</strong>写回流分支：</p>
+<ol>
+<li><code>state["verifier_feedback"]</code> 非空时，把驳回意见拼进 prompt，并显式声明三件事：
+<ul>
+<li>已有的证据编号清单（<code>evidence_store.list_ids()</code>）；</li>
+<li>"<strong>增量补证</strong>，不要重头把已有的证据再取一遍"；</li>
+<li>"复用已有 <code>EV-*</code> 编号，只为新取的证据申请新编号"。</li>
+</ul>
+</li>
+<li>Agent 每轮结束后从 <code>usage_metadata</code> 读 token 累加进 <code>budget.tokens_used</code>（复用 M4 的 <code>guard.charge_tokens</code>）——ReAct 循环里 LLM 会被调很多次，这里是 token 真正开始烧的地方。</li>
+<li><code>subagents_enabled</code> 开关预留：<code>nodes/investigate.py</code> 里留一个分发点，<code>False</code> 走本模块的单 Agent（A2），<code>True</code> 留给 M10 的 lead。</li>
+</ol>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">先用 T7.2 的 5 个工具 + 一个 <code>create_agent</code>，system prompt 只写"查清楚这个服务为什么告警"，跑一次看它会怎么调工具、什么时候停。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">加 <code>response_format=RcaReport</code>，确认最后一步能产出结构化对象。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">加 <code>record_evidence</code> 工具，跑一次看 <code>evidence/</code> 目录里有没有文件。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">把 prompt 的 5 条要点补全，再跑一次，检查结论是否条条带 <code>[EV-*]</code>。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">自研回流：手工往 state 塞一条 <code>verifier_feedback</code>（此时 M9 还没写，但 M4 的字段和回流边已经在了，回流是<strong>真实图行为</strong>不是伪造），确认第二轮是增量补证而不是重头再来。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">接 token 计量，跑一次看 <code>budget.tokens_used</code> 是否随轮数增长。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>用官方 <code>create_agent</code>，别手写 Agent 循环，也别用已弃用的 <code>create_react_agent</code>。</li>
+<li><code>record_evidence</code> 是工具不是解析——如果 Agent 老不调它，问题多半在工具 description 而不在 system prompt。</li>
+<li>这是消融 A2 的正式配置，M10 上线多 Agent 后靠 <code>subagents_enabled</code> 切换，<strong>别删</strong>。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>Agent 一个工具都不调：先确认 <code>args_schema</code> 的 <code>description</code> 写得让模型看得懂（M3/T7.2 定义的），再确认 tools 真的传进了 <code>create_agent</code>。</li>
+<li>Agent 无限循环：确认 M4 的 guard 真的在每次调用前检查（H6 说的就是这个场景），以及 <code>create_agent</code> 的最大步数上限设了。</li>
+<li>结论不带引用：把"每条断言必须带 [EV-*]"从 prompt 中段挪到<strong>结论格式要求</strong>那一节，并给一个正例。</li>
+<li>视频：video-1 P51-55「Agent 概述·调用·绑定工具」；video-2 P14「工具测试和 Agent 整合」。</li>
+<li>问 AI：「LangChain <code>create_agent</code> 给了工具但模型总不调 <code>record_evidence</code> 登记证据，我的 system prompt 和工具 description 这样（贴出），怎么让它每次取证后必登记？」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-8"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+uv run uvicorn agent.app:app --port 8000
+
+# 注入某个真实故障 → webhook → 看 investigate 产出
+curl -s -XPOST localhost:8000/webhook/alertmanager -d @some-fault-alert.json
+ls runs/incidents/inc-*/evidence/                 # 若干 EV-*.md
+cat runs/incidents/inc-*/report_draft.md          # 结论条条带 [EV-*]
+sqlite3 runs/incidents.db "select status from incident order by created_at desc limit 1;"
+
+# 异常路径 ①：docker stop loki → query_logs 返回 degraded=true
+#   期望：证据文件 frontmatter degraded: true，且 Agent 在结论里注明"日志侧数据不可用"
+# 异常路径 ②：让某次查询命中大量数据触发 meta.truncated
+#   期望：证据 frontmatter truncated: true，且 Agent 引用它下结论时注明"数据不完整，建议缩小 window 复核"
+</code></pre></div>
+<p>判定特征：真实注入 → 生成证据 + report_draft，结论带引用；degraded/truncated 均被如实标注而不是被吞掉。依赖真实服务：M2 网关、Prometheus/Loki/Tempo、investigate 模型。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-2-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>RcaReport</code> 8 个字段定义在 <code>state.py</code>（M8 只渲染不重定义）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-2-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>单 Agent 持 T7.2 接入的全部 5 个模板工具 + <code>record_evidence</code>，真实取证并登记 EV</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-2-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>report_draft.md</code> 落盘，state 里只存 <code>draft_report_ref</code> 路径</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-2-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>结论条条带 <code>[EV-*]</code>，<code>RcaReport.evidence_ids</code> 与 <code>evidence/</code> 里的文件一一对得上</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-2-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>回流时增量补证、复用已有 evidence_id，不重头再来</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-2-5" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>budget.tokens_used</code> 随 ReAct 轮数增长（M4 的 guard 真的接上了）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-2-6" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>subagents_enabled</code> 分发点预留（A2 配置），本实现不删</span></label></li>
+</ul>
+</section>
+<section class="glass-card reveal" id="section-任务-t7-4-raw-通道接入-受限逃生舱" data-od-id="section-任务-t7-4-raw-通道接入-受限逃生舱"><h2 data-od-id="section-任务-t7-4-raw-通道接入-受限逃生舱">任务 T7.4 · raw 通道接入（受限逃生舱）</h2>
+<div class="meta-strip"><p><strong>id</strong>：T7.4 ｜ <strong>所属模块</strong>：M7 ｜ <strong>优先级</strong>：P1</p></div>
+<p><strong>一句话目标</strong>：把 <code>query_metrics_raw</code> / <code>query_logs_raw</code> 作为<strong>独立预算 + 独立审计</strong>的受限能力接进 Agent，而不是和 5 个模板工具混在一起。</p>
+<p><strong>前置知识（≤1 新概念）</strong></p>
+<ul>
+<li><strong>raw 通道为什么要单独对待</strong>
+<ol>
+<li><strong>能力不同</strong>：模板工具的表达式是网关写死的，raw 通道让模型自己写 PromQL/LogQL——表达力大得多，出事的方式也多得多。</li>
+<li><strong>预算不同</strong>：网关侧模板通道 40 次、raw 通道 5 次，是两个独立计数器（M2 契约）；M4 的 <code>BudgetLedger</code> 也是分开的 <code>tool_calls_used</code> / <code>raw_calls_used</code>。</li>
+<li><strong>护栏不同</strong>：raw 查询必须含至少一个 label selector，否则网关直接 403 <code>NOT_WHITELISTED</code>（防无范围全表扫）。</li>
+<li><strong>审计不同</strong>：网关 audit_log 的 <code>template_or_raw</code> 字段标 raw，用于事后高亮"这次诊断里模型自己写了什么查询"。</li>
+<li>📖（M2 <code>docs/tool-contract.md</code> 的 raw 章节；<code>00-execution-plan.md</code> §M2）</li>
+</ol>
+</li>
+</ul>
+<h3 data-od-id="section-第-1-段-改造-新写-logql-raw-一起接入-13" id="section-第-1-段-改造-新写-logql-raw-一起接入-13">🟡 第 1 段 · 改造（新写 logql raw + 一起接入）</h3>
+<ol>
+<li><strong>新写 <code>make_query_logs_raw</code></strong>（<code>definetions.py</code> 里目前只有 <code>make_query_metrics_raw</code>，logql 侧完全没有）。照 <code>QueryMetricsRawInput</code> 的同一套写法：
+<ul>
+<li><code>query: str</code>——原始 LogQL，<code>description</code> 里必须写明"表达式中必须含至少一个 label selector，否则网关 403"；</li>
+<li><code>service</code> / <code>window</code> / <code>end_offset_seconds</code> 三个参数与 <code>query_metrics_raw</code> 保持一致的语义；</li>
+<li>docstring 明确定位：<strong>模板工具 <code>query_logs</code> 覆盖不了时才用</strong>。</li>
+</ul>
+<blockquote>
+<p>命名说明：<code>00-execution-plan.md</code> 里叫 <code>raw_promql</code>/<code>raw_logql</code>，真实代码里 M3 已经把前者写成了 <code>query_metrics_raw</code>，为保持一致本项目统一用 <code>query_metrics_raw</code>/<code>query_logs_raw</code>。</p>
+</blockquote>
+</li>
+<li><code>registry.make_raw_tools(client)</code> 返回这两个，<strong>和 <code>make_template_tools</code> 分开两个函数</strong>（M10 的 subagent 要按域挑，<code>logs-investigator</code> 拿 <code>query_logs + query_logs_raw</code>，<code>metrics-investigator</code> 只拿 <code>query_metrics</code>）。</li>
+<li>Agent 的 tools 列表改成 <code>make_template_tools(c) + make_raw_tools(c)</code>，并在 system prompt 里单独加一节：
+<ul>
+<li>"raw 通道全事故只有 5 次，模板工具能表达的一律走模板"；</li>
+<li>"写 raw 查询时必须带 label selector（如 <code>{service="pm-question"}</code>）"；</li>
+<li>"用了 raw 通道的证据，<code>source</code> 字段要原样记录你写的表达式"。</li>
+</ul>
+</li>
+</ol>
+<h3 data-od-id="section-第-2-段-自研-独立预算计数-审计核对-14" id="section-第-2-段-自研-独立预算计数-审计核对-14">🔴 第 2 段 · 自研（独立预算计数 + 审计核对）</h3>
+<ol>
+<li>raw 工具的返回路径上调 <code>guard.charge_tool_call(ledger, envelope, raw=True)</code>——走 <code>raw_calls_used</code> 而不是 <code>tool_calls_used</code>（M4 已经把字段分开了，这里是它第一次真正被用到）；</li>
+<li><code>check_budget</code> 里 raw 维度触顶只应该拦 raw 工具，<strong>不能把模板工具一起拦掉</strong>——写一个按通道分别判断的分支，并真实验证：连打 6 次 raw 后模板工具仍然可用；</li>
+<li>事后核对网关审计：<code>select template_or_raw, count(*) from audit_log where incident_id=? group by 1</code>，raw 的条数应与本地 <code>raw_calls_used</code> 一致。</li>
+</ol>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">新写 <code>make_query_logs_raw</code> 的 args_schema + <code>@tool</code>。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">REPL 里各真打一次两个 raw 工具（带 label selector），确认返回真数据。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">故意打一条<strong>不带 label selector</strong> 的查询，确认网关 403 且错误可读。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">接进 Agent 的 tools 列表，补 system prompt 的 raw 那一节。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">接 <code>charge_tool_call(raw=True)</code>，连打 6 次验证第 6 次被拦、且模板工具此时仍可用。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">跑一次完整事故，核对网关审计里 raw 条数与本地计数一致。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>raw 的预算和模板的预算是<strong>两个计数器</strong>，别共用一个；拦截也要分开拦，否则 raw 用超了会把整轮诊断废掉。</li>
+<li>网关的 403 <code>NOT_WHITELISTED</code> 是硬护栏，但 prompt 里也要写清规则——让模型第一次就写对，比让它撞墙再重试省预算。</li>
+<li>用了 raw 的证据，<code>source</code> 里要留下模型写的原始表达式，这是事后审计"它到底查了什么"的唯一线索。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>raw 一直 403：把表达式打出来看有没有 label selector；网关的校验是静态的，<code>{}</code> 空 selector 也算没有。</li>
+<li>raw 预算把模板一起拦了：<code>check_budget</code> 需要知道"这次要走哪个通道"，把通道作为参数传进去，别只看 ledger。</li>
+<li>视频：无对口视频，以 M2 的网关契约文档为主。</li>
+<li>问 AI：「我有两个独立预算的工具通道（模板 40 次 / raw 5 次），怎么设计一个 guard 让 raw 用尽时只拦 raw、不影响模板通道？给结构。」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-9"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+uv run python -c "
+from agent.config import AgentRole
+from agent.tools.GatewayClient import GatewayClient
+from agent.tools.registry import make_raw_tools
+c = GatewayClient(incident_id='inc-t74-probe', agent_role=AgentRole.INVESTIGATE)
+raw = {t.name: t for t in make_raw_tools(c)}
+print(raw['query_metrics_raw'].invoke({'query': 'rate(http_server_requests_seconds_count{service=\"&lt;pm-svc&gt;\"}[5m])', 'service': '&lt;pm-svc&gt;', 'window': 1800}))
+print(raw['query_logs_raw'].invoke({'query': '{service=\"&lt;pm-svc&gt;\"} |= \"ERROR\"', 'service': '&lt;pm-svc&gt;', 'window': 1800}))
+"
+# 期望：两个 raw 工具各返回 ok=true 且 data 非空
+
+# 异常路径 ①：不带 label selector → 网关 403 NOT_WHITELISTED，错误信息可读
+# 异常路径 ②：同一 incident 连打 6 次 raw → 第 6 次被本地 guard 或网关 429 拦住，
+#             但此时模板工具（query_metrics）仍可正常调用
+
+# 跑一次完整事故后核对网关审计
+sqlite3 tool-gateway/data/*.db \
+  "select template_or_raw, count(*) from audit_log where incident_id='inc-xxx' group by 1;"
+# 期望：raw 那一行的条数 == 本地 budget.raw_calls_used
+</code></pre></div>
+<p>判定特征：两个 raw 工具真实可用；无 selector 被 403；raw 预算独立、用尽不影响模板通道；网关审计能高亮 raw 调用。依赖真实服务：M2 网关、Prometheus、Loki。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-3-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>make_query_logs_raw</code> 新写完成，两个 raw 工具各真实调用一次拿到真数据</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-3-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>registry</code> 把 raw 与模板分成两个装配函数（M10 的最小权限 subagent 依赖这个分组）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-3-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>system prompt 有独立的 raw 使用规则一节（次数上限 + label selector + source 记录表达式）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-3-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>charge_tool_call(raw=True)</code> 走 <code>raw_calls_used</code>，与模板计数分开</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-3-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>raw 预算用尽只拦 raw，模板工具仍可用（实测验证过）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-3-5" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>网关审计 <code>template_or_raw='raw'</code> 的条数与本地 <code>raw_calls_used</code> 一致</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m7-learning-guide-check-3-6" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><strong>至此 7 个工具全部接入并各真实调用过一次</strong>——后续模块可以放心引用</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：排查全靠"在真实工程上把躺着没接的工具逐个接进来真打一遍 → 改造成 create_agent 的 ReAct 循环 → 自研台账、回流补证与 raw 通道护栏"，第一个能自己取证的 Agent 从本项目已有的代码长出来，不是从官方样例抄来的。</em></p>
 </section>
       </article>
       <aside class="toc" data-od-id="table-of-contents">
@@ -943,17 +1339,19 @@ cat runs/incidents/inc-*/report_draft.md  # 结论带 [EV-*] 引用
             </svg>
           </summary>
           <ol class="toc-list" id="toc-list">
-            <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
+            <li><a href="#section-学完本模块你能做到的-4-件事">学完本模块你能做到的 4 件事</a></li>
             <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
             <li><a href="#section-任务-t7-1-证据台账-evidencestore">任务 T7.1 · 证据台账 EvidenceStore</a></li>
-            <li><a href="#section-任务-t7-2-单-agent-排查-simple-investigator">任务 T7.2 · 单 Agent 排查 simple_investigator</a></li>
+            <li><a href="#section-任务-t7-2-接入剩余-4-个模板工具">任务 T7.2 · 接入剩余 4 个模板工具</a></li>
+            <li><a href="#section-任务-t7-3-单-agent-排查-simple-investigator">任务 T7.3 · 单 Agent 排查 simple_investigator</a></li>
+            <li><a href="#section-任务-t7-4-raw-通道接入-受限逃生舱">任务 T7.4 · raw 通道接入（受限逃生舱）</a></li>
           </ol>
         </details>
       </aside>
     </div>
   </main>
 
-  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNyDCtyDmjpLmn6XnroDniYjvvIjljZUgQWdlbnQg55u06L+e5bel5YW377yJKyDor4Hmja7lj7DotKYg4oCUIOeJiOacrCBDCgo+IGdyZWVuZmllbGTjgILwn5+i5aSN5Yi7IGNyZWF0ZV9hZ2VudCDlrpjmlrnmoLfkvosg4oaSIPCfn6HmlLnpgKDmiJDmjIHlhajpg6jlt6XlhbfnmoTmjpLmn6UgQWdlbnQg4oaSIPCflLToh6rnoJTor4Hmja7lj7DotKbjgIIqKuacrOWunueOsOawuOS5heS/neeVmeS4uua2iOiejSBBMu+8iOWOuyBzdWJhZ2VudCDlr7nnhafnu4TvvInjgIIqKgoKIyMg5a2m5a6M5pys5qih5Z2X5L2g6IO95YGa5Yiw55qEIDMg5Lu25LqLCjEuIOeUqOS4gOS4quaMgeacieWFqOmDqOWPquivu+W3peWFt+eahOWNlSBBZ2VudO+8iFJlQWN0IOW+queOr++8ieaKiuS4gOasoeWRiuitpuafpeWIsOaciee7k+iuuuOAggoyLiDorqkgQWdlbnQg5q+P5qyh5Y+W6K+B6YO95oqK5YWz6ZSu57uT5p6c5oyJ5qC85byP55m76K6w5Li65bim57yW5Y+355qE6K+B5o2u77yIRVYtTS0wMDHigKbvvInvvIzokL3nm5jlj6/lm57mlL7jgIIKMy4g6K6p57uT6K665b+F6aG75byV55SoIGBbRVYtKl1g77yM5Li6IE05IOeahOWPjeW5u+iniemqjOaUtuaJk+WcsOWfuuOAggoKIyMg5pys5qih5Z2X5Lqk5LuY54mp5riF5Y2V77yI5paH5Lu26Lev5b6E57qn77yJCi0gYHNyYy8uLi4vYWdlbnRzL2V2aWRlbmNlLnB5YO+8iEV2aWRlbmNlU3RvcmXvvIkKLSBgc3JjLy4uLi9hZ2VudHMvc2ltcGxlX2ludmVzdGlnYXRvci5weWDvvIjljZUgQWdlbnQg5o6S5p+l77yJCi0gYHNyYy8uLi4vZ3JhcGgvbm9kZXMvaW52ZXN0aWdhdGUucHlg77yIaW52ZXN0aWdhdGUg6IqC54K577yM5o6l5Y2VIEFnZW5077yJCi0gYHJ1bnMvaW5jaWRlbnRzL3tpZH0vZXZpZGVuY2UvYO+8iOi/kOihjOaXtuivgeaNruS6p+eJqe+8iQoKLS0tCgojIyDku7vliqEgVDcuMSDCtyDor4Hmja7lj7DotKYgRXZpZGVuY2VTdG9yZQoKKippZCoq77yaVDcuMSDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk03IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrku44gMCDlhpnkuIDkuKrog73mjInnsbvlnovnvJblj7fjgIHokL3nm5jjgIHpmLLot6/lvoTnqb/otornmoTor4Hmja7lj7DotKbjgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoq6K+B5o2u5Y+w6LSm77yI5Y+v5Zue5pS+5Y+W6K+B77yJKirvvJrmr4/mrKHlt6Xlhbflj5bor4Hmiooi5p2l5rqQICsg5pGY6KaBICsg5YWz6ZSu5pGY5b2VIuWGmeaIkOS4gOS7veW4pue8luWPt+eahOivgeaNruaWh+S7tu+8jOe7k+iuuumdoOW8leeUqOWug+S7rOaUr+aSkeOAgipKYXZhIOexu+avlCrvvJrlg4/nu5PmnoTljJbnmoTlrqHorqHml6Xlv5cgKyDpmYTku7bvvIzmr4/mnaHmnInllK/kuIAgaWQg5Y+v5rqv5rqQ44CC8J+Tlu+8iOiHqueglO+8m+agvOW8j+ingeaJp+ihjOiuoeWIkiDCpzAuNu+8iQotICoq6Ziy6Lev5b6E56m/6LaKKirvvJror4Hmja7lj6rog73lhpnov5sgYHJ1bnMvaW5jaWRlbnRzL3tpZH0vYCDlrZDnm67lvZXvvIzmi5IgYC4uYC/nu53lr7not6/lvoQv6L2v6ZO+6YCD6YC444CCKkphdmEg57G75q+UKu+8muaWh+S7tuS4iuS8oOaXtuagoemqjOiQveWcsOi3r+W+hOW/hemhu+WcqOeZveWQjeWNleebruW9leWGhe+8jOmYsuebruW9leepv+i2iua8j+a0nuOAgvCfk5YgaHR0cHM6Ly9jaGVhdHNoZWV0c2VyaWVzLm93YXNwLm9yZy9jaGVhdHNoZWV0cy9GaWxlX1VwbG9hZF9DaGVhdF9TaGVldC5odG1sIO+8iOi3r+W+hOepv+i2iumYsuaKpO+8jOmcgOaguOWunumUmueCue+8iQoKIyMjIPCfn6Ig56ysIDEg5q61IMK3IOWkjeWIuwotICoq6K+75LuA5LmIKirvvJpQeXRob24g5qCH5YeGIGBwYXRobGliYCDlhpnmlofku7YgKyDkuIDkuKrluKYgZnJvbnRtYXR0ZXIg55qEIE1hcmtkb3duIOagt+S+i+e7k+aehOOAggotICoq6LeR5LuA5LmIKirvvJrmiYvlhpnkuKrmnIDlsI/lh73mlbDmiorkuIDku70gYHtmcm9udG1hdHRlcn1cbuato+aWh2Ag5YaZ6L+b5oyH5a6a55uu5b2V77yM5YWI6K+B5piO6JC955uYIE9L44CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCgCi0g5YaZIGBFdmlkZW5jZVN0b3JlKGluY2lkZW50X2lkKWDvvJpgbmV3X2lkKGtpbmQ6ICJNInwiTCJ8IlQifCJTIikgLT4gIkVWLU0tMDAxImDvvIjmjInnsbvlnovpgJLlop7vvInjgIFgd3JpdGUoZXZpZGVuY2VfaWQsIHNvdXJjZSwgYWdlbnRfcm9sZSwgZGVncmFkZWQsIHN1bW1hcnksIGV4Y2VycHQpIC0+IFBhdGhg77yIwqcwLjYg5qC85byP77yJ44CBYGxpc3RfaWRzL3JlYWRg44CBYHdyaXRlX2FsZXJ0KGFsZXJ0cylg44CCCgojIyMg8J+UtCDnrKwgMyDmrrUgwrcg6Ieq56CUCi0gKirku47nqbrmlofku7YqKuWGmemYsuepv+i2iuagoemqjO+8muaJgOacieWGmei3r+W+hCBgcmVzb2x2ZSgpYCDlkI7lv4XpobvmmK8gYHJ1bnMvaW5jaWRlbnRzL3tpZH0vYCDnmoTnnJ/lrp7lrZDnm67lvZXvvIzlkKbliJnmipvlvILluLjjgILoh6rmtYsgYC4uYOOAgee7neWvuei3r+W+hOOAgei9r+mTvuS4ieenjeaUu+WHu+mDveiiq+aLkuOAggoKKirokL3nrJTpobrluo8qKgoxLiDlpI3liLvvvJpwYXRobGliIOWGmeS4gOS7veW4piBmcm9udG1hdHRlciDnmoTmlofku7bjgIIKMi4g5pS56YCg5oiQIEV2aWRlbmNlU3RvcmUgKyBFViDnvJblj7fjgIIKMy4g5Y+R5LiA5qyh6LCD55So77ya5YaZ5Lik5p2h6K+B5o2u77yM55yL57yW5Y+35piv5ZCmIEVWLU0tMDAxLzAwMiDpgJLlop7jgIIKNC4g6Ieq56CU6Ziy56m/6LaK77ya5p6E6YCgIGAuLi8uLi9ldGMveGAg5YaZ5YWl77yM6aqM6K+B6KKr5ouS44CCCjUuIOmqjOivgSBmcm9udG1hdHRlciDlrZfmrrXpvZDlhajjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g57yW5Y+35oyJIGtpbmQg5YiG5Yir6YCS5aKe77yITS9ML1QvU++8ie+8jOWIq+a3t+OAggotIOmYsuepv+i2iueUqCBgUGF0aC5yZXNvbHZlKClgIOWQjuavlOi+g+WJjee8gO+8jOWIq+eUqOWtl+espuS4suaLvOaOpeWIpOaWreOAggotIOi/meS4quexu+aYryBNOS9NMTAg55qE5YWx5ZCM5L6d6LWW77yM5qC85byP5Y2z5aWR57qm77yM5YWI5a6a5q2744CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g57yW5Y+35Lmx77ya56Gu6K6kIG5ld19pZCDmmK/miavmj4/lt7LmnInmlofku7boh6rlop7vvIzkuI3mmK/lhoXlrZjorqHmlbDvvIjph43lkK/kvJrkubHvvInjgIIKLSDop4bpopHvvJror4Hmja7lj7DotKbml6Dlr7nlj6Pop4bpopHvvIzku6Xoh6rnoJTkuLrkuLvjgIIKLSDpl64gQUnvvJrjgIxQeXRob24g6YeM5oiR6KaB5L+d6K+B5YaZ5paH5Lu26Lev5b6E5b+F6aG76JC95Zyo5p+Q5Liq5Z+655uu5b2V5YaF44CB6ZiyIGAuLmAg56m/6LaK5ZKM6L2v6ZO+6YCD6YC477yM5q2j56Gu55qE5qCh6aqM5YaZ5rOV5piv5LuA5LmI77yf57uZ5qCh6aqM5Ye95pWwICsgMyDkuKrmlLvlh7vnlKjkvovjgILjgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaAojIOeUqOS4gOS4quWwj+iEmuacrOmpseWKqCBFdmlkZW5jZVN0b3Jl77yI5pys5Lu75Yqh5YGP5bqT77yM6aqM5pS255So6ISa5pysICsg55yf5py65paH5Lu277yJCnV2IHJ1biBweXRob24gLWMgImZyb20gLi4uYWdlbnRzLmV2aWRlbmNlIGltcG9ydCBFdmlkZW5jZVN0b3JlOyBzPUV2aWRlbmNlU3RvcmUoJ2luYy10Jyk7IHByaW50KHMubmV3X2lkKCdNJyksIHMubmV3X2lkKCdNJykpIiAgIyBFVi1NLTAwMSBFVi1NLTAwMgpscyBydW5zL2luY2lkZW50cy9pbmMtdC9ldmlkZW5jZS9tZXRyaWNzLyAgICMg5pyJ5paH5Lu277yMZnJvbnRtYXR0ZXIg5a2X5q616b2Q5YWoCiMg5byC5bi46Lev5b6E77ya6K6pIHdyaXRlIOiQveWIsCAnLi4veCcg4oaSIOaKm+W8guW4uOOAgeS4jeiQveebmApgYGAK5Yik5a6a54m55b6B77yaRVYg57yW5Y+35oyJ57G75Z6L6YCS5aKe77yb6K+B5o2u5paH5Lu2IGZyb250bWF0dGVy77yIZXZpZGVuY2VfaWQvc291cmNlL2FnZW50X3JvbGUvdHMvZGVncmFkZWTvvInpvZDlhajvvJvnqb/otorot6/lvoTooqvmi5LjgILkvp3otZbnnJ/lrp7lpJbpg6jmnI3liqHvvJrml6DvvIjnuq/mnKzlnLDvvIzkvYbor4Hmja7lhoXlrrnmnaXoh6rnnJ/lrp7lt6XlhbfosIPnlKjvvInjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0gcGF0aGxpYiDokL3nm5jmoLfkvovot5HpgJrvvIjlpI3liLvmrrXvvIkKLSBbIF0gRVYg57yW5Y+35oyJIGtpbmQg6YCS5aKe44CB6JC955uY5qC85byP5ZCIIMKnMC42Ci0gWyBdIGAuLmAv57ud5a+56Lev5b6EL+i9r+mTvuS4ieenjeepv+i2iuWdh+iiq+aLkgotIFsgXSBmcm9udG1hdHRlciDlrZfmrrXpvZDlhagKCi0tLQoKIyMg5Lu75YqhIFQ3LjIgwrcg5Y2VIEFnZW50IOaOkuafpSBzaW1wbGVfaW52ZXN0aWdhdG9yCgoqKmlkKirvvJpUNy4yIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTcg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8mueUqCBjcmVhdGVfYWdlbnQg5bu65LiA5Liq5oyB5YWo6YOo5Y+q6K+75bel5YW355qE5o6S5p+lIEFnZW5077yM5Y+W6K+B5bm255m76K6w6K+B5o2u44CB6L6T5Ye65bim5byV55So55qE5oql5ZGK44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKmNyZWF0ZV9hZ2VudCArIFJlQWN0IOW+queOryoq77ya57uZIEFnZW50IOS4gOe7hOW3peWFt++8jOWug+iHquW3seWGs+Wumuiwg+WTquS4quOAgeeci+e7k+aenOOAgeWGjeiwg++8jOebtOWIsOiDvee7k+iuuuOAgipKYXZhIOexu+avlCrvvJrkuIDkuKrkvJroh6rlt7HlhrPlrprosIPlk6rkuKrkuIvmuLjmjqXlj6PnmoTlvqrnjq/mjqfliLblmajvvIzkvaDlj6rnu5nlroPlt6Xlhbflkoznm67moIfjgILwn5OWIGh0dHBzOi8vZG9jcy5sYW5nY2hhaW4uY29tL29zcy9weXRob24vbGFuZ2NoYWluL2FnZW50cyDvvIhjcmVhdGVfYWdlbnTvvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFAxMC0xNuOAjOWIm+W7uiBBZ2VudMK35a6a5LmJ5bel5YW344CNCi0gKiror4Hmja7nmbvorrDlgZrmiJDlt6XlhbfvvIjogIzpnZ7op6PmnpDoh6rnlLHmlofmnKzvvIkqKu+8mue7mSBBZ2VudCDkuIDkuKogYHJlY29yZF9ldmlkZW5jZWAg5bel5YW377yM6K6p5a6D5Li75Yqo55m76K6w77yM5Y+v6Z2g5oCn6auY5LqO5LqL5ZCO6Kej5p6Q44CCKkphdmEg57G75q+UKu+8muiuqeiwg+eUqOaWueaYvuW8j+iwg+WuoeiuoeaOpeWPo++8jOiAjOS4jeaYr+S7juaXpeW/l+mHjOato+WImeaKoOOAgvCfk5bvvIjlpI3nlKggVDcuMSBFdmlkZW5jZVN0b3Jl77yJCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mkxhbmdDaGFpbiBgY3JlYXRlX2FnZW50KG1vZGVsLCB0b29scywgcmVzcG9uc2VfZm9ybWF0PS4uLilgIOWumOaWueacgOWwj+agt+S+i+OAggotICoq6LeR5LuA5LmIKirvvJrnhafmoLfkvovlu7rkuIDkuKrmjIEgMSDkuKrlt6XlhbfnmoQgQWdlbnQg6LeR5LiA5qyh77yM55yL5a6D5oCO5LmI6LCD5bel5YW344CB5oCO5LmI57uT5p2f44CCCgojIyMg8J+foSDnrKwgMiDmrrUgwrcg5pS56YCgCi0g5YaZIGBzaW1wbGVfaW52ZXN0aWdhdG9yLmludmVzdGlnYXRlKHN0YXRlLCB0b29scywgbW9kZWwsIGV2aWRlbmNlX3N0b3JlKWDvvJpgY3JlYXRlX2FnZW50KG1vZGVsLCB0b29scywgcmVzcG9uc2VfZm9ybWF0PVJjYVJlcG9ydClg77ybc3lzdGVtIHByb21wdCDopoHngrnigJTigJTlhYjnnIvlkYroraYr5ouT5omR44CB5q+P5qyh5Y+W6K+B5ZCO6LCDIGByZWNvcmRfZXZpZGVuY2VgIOeZu+iusOOAgee7k+iuuuW/heW8lSBgW0VWLSpdYOOAggoKIyMjIPCflLQg56ysIDMg5q61IMK3IOiHqueglAotICoq5LuO56m65paH5Lu2Kirlhpnlm57mtYHpgLvovpHvvJpgdmVyaWZpZXJfZmVlZGJhY2tgIOmdnuepuuaXtu+8jHByb21wdCDpmYTpqbPlm57mhI/op4Hlubblo7DmmI4i5aKe6YeP6KGl6K+B44CB5aSN55So5bey5pyJIGV2aWRlbmNlX2lkIu+8m3Rva2VuIOeUqOmHj+e0r+WKoOi/myBgYnVkZ2V0LnRva2Vuc191c2VkYO+8iOS7jiB1c2FnZSBtZXRhZGF0YSDor7vvvInjgIIKCioq6JC956yU6aG65bqPKioKMS4g5aSN5Yi75a6Y5pa5IGNyZWF0ZV9hZ2VudCDmoLfkvovot5HpgJrjgIIKMi4g5pS56YCg5oiQ5oyB5YWo6YOo5bel5YW3ICsgcmVjb3JkX2V2aWRlbmNlICsgUmNhUmVwb3J0IOi+k+WHuuOAggozLiDlj5HkuIDmrKHor7fmsYLvvJrms6jlhaXkuIDkuKrnnJ/lrp7mlYXpmpzihpJ3ZWJob29r4oaS55yLIEFnZW50IOaYr+WQpuecn+iwg+W3peWFt+WPluivgeOAggo0LiDoh6rnoJTlm57mtYHvvJrmqKHmi58gdmVyaWZpZXJfZmVlZGJhY2vvvIzpqozor4Hlop7ph4/ooaXor4HkuI3ph43lpLTlho3mnaXjgIIKNS4g6aqM6K+BIHJlcG9ydF9kcmFmdCDnu5Porrrpg73luKYgW0VWLSpd44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIOeUqOWumOaWuSBgY3JlYXRlX2FnZW50YO+8jCoq5Yir5omL5YaZIEFnZW50IOW+queOryoq77yM5Lmf5Yir55So5bey5byD55So55qEIGBjcmVhdGVfcmVhY3RfYWdlbnRg44CCCi0gcmVjb3JkX2V2aWRlbmNlIOaYr+W3peWFt+S4jeaYr+ino+aekOKAlOKAlOiuqSBBZ2VudCDkuLvliqjnmbvorrDjgIIKLSDov5nmmK/mtojono0gQTIg55qE5q2j5byP6YWN572u77yMTTEwIOS4iue6v+WkmiBBZ2VudCDlkI7pnaAgYHN1YmFnZW50c19lbmFibGVkYCDliIfmjaLvvIzliKvliKDjgIIKCioq5Y2h5L2P6ZmN57qn6Lev5b6E77yIMzAg5YiG6ZKf5rKh5oCd6Lev77yJKioKLSBBZ2VudCDkuI3osIPlt6XlhbfvvJrmo4Dmn6Xlt6XlhbfnmoQgYXJnc19zY2hlbWEgZGVzY3JpcHRpb24g5piv5ZCm6K6pIExMTSDnnIvlvpfmh4LvvIhNMyDlrprkuYnnmoTvvInjgIIKLSDop4bpopHvvJp2aWRlby0xIFA1MS01NeOAjEFnZW50IOamgui/sMK36LCD55Sowrfnu5Hlrprlt6XlhbfjgI3pgJDmraXlhZzlupXvvJt2aWRlby0yIFAxNOOAjOW3peWFt+a1i+ivleWSjCBBZ2VudCDmlbTlkIjjgI3jgIIKLSDpl64gQUnvvJrjgIxMYW5nQ2hhaW4gY3JlYXRlX2FnZW50IOe7meS6huW3peWFt+S9huaooeWei+aAu+S4jeiwgyByZWNvcmRfZXZpZGVuY2Ug55m76K6w6K+B5o2u77yM5oiR55qEIHN5c3RlbSBwcm9tcHQg5ZKM5bel5YW3IGRlc2NyaXB0aW9uIOi/meagt++8iOi0tOWHuu+8ie+8jOaAjuS5iOiuqeWug+avj+asoeWPluivgeWQjuW/heeZu+iusO+8n+OAjQoKKirnnJ/lrp4gSFRUUCDpqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCiMg5rOo5YWl5p+Q5pWF6ZqcIOKGkiB3ZWJob29rIOKGkiDnnIsgaW52ZXN0aWdhdGUg5Lqn5Ye6CmN1cmwgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kIEBzb21lLWZhdWx0LWFsZXJ0Lmpzb24KbHMgcnVucy9pbmNpZGVudHMvaW5jLSovZXZpZGVuY2UvKi8gICAgICAgIyDnlJ/miJDoi6XlubIgRVYg6K+B5o2uCmNhdCBydW5zL2luY2lkZW50cy9pbmMtKi9yZXBvcnRfZHJhZnQubWQgICMg57uT6K665bimIFtFVi0qXSDlvJXnlKgKIyDlvILluLjot6/lvoTvvJrnvZHlhbMgZGVncmFkZWQg5pe277yM6K+B5o2u5LuN5bimIGRlZ3JhZGVkIOagh+azqOiQveebmO+8jEFnZW50IOS4jeWBh+ijheaVsOaNrum9kOWFqApgYGAK5Yik5a6a54m55b6B77ya55yf5a6e5rOo5YWlIOKGkiDnlJ/miJDor4Hmja4gKyByZXBvcnRfZHJhZnTvvIjnu5PorrrluKblvJXnlKjvvInvvJtkZWdyYWRlZCDooqvlpoLlrp7moIfms6jjgILkvp3otZbnnJ/lrp7mnI3liqHvvJpNMiDnvZHlhbPjgIFQcm9tZXRoZXVzL0xva2njgIFEYXNoU2NvcGXvvIhpbnZlc3RpZ2F0ZSDmqKHlnovvvInjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0g5a6Y5pa5IGNyZWF0ZV9hZ2VudCDmoLfkvovlpI3njrDvvIjlpI3liLvmrrXvvIkKLSBbIF0g5Y2VIEFnZW50IOaMgeWFqOmDqOW3peWFt+OAgeecn+WunuWPluivgeW5tueZu+iusCBFVgotIFsgXSByZXBvcnRfZHJhZnQg57uT6K666YO95bimIFtFVi0qXQotIFsgXSDlm57mtYHml7blop7ph4/ooaXor4HjgIHlpI3nlKjlt7LmnIkgZXZpZGVuY2VfaWQKLSBbIF0gYHN1YmFnZW50c19lbmFibGVkYCDliIfmjaLngrnpooTnlZnvvIhBMiDphY3nva7vvIkKCi0tLQoq54mI5pysIEMg54m55b6B77ya5o6S5p+l5YWo6Z2gIuWkjeWIuyBjcmVhdGVfYWdlbnQg5qC35L6LIOKGkiDmlLnpgKDmiJDmjIHlt6Xlhbcr55m76K6w6K+B5o2uIOKGkiDoh6rnoJTlj7DotKbkuI7lm57mtYEi77yM56ys5LiA5Liq6IO96Ieq5bex5Y+W6K+B55qEIEFnZW50IOS7juWumOaWueagt+S+i+mVv+WHuuadpeOAgioK</script>
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNyDCtyDmjpLmn6XnroDniYjvvIjljZUgQWdlbnQg55u06L+e5bel5YW377yJKyDor4Hmja7lj7DotKYg4oCUIOeJiOacrCBDCgo+IOe8luaOkueQhuW/te+8mvCfn6HlnKjmnKzpobnnm67nnJ/lrp7ku6PnoIHkuIrmlLnpgKDvvIjmioogYGRlZmluZXRpb25zLnB5YCDph4zourrnnYDmsqHmjqXnmoTlt6XlhbfnnJ/mraPmjqXov5vlm77vvJvmioogTTQg55qE5Y2V5qyh5bel5YW36LCD55So5pS55oiQIGNyZWF0ZV9hZ2VudCDnmoQgUmVBY3Qg5b6q546v77yJ4oaSIPCflLToh6rnoJTor4Hmja7lj7DotKbkuI7lm57mtYHooaXor4HjgIIqKuacrOWunueOsOawuOS5heS/neeVmeS4uua2iOiejSBBMu+8iOWOuyBzdWJhZ2VudCDlr7nnhafnu4TvvInjgIIqKgoKKirmnKzmqKHlnZfnmoTog73lipvovrnnlYzvvIjlhYjlr7npvZDvvIkqKgotICoq5YWl5Y+j5pivIE01IOeahOiHquW7uiBGYXN0QVBJ77yM56uv5Y+jIDgwMDAqKu+8m2NoZWNrcG9pbnRlciDlt7LlsLHkvY3vvIzlj6/ku6Xku44gYHJ1bnMvY2hlY2twb2ludHMuZGJgIOeciyBzdGF0ZeOAggotICoq5pys5qih5Z2X5pivIjcg5Liq5bel5YW35YWo6YOo5o6l5YWlIueahOaXtueCuSoq44CC5b2T5YmN55yf5a6e54q25Ya15b+F6aG75YWI6K6k5riF77yaCiAgfCDlt6XlhbcgfCBgZGVmaW5ldGlvbnMucHlgIOmHjOacieWumuS5ieWQlyB8IOWbvumHjCBiaW5kIOS6huWQlyB8IOacrOaooeWdl+imgeWBmuS7gOS5iCB8CiAgfC0tLXwtLS18LS0tfC0tLXwKICB8IGBxdWVyeV9tZXRyaWNzYCB8IOaciSB8ICoq5beyIGJpbmQqKu+8iE0zIOi1t++8iSB8IOS/neaMgSB8CiAgfCBgcXVlcnlfbG9nc2AgfCDmnIkgfCDlkKYgfCAqKlQ3LjIg5o6l6L+bIHRvb2xzIOWIl+ihqOW5tuecn+Wunuiwg+S4gOasoSoqIHwKICB8IGBxdWVyeV90cmFjZWAgfCDmnIkgfCDlkKYgfCAqKlQ3LjIg5o6l6L+bIHRvb2xzIOWIl+ihqOW5tuecn+Wunuiwg+S4gOasoSoqIHwKICB8IGBxdWVyeV9jbWRiYCB8IOaciSB8IOWQpiB8ICoqVDcuMiDmjqXov5sgdG9vbHMg5YiX6KGo5bm255yf5a6e6LCD5LiA5qyhKiogfAogIHwgYHF1ZXJ5X2NoYW5nZXNgIHwgKirmsqHmnInvvIzlrprkuYnpg73opoHmlrDlhpkqKiB8IOWQpiB8ICoqVDcuMiDmlrDlhpnlrprkuYkgKyDmjqXlhaUgKyDnnJ/lrp7osIPkuIDmrKEqKiB8CiAgfCBgcXVlcnlfbWV0cmljc19yYXdg77yIPSDorqHliJLph4znmoQgYHJhd19wcm9tcWxg77yJIHwg5pyJIHwg5ZCmIHwgKipUNy40IOWNleeLrOaOpeWFpe+8jOi1sOeLrOeri+mihOeulyArIOWuoeiuoemrmOS6rioqIHwKICB8IGBxdWVyeV9sb2dzX3Jhd2DvvIg9IOiuoeWIkumHjOeahCBgcmF3X2xvZ3FsYO+8iSB8ICoq5rKh5pyJ77yM5a6a5LmJ6YO96KaB5paw5YaZKiogfCDlkKYgfCAqKlQ3LjQg5paw5YaZ5a6a5LmJICsg5o6l5YWlKiogfAotIOayoeacieS7u+S9leS4gOatpeWPr+S7peWBh+iuviLlt6Xlhbfpg73lt7Lnu4/og73nlKgi4oCU4oCUVDcuMyDnmoTljZUgQWdlbnQg5LmL5omA5Lul6IO9IuaMgeWFqOmDqOWPquivu+W3peWFtyLvvIzmmK/lm6DkuLogVDcuMi9UNy40IOWFiOaKiuWug+S7rOS4gOS4quS4quaOpei/m+adpeW5tuWQhOecn+Wunuiwg+eUqOi/h+S4gOasoeOAggoKIyMg5a2m5a6M5pys5qih5Z2X5L2g6IO95YGa5Yiw55qEIDQg5Lu25LqLCjEuIOaKiiBgZGVmaW5ldGlvbnMucHlgIOmHjOW3suWGmeWlveS9huS7juayoeiiq+eUqOi/h+eahOW3peWFt+ecn+ato+aOpei/m+Wbvu+8jOW5tuWQhOiHquecn+Wunuiwg+eUqOS4gOasoeaLv+WIsOecn+aVsOaNru+8iOWQq+aWsOWGmSBgcXVlcnlfY2hhbmdlc2DvvInjgIIKMi4g55So5LiA5Liq5oyB5pyJ5YWo6YOo5Y+q6K+75bel5YW355qE5Y2VIEFnZW5077yIUmVBY3Qg5b6q546v77yJ5oqK5LiA5qyh55yf5a6e5ZGK6K2m5p+l5Yiw5pyJ57uT6K6644CCCjMuIOiuqSBBZ2VudCDmr4/mrKHlj5bor4Hpg73miorlhbPplK7nu5PmnpzmjInmoLzlvI/nmbvorrDkuLrluKbnvJblj7fnmoTor4Hmja7vvIhFVi1NLTAwMeKApu+8ie+8jOiQveebmOWPr+WbnuaUvu+8jOe7k+iuuuW/heW8lSBgW0VWLSpdYOOAggo0LiDmioogcmF3IOmAmumBk++8iFByb21RTC9Mb2dRTCDpgIPnlJ/oiLHvvInkvZzkuLoqKuWPl+mZkOiDveWKmyoq5Y2V54us5o6l5YWl77ya54us56uL6aKE566X44CB5a6h6K6h6auY5Lqu44CBcHJvbXB0IOaYjuekuiLmqKHmnb/kuI3lpJ/nlKjmiY3lh4bnlKgi44CCCgojIyDmnKzmqKHlnZfkuqTku5jnianmuIXljZXvvIjmlofku7bot6/lvoTnuqfvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvdG9vbHMvZGVmaW5ldGlvbnMucHlg77yIKirmlLnpgKAqKu+8muaWsOWiniBgbWFrZV9xdWVyeV9jaGFuZ2VzYCArIGBtYWtlX3F1ZXJ5X2xvZ3NfcmF3YCDkuKTkuKrlrprkuYnvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvdG9vbHMvcmVnaXN0cnkucHlg77yIKirmlrDlu7oqKu+8mmBtYWtlX3RlbXBsYXRlX3Rvb2xzKGNsaWVudClgIC8gYG1ha2VfcmF3X3Rvb2xzKGNsaWVudClg77yM5LiA5aSE6KOF6YWN5L6bIE03IOWNlSBBZ2VudCDkuI4gTTEwIHN1YmFnZW50IOWFseeUqO+8iQotIGBpcmlzLWFnZW50LXBsYXRmb3JtL3NyYy9hZ2VudC9ldmlkZW5jZS5weWDvvIgqKuaWsOW7uioq77yaYEV2aWRlbmNlU3RvcmVg77yJCi0gYGlyaXMtYWdlbnQtcGxhdGZvcm0vc3JjL2FnZW50L2ludmVzdGlnYXRvci5weWDvvIgqKuaWsOW7uioq77ya5Y2VIEFnZW50IOaOkuafpe+8jOa2iOiejSBBMiDnmoTmraPlvI/lrp7njrDvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvbm9kZXMvaW52ZXN0aWdhdGUucHlg77yIKirmlLnpgKAqKu+8muS7jiBNNCDnmoQi5LiA5qyhIHF1ZXJ5X21ldHJpY3Mi5o2i5oiQ6LCD5Y2VIEFnZW5077yJCi0gYGlyaXMtYWdlbnQtcGxhdGZvcm0vc3JjL2FnZW50L3N0YXRlLnB5YO+8iCoq5pS56YCgKirvvJrmlrDlop4gYFJjYVJlcG9ydGDvvIkKLSBgcnVucy9pbmNpZGVudHMve2lkfS9ldmlkZW5jZS9g44CBYHJ1bnMvaW5jaWRlbnRzL3tpZH0vcmVwb3J0X2RyYWZ0Lm1kYO+8iOi/kOihjOaXtuS6p+eJqe+8iQoKLS0tCgojIyDku7vliqEgVDcuMSDCtyDor4Hmja7lj7DotKYgRXZpZGVuY2VTdG9yZQoKKippZCoq77yaVDcuMSDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk03IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrlhpnkuIDkuKrog73mjInnsbvlnovnvJblj7fjgIHmjIkgwqcwLjYg5qC85byP6JC955uY44CB5LiU5aSN55SoIE01IOmYsuepv+i2iuagoemqjOeahOivgeaNruWPsOi0puOAggoKKirliY3nva7nn6Xor4bvvIjiiaQyIOaWsOamguW/te+8iSoqCi0gKiror4Hmja7lj7DotKbvvIjlj6/lm57mlL7lj5bor4HvvIkqKgogIDEuIOavj+asoeW3peWFt+WPluivge+8jOaKiiLmnaXmupAgKyDmkZjopoEgKyDlhbPplK7mkZjlvZUi5YaZ5oiQ5LiA5Lu95bim57yW5Y+355qEIE1hcmtkb3duIOaWh+S7tuOAggogIDIuIOe7k+iuuuS4jeWGjemdoCBBZ2VudCDnmoTorrDlv4bvvIzogIzmmK/pnaAqKuW8leeUqOe8luWPtyoq5pSv5pKR77ya5oql5ZGK6YeM5YaZIGBbRVYtTS0wMDFdYO+8jOS7u+S9leS6uumDveiDvee/u+WIsOmCo+S7veaWh+S7tuWkjeaguOOAggogIDMuIOi/meaYryBNOSDlj43lubvop4npqozmlLbnmoTlnLDln7rigJTigJRNOSDnmoTnoa7lrprmgKfpooTmo4DlsLHmmK/ljrsgYGV2aWRlbmNlL2Ag6YeM5p+l6L+Z5Lqb57yW5Y+35a2Y5LiN5a2Y5Zyo44CCCiAgNC4gKkphdmEg57G75q+UKu+8mue7k+aehOWMlueahOWuoeiuoeaXpeW/lyArIOmZhOS7tu+8jOavj+adoeacieWUr+S4gCBpZCDlj6/muq/mupDjgIIKICA1LiDwn5OW77yI6Ieq56CU77yb5qC85byP6KeBIGAwMC1leGVjdXRpb24tcGxhbi5tZGAgwqcwLjbvvIkKLSAqKuiQveebmOi3r+W+hOWkjeeUqCBNNSDnmoQgYGluY2lkZW50X2RpcigpYCoqCiAgMS4g6K+B5o2u5Y+q6IO95YaZ6L+bIGBydW5zL2luY2lkZW50cy97aWR9L2V2aWRlbmNlL2Ag5a2Q55uu5b2V44CCCiAgMi4gKirkuI3opoHlnKjov5nph4zlho3lhpnkuIDlpZfot6/lvoTmoKHpqowqKuKAlOKAlE01IOeahCBgcGF0aHMuaW5jaWRlbnRfZGlyKClgIOW3sue7j+WBmuS6hiLnmb3lkI3ljZXmraPliJkgKyBgcmVzb2x2ZSgpYCDliY3nvIDmr5Tlr7ki5Lik5bGC77yM55u05o6l55So5a6D5b2T5Z+655uu5b2V44CCCiAgMy4g5pys5qih5Z2X6KaB5paw5aKe55qE5pivKirmlofku7blkI3nu7TluqYqKueahOagoemqjO+8mmBldmlkZW5jZV9pZGAg5Lmf5piv5ou86L+b6Lev5b6E55qE77yM5ZCM5qC36KaB6L+H55m95ZCN5Y2V5q2j5YiZIGBeRVYtW01MVFNdLVxkezN9JGDjgIIKICA0LiAqSmF2YSDnsbvmr5Qq77ya5Z+655uu5b2V55qE5a6J5YWo562W55Wl55Sx5bmz5Y+w5bGC57uf5LiA5o+Q5L6b77yM5Lia5Yqh5bGC5Y+q6LSf6LSj6Ieq5bex6YKj5LiA5q615paH5Lu25ZCN55qE5ZCI5rOV5oCn44CCCgojIyMg8J+foSDnrKwgMSDmrrUgwrcg5pS56YCg77yI5ZyoIE01IOeahOiQveebmOWcsOWfuuS4iumVv+WHuuWPsOi0pu+8iQoK5YaZIGBzcmMvYWdlbnQvZXZpZGVuY2UucHlg77yM562+5ZCN5YWI5a6a5q2777yaCgpgYGBweXRob24KY2xhc3MgRXZpZGVuY2VTdG9yZToKICAgICIiIuS4gOasoeS6i+aVheeahOivgeaNruWPsOi0pu+8jOaJgOacieivgeaNruiQveWcqCBydW5zL2luY2lkZW50cy97aW5jaWRlbnRfaWR9L2V2aWRlbmNlLyDkuIsuIiIiCgogICAgZGVmIF9faW5pdF9fKHNlbGYsIGluY2lkZW50X2lkOiBzdHIpIC0+IE5vbmU6CiAgICAgICAgIiIi5Z+655uu5b2V5Y+W6IeqIE01IOeahCBwYXRocy5pbmNpZGVudF9kaXIoaW5jaWRlbnRfaWQp77yM6Lev5b6E5a6J5YWo55Sx5a6D5L+d6K+BLiIiIgoKICAgIGRlZiBuZXdfaWQoc2VsZiwga2luZDogTGl0ZXJhbFsiTSIsICJMIiwgIlQiLCAiUyJdKSAtPiBzdHI6CiAgICAgICAgIiIi5oyJ57G75Z6L5YiG6YWN5LiL5LiA5Liq57yW5Y+377yaTT1tZXRyaWNzIC8gTD1sb2dzIC8gVD10cmFjZSAvIFM95YW25LuWKGNtZGIvY2hhbmdlcynjgIIKICAgICAgICDov5Tlm57lvaLlpoIgJ0VWLU0tMDAxJ+OAguW6j+WPt+mdoCoq5omr5o+P5bey5pyJ5paH5Lu25ZCNKirmsYLmnIDlpKflgLwgKzHvvIzkuI3og73nlKjlhoXlrZjorqHmlbDlmajigJTigJQKICAgICAgICDov5vnqIvph43lkK/vvIhNNSDnmoQga2lsbC1yZXN1bWUg5piv5bi45oCB77yJ5ZCO5YaF5a2Y6K6h5pWw5Lya5b2S6Zu277yM57yW5Y+35bCx5Lmx5LqG44CCIiIiCgogICAgZGVmIHdyaXRlKAogICAgICAgIHNlbGYsCiAgICAgICAgZXZpZGVuY2VfaWQ6IHN0ciwKICAgICAgICBzb3VyY2U6IHN0ciwgICAgICAgICMg5Y+W6K+B5p2l5rqQ77yM5b2i5aaCICJxdWVyeV9tZXRyaWNzKHRlbXBsYXRlPWVycm9yX3JhdGUsc2VydmljZT1wbS1xdWVzdGlvbix3aW5kb3c9MTgwMCkiCiAgICAgICAgYWdlbnRfcm9sZTogc3RyLCAgICAjIOWPluivgeiAheinkuiJsu+8jE03IOaBkuS4uiAiaW52ZXN0aWdhdGUi77ybTTEwIOi1t+aYr+WQhCBzdWJhZ2VudCDnmoTop5LoibLlkI0KICAgICAgICBkZWdyYWRlZDogYm9vbCwgICAgICMg572R5YWz5L+h5bCB55qEIGRlZ3JhZGVkIOWOn+agt+W4pui/m+adpe+8jOS4jeiuuOecgQogICAgICAgIHRydW5jYXRlZDogYm9vbCwgICAgIyDnvZHlhbPkv6HlsIEgbWV0YS50cnVuY2F0ZWQg5Y6f5qC35bim6L+b5p2l77yM5LiN6K6455yBCiAgICAgICAgc3VtbWFyeTogc3RyLCAgICAgICAjIOKJpDMg5Y+l55qE57uT6K665byP5pGY6KaB77yIInBtLXF1ZXN0aW9uIOeahCBwOTkg5ZyoIDEwOjEyIOS7jiA4MG1zIOa2qOWIsCAyLjFzIu+8iQogICAgICAgIGV4Y2VycHQ6IHN0ciwgICAgICAgIyDlhbPplK7mlbDmja7mkZjlvZXvvIzkv53nlZnog73mlK/mkpEgc3VtbWFyeSDnmoTmnIDlsI/niYfmrrXvvIzkuI3opoHotLTmlbTkuKrlk43lupQKICAgICkgLT4gUGF0aDoKICAgICAgICAiIiLlhpnkuIDku73or4Hmja7mlofku7blubbov5Tlm57ot6/lvoTjgILmlofku7bmoLzlvI8gPSBZQU1MIGZyb250bWF0dGVyICsg5q2j5paH77yM6KeB5LiL44CCIiIiCgogICAgZGVmIGxpc3RfaWRzKHNlbGYpIC0+IGxpc3Rbc3RyXToKICAgICAgICAiIiLliJflh7rmnKzkuovmlYXlt7LmnInnmoTlhajpg6jor4Hmja7nvJblj7fvvIxNOSDnmoTnoa7lrprmgKfpooTmo4DlkowgTTEwIOeahCBsZWFkIOaRmOimgeW3peWFt+mDveeUqOWugy4iIiIKCiAgICBkZWYgcmVhZChzZWxmLCBldmlkZW5jZV9pZDogc3RyKSAtPiBzdHI6CiAgICAgICAgIiIi6K+75LiA5Lu96K+B5o2u5YWo5paH44CCTTkgdmVyaWZ5IOeahCBMTE0g5q616Z2g5a6D5ou/5Yiw6K+B5o2u5Y6f5paHLiIiIgpgYGAKCuivgeaNruaWh+S7tuagvOW8j++8iMKnMC4277yJ77yaCgpgYGBtYXJrZG93bgotLS0KZXZpZGVuY2VfaWQ6IEVWLU0tMDAxCnNvdXJjZTogcXVlcnlfbWV0cmljcyh0ZW1wbGF0ZT1wOTksc2VydmljZT1wbS1xdWVzdGlvbix3aW5kb3c9MTgwMCkKYWdlbnRfcm9sZTogaW52ZXN0aWdhdGUKdHM6IDIwMjYtMDgtMDVUMTA6MTQ6MjJaCmRlZ3JhZGVkOiBmYWxzZQp0cnVuY2F0ZWQ6IGZhbHNlCi0tLQoKcG0tcXVlc3Rpb24g55qEIHA5OSDml7blu7blnKggMTA6MTIg5LuOIH44MG1zIOmYtui3g+WIsCB+Mi4xc++8jOS5i+WQjue7tOaMgemrmOS9jeacquWbnuiQveOAggoKfCB0cyB8IHA5OV9tcyB8CnwtLS18LS0tfAp8IDEwOjEwIHwgODIgfAp8IDEwOjEyIHwgMjE0MyB8CnwgMTA6MTQgfCAyMDg4IHwKYGBgCgojIyMg8J+UtCDnrKwgMiDmrrUgwrcg6Ieq56CU77yI57yW5Y+35LiO5paH5Lu25ZCN55qE5a6J5YWo5qCh6aqM77yJCgoqKuS7juepuuaWh+S7tioq5YaZ5qCh6aqM77yaCjEuIGBldmlkZW5jZV9pZGAg5b+F6aG75Yy56YWNIGBeRVYtW01MVFNdLVxkezN9JGDvvIzlkKbliJnmipsgYFZhbHVlRXJyb3Jg4oCU4oCU5a6D5Lya6KKr5ou86L+b5paH5Lu25ZCN77yM5bGe5LqO6Lev5b6E55qE5LiA6YOo5YiG77ybCjIuIOacgOe7iOWGmeWFpei3r+W+hCBgcmVzb2x2ZSgpYCDlkI7lv4Xpobvku43lnKggYGluY2lkZW50X2RpcihpbmNpZGVudF9pZClgIOS5i+WGhe+8iE01IOeahOWfuuebruW9leagoemqjOaMoeS9j+S6hiBpbmNpZGVudF9pZO+8jOi/meS4gOWxguaMoeS9jyBldmlkZW5jZV9pZO+8ie+8mwozLiDoh6rmtYvkuInnp43mlLvlh7vpg73ooqvmi5LvvJpgLi4vLi4vZXRjL3Bhc3N3ZGDjgIHnu53lr7not6/lvoQgYC90bXAveGDjgIHmjIflkJHlpJbpg6jnmoTova/pk77jgIIKCioq6JC956yU6aG65bqPKioKMS4g5YaZIGBFdmlkZW5jZVN0b3JlLl9faW5pdF9fYCArIGBuZXdfaWRg77yM5YWI5Y+q5YGa57yW5Y+377yM5LiN6JC955uY44CCCjIuIOi/nue7rSBgbmV3X2lkKCJNIilgIOS4pOasoe+8jOehruiupOaLv+WIsCBgRVYtTS0wMDFgL2BFVi1NLTAwMmDvvJvlho0gYG5ld19pZCgiTCIpYCDnoa7orqTmmK8gYEVWLUwtMDAxYO+8iOaMiSBraW5kIOWIhuWIq+mAkuWinu+8jOWIq+a3t++8ieOAggozLiDlhpkgYHdyaXRlYO+8jOiQveS4gOS7veW4piBmcm9udG1hdHRlciDnmoTmlofku7bvvIzogonnnLzmoLjlr7kgNiDkuKogZnJvbnRtYXR0ZXIg5a2X5q616b2Q5YWo44CCCjQuICoq6YeN5ZCv6L+b56iL5YaNIGBuZXdfaWQoIk0iKWAqKu+8jOehruiupOaLv+WIsOeahOaYryBgRVYtTS0wMDNgIOiAjOS4jeaYryBgRVYtTS0wMDFg77yI6K+B5piO5piv5omr5paH5Lu25LiN5piv5YaF5a2Y6K6h5pWw77yJ44CCCjUuIOiHqueglOagoemqjO+8mueUqCBgRVYtTS0uLi94YOOAgWAvdG1wL3hg44CB6L2v6ZO+5LiJ56eN6L6T5YWl5ZCE6K+V5LiA5qyh77yM56Gu6K6k6YO95oqb5byC5bi45LiU5rKh6JC955uY44CCCjYuIOWGmSBgbGlzdF9pZHNgL2ByZWFkYO+8jOS+myBNOSDkvb/nlKjjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g57yW5Y+35oyJIGtpbmQg5YiG5Yir6YCS5aKe77yITS9ML1QvU++8ie+8jOWIq+eUqOS4gOS4quWFqOWxgOiuoeaVsOWZqOOAggotIGBuZXdfaWRgIOaJq+aWh+S7tuiAjOS4jeaYr+WGheWtmOiuoeaVsOKAlOKAlE01IOeahCBraWxsLXJlc3VtZSDkvJrorqnlhoXlrZjorqHmlbDlmajlvZLpm7bjgIIKLSDov5nkuKrnsbvmmK8gTTnvvIjpooTmo4Dmn6XnvJblj7fvvIkvTTEw77yIc3ViYWdlbnQg5YWx55So5Y+w6LSm77yJ55qE5YWx5ZCM5L6d6LWW77yMKirmoLzlvI/ljbPlpZHnuqYqKu+8jOWFiOWumuatu+WGjeW+gOS4i+i1sOOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOe8luWPt+S5se+8muehruiupCBgbmV3X2lkYCDmmK/miavlt7LmnInmlofku7blkI3msYLmnIDlpKflgLzvvIzkuJTmiavnmoTmmK/mnKwgaW5jaWRlbnQg55uu5b2V5LiN5piv5YWo5bGA44CCCi0g5qCh6aqM5rKh55Sf5pWI77ya56Gu6K6k5q+U6L6D55qE5pivIGBQYXRoLnJlc29sdmUoKWAg5LmL5ZCO55qE5a+56LGh5YmN57yA5YWz57O777yM5LiN5piv5a2X56ym5LiyIGBzdGFydHN3aXRoYO+8iOi9r+mTvumdoOWtl+espuS4suavlOWvueaMoeS4jeS9j++8ieOAggotIOinhumike+8muivgeaNruWPsOi0puaXoOWvueWPo+inhumike+8jOS7peiHqueglOS4uuS4u+OAggotIOmXriBBSe+8muOAjFB5dGhvbiDph4zmiJHopoHkv53or4Hlhpnmlofku7bot6/lvoTlv4XpobvokL3lnKjmn5DkuKrln7rnm67lvZXlhoXjgIHpmLIgYC4uYCDnqb/otorlkozova/pk77pgIPpgLjvvIzmraPnoa7nmoTmoKHpqozlhpnms5XmmK/ku4DkuYjvvJ/nu5nmoKHpqozlh73mlbAgKyAzIOS4quaUu+WHu+eUqOS+i+OAguOAjQoKKirnnJ/lrp7pqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCmNkIGlyaXMtYWdlbnQtcGxhdGZvcm0KIyDmnKzku7vliqHlgY/lupPvvIznlKggUkVQTCDnm7TmjqXpqbHliqjnnJ/lrp7nsbvvvIjkuI3lhpnkuIDmrKHmgKfohJrmnKzmlofku7bvvIkKdXYgcnVuIHB5dGhvbiAtYyAiCmZyb20gYWdlbnQuZXZpZGVuY2UgaW1wb3J0IEV2aWRlbmNlU3RvcmUKcyA9IEV2aWRlbmNlU3RvcmUoJ2luYy0yMDI2MDgwNS0wMDEnKQpwcmludChzLm5ld19pZCgnTScpLCBzLm5ld19pZCgnTScpLCBzLm5ld19pZCgnTCcpKQoiCiMg5pyf5pyb77yaRVYtTS0wMDEgRVYtTS0wMDIgRVYtTC0wMDEKCmxzIHJ1bnMvaW5jaWRlbnRzL2luYy0yMDI2MDgwNS0wMDEvZXZpZGVuY2UvCmhlYWQgLTEyIHJ1bnMvaW5jaWRlbnRzL2luYy0yMDI2MDgwNS0wMDEvZXZpZGVuY2UvRVYtTS0wMDEubWQgICAjIDYg5LiqIGZyb250bWF0dGVyIOWtl+autem9kOWFqAoKIyDlvILluLjot6/lvoTvvJrkuInnp43nqb/otorpg73opoHooqvmi5LkuJTkuI3okL3nm5gKdXYgcnVuIHB5dGhvbiAtYyAiCmZyb20gYWdlbnQuZXZpZGVuY2UgaW1wb3J0IEV2aWRlbmNlU3RvcmUKcyA9IEV2aWRlbmNlU3RvcmUoJ2luYy0yMDI2MDgwNS0wMDEnKQpmb3IgYmFkIGluIFsnRVYtTS0uLi8uLi94JywgJy90bXAveCcsICdFVi1NLTAwMS8uLi8uLi8uLi9ldGMvcGFzc3dkJ106CiAgICB0cnk6IHMud3JpdGUoYmFkLCBzb3VyY2U9J3gnLCBhZ2VudF9yb2xlPSdpbnZlc3RpZ2F0ZScsIGRlZ3JhZGVkPUZhbHNlLCB0cnVuY2F0ZWQ9RmFsc2UsIHN1bW1hcnk9J3gnLCBleGNlcnB0PSd4JykKICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZTogcHJpbnQoJ3JlamVjdGVkOicsIGJhZCwgdHlwZShlKS5fX25hbWVfXykKIgpgYGAK5Yik5a6a54m55b6B77yaRVYg57yW5Y+35oyJ57G75Z6L6YCS5aKe5LiU6YeN5ZCv5ZCO5LiN5Zue6YCA77ybZnJvbnRtYXR0ZXIgNiDlrZfmrrXpvZDlhajvvJvkuInnp43nqb/otorlnYfooqvmi5LjgILkvp3otZbnnJ/lrp7lpJbpg6jmnI3liqHvvJrml6DvvIjnuq/mnKzlnLDvvIzkvYYgVDcuMyDotbfor4Hmja7lhoXlrrnlhajpg6jmnaXoh6rnnJ/lrp7lt6XlhbfosIPnlKjvvInjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0gRVYg57yW5Y+35oyJIGtpbmQg6YCS5aKe77yM5LiUKirph43lkK/ov5vnqIvlkI7kuI3lm57pgIAqKu+8iOaJq+aWh+S7tuiAjOmdnuWGheWtmOiuoeaVsO+8iQotIFsgXSDokL3nm5jmoLzlvI/lkIggwqcwLjbvvIxmcm9udG1hdHRlciDlkKsgYGV2aWRlbmNlX2lkL3NvdXJjZS9hZ2VudF9yb2xlL3RzL2RlZ3JhZGVkL3RydW5jYXRlZGAg5YWt5a2X5q61Ci0gWyBdIOWfuuebruW9leWkjeeUqCBNNSDnmoQgYGluY2lkZW50X2RpcigpYO+8jOayoeaciemHjeWkjeWunueOsOS4gOWll+i3r+W+hOagoemqjAotIFsgXSBgZXZpZGVuY2VfaWRgIOeZveWQjeWNleato+WImeeUn+aViO+8jGAuLmAv57ud5a+56Lev5b6EL+i9r+mTvuS4ieenjeepv+i2iuWdh+iiq+aLkgotIFsgXSBgbGlzdF9pZHNgL2ByZWFkYCDlj6/nlKjvvIhNOSDnmoTkvp3otZbvvIkKCi0tLQoKIyMg5Lu75YqhIFQ3LjIgwrcg5o6l5YWl5Ymp5L2ZIDQg5Liq5qih5p2/5bel5YW3CgoqKmlkKirvvJpUNy4yIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTcg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8muaKiiBgcXVlcnlfbG9nc2AvYHF1ZXJ5X3RyYWNlYC9gcXVlcnlfY21kYmAg5LuOIuWumuS5ieWGmeWlveS6huS9huayoeS6uueUqCLlj5jmiJAi5Zu+6YeM55yf5a6e6LCD55So6L+HIu+8jOW5tuihpeWGmee8uuWkseeahCBgcXVlcnlfY2hhbmdlc2DjgIIKCioq5YmN572u55+l6K+G77yI4omkMSDmlrDmpoLlv7XvvIkqKgotICoq5bel5YW36KOF6YWN5LiOIuiiq+WumuS5iSLiiaAi6KKr5o6l5YWlIioqCiAgMS4gYEB0b29sYCDoo4XppbDlmajlj6rmmK/miorlh73mlbDlj5jmiJDkuIDkuKrlj6/ooqvmqKHlnovosIPnlKjnmoTlr7nosaHvvJvmqKHlnovog73kuI3og73nnIvop4HlroPvvIzlj5blhrPkuo7mnInmsqHmnInlh7rnjrDlnKggYGJpbmRfdG9vbHMoWy4uLl0pYCDmiJYgYGNyZWF0ZV9hZ2VudCh0b29scz1bLi4uXSlgIOeahOWIl+ihqOmHjOOAggogIDIuIOW9k+WJjSBgZGVmaW5ldGlvbnMucHlgIOmHjOaciSA1IOS4qiBmYWN0b3J577yM5L2GIGBncmFwaC5weWAg5Y+qIGJpbmQg5LqGIGBtYWtlX3F1ZXJ5X21ldHJpY3NgIOS4gOS4quKAlOKAlOWFtuS9mSA0IOS4quS7juayoeiiq+ecn+Wunuiwg+eUqOi/h++8jCoq5Y+C5pWw5aWR57qm5pyJ5rKh5pyJ5a+55LiKIE0yIOe9keWFs+aYr+acque7j+mqjOivgeeahCoq44CCCiAgMy4g5omA5Lul5pys5Lu75Yqh5LiN5pivIuaUueS4quWIl+ihqCLvvIzogIzmmK8i6YCQ5Liq55yf5a6e6LCD5LiA5qyh77yM56Gu6K6k6L+U5Zue55yf5pWw5o2u44CB5a2X5q615ZCN5a+55b6X5LiKIuOAggogIDQuICpKYXZhIOexu+avlCrvvJrlhpnkuoYgRmVpZ24g5o6l5Y+j5LiN562J5LqO6IGU6LCD6L+H77yb5LiK57q/5YmN5q+P5Liq5o6l5Y+j6YO95b6X55yf5omT5LiA5qyh44CCCgojIyMg8J+foSDnrKwgMSDmrrUgwrcg5pS56YCg77yI6YCQ5Liq5o6l5YWlICsg6YCQ5Liq55yf5omT77yJCgoxLiAqKuaWsOW7uiBgdG9vbHMvcmVnaXN0cnkucHlgKirvvIzmiooi57uZ5LiA5LiqIEdhdGV3YXlDbGllbnTjgIHov5Tlm57kuIDnu4Tlt6Xlhbci6L+Z5Lu25LqL6ZuG5Lit5Yiw5LiA5aSE77yITTEwIOeahCBzdWJhZ2VudCDopoHmjInln5/mjJHlt6XlhbfvvIzpnaDov5nph4zliIbnu4TvvInvvJoKCmBgYHB5dGhvbgpkZWYgbWFrZV90ZW1wbGF0ZV90b29scyhjbGllbnQ6IEdhdGV3YXlDbGllbnQpIC0+IGxpc3RbQmFzZVRvb2xdOgogICAgIiIiNSDkuKrmqKHmnb/pgJrpgZPlt6XlhbfvvIzotbDnvZHlhbMgcGVyLWluY2lkZW50IOaooeadv+mihOeul++8iOS4iumZkCA0MO+8iS4iIiIKICAgIHJldHVybiBbCiAgICAgICAgbWFrZV9xdWVyeV9tZXRyaWNzKGNsaWVudCksCiAgICAgICAgbWFrZV9xdWVyeV9sb2dzKGNsaWVudCksCiAgICAgICAgbWFrZV9xdWVyeV90cmFjZShjbGllbnQpLAogICAgICAgIG1ha2VfcXVlcnlfY21kYihjbGllbnQpLAogICAgICAgIG1ha2VfcXVlcnlfY2hhbmdlcyhjbGllbnQpLCAgICMg5pys5Lu75Yqh5paw5YaZCiAgICBdCgoKZGVmIG1ha2VfcmF3X3Rvb2xzKGNsaWVudDogR2F0ZXdheUNsaWVudCkgLT4gbGlzdFtCYXNlVG9vbF06CiAgICAiIiIyIOS4qiByYXcg6YCa6YGT5bel5YW377yM6LWw54us56uL6aKE566X77yI5LiK6ZmQIDXvvInjgIJUNy40IOaJjeaOpei/myBBZ2VudO+8jOi/memHjOWFiOeVmeS9jS4iIiIKICAgIHJldHVybiBbbWFrZV9xdWVyeV9tZXRyaWNzX3JhdyhjbGllbnQpLCBtYWtlX3F1ZXJ5X2xvZ3NfcmF3KGNsaWVudCldCmBgYAoKMi4gKirmlrDlhpkgYG1ha2VfcXVlcnlfY2hhbmdlc2AqKu+8iGBkZWZpbmV0aW9ucy5weWAg6YeM55uu5YmN5a6M5YWo5rKh5pyJ77yJ77yM54Wn546w5pyJIDQg5Liq55qE5ZCM5LiA5aWX5LiJ5Lu25aWX77ya5LiA5LiqIFB5ZGFudGljIGBhcmdzX3NjaGVtYWAgKyDkuIDkuKogYEB0b29sYCDljIXoo4UgKyDlhoXpg6ggYGNsaWVudC5jYWxsKC4uLilg77yM5Y+C5pWw5a2X5q6154Wn5oqEIE0yIGBkb2NzL3Rvb2wtY29udHJhY3QubWRgIOmHjCBjaGFuZ2VzIOaOp+WItuWZqOeahOWFpeWPgu+8iCoq6ZyA5qC45a6eKirvvJrot6/lvoTkuI7lrZfmrrXlkI3ku6UgTTIg5a6e6ZmF5a6e546w5Li65YeG77yM5bi46KeB5b2i54q25pivIGBzZXJ2aWNlYCArIGB3aW5kb3dgICsg5Y+v6YCJIGBlbmRPZmZzZXRTZWNvbmRzYO+8ieOAgmRvY3N0cmluZyDopoHlhpnmuIXlroPmn6XnmoTmmK8i5pyA6L+R55qE6YWN572uL+WPkeW4g+WPmOabtOiusOW9lSLvvIzku6Xlj4oi5Lu75L2V6K+K5pat6YO95bqU6K+l5YWI6Zeu5LiA5Y+l5pyA6L+R5pS55LqG5LuA5LmIIuOAggozLiAqKumAkOS4quecn+aJkyoq77ya5ZyoIFJFUEwg6YeM57uZ5q+P5Liq5bel5YW35ZCE6LCD5LiA5qyh55yf5a6e572R5YWz77yM5qC45a+55LiJ5Lu25LqL4oCU4oCU4pGgIEhUVFAg6YCa5LqG77yb4pGhIOi/lOWbnuS/oeWwgSBgb2s9dHJ1ZWAg5LiUIGBkYXRhYCDmnInnnJ/lrp7mlbDmja7vvJvikaIg5L2g5YaZ55qEIFB5ZGFudGljIOWtl+auteWQjeWSjOe9keWFs+WunumZheaOpeaUtueahOmpvOWzsOWtl+auteWvueW+l+S4iu+8iOeOsOacieS7o+eggeeUqOeahOaYr+aJi+WGmeaYoOWwhO+8jOWmgiBgdGVtcGxhdGVLZXlgL2BlbmRPZmZzZXRTZWNvbmRzYO+8jOWGmemUmeS6huS4jeS8muaKpemUmeOAgeWPquS8muaLv+WIsOepuuaVsOaNru+8ieOAggo0LiAqKuaOpei/m+Wbvioq77ya5oqKIGBub2Rlcy9pbnZlc3RpZ2F0ZS5weWAg6YeMIE00IOmCo+WPpSBgYmluZF90b29scyhbcXVlcnlfbWV0cmljc10pYCDmjaLmiJAgYGJpbmRfdG9vbHMobWFrZV90ZW1wbGF0ZV90b29scyhjbGllbnQpKWDjgIIKCiMjIyDwn5S0IOesrCAyIOautSDCtyDoh6rnoJTvvIjlt6XlhbfnuqfpooTnrpforqHmlbDmjqXnur/vvIkKCk00IOWGmeeahCBgZ3VhcmQuY2hhcmdlX3Rvb2xfY2FsbChsZWRnZXIsIGVudmVsb3BlLCByYXc9RmFsc2UpYCDliLDnjrDlnKjkuLrmraLlj6rooqsgYHF1ZXJ5X21ldHJpY3NgIOS4gOadoei3r+W+hOiwg+eUqOOAguacrOS7u+WKoeimgeaKiuWug+aOpeWIsCoq5q+P5LiA5Liq5qih5p2/5bel5YW355qE6L+U5Zue6Lev5b6EKirkuIrvvJoKMS4g57uf5LiA5ZyoIGByZWdpc3RyeS5weWAg6YeM5YyF5LiA5bGC77yM6ICM5LiN5piv5ZyoIDUg5LiqIGZhY3Rvcnkg6YeM5ZCE5oqE5LiA6YGN77ybCjIuIOavj+asoeiwg+eUqOWQjiBgY2hhcmdlX3Rvb2xfY2FsbCguLi4pYCDntK/liqAgYHRvb2xfY2FsbHNfdXNlZGDvvIzlubbnlKjkv6HlsIEgYG1ldGEudG9vbF9jYWxsc19yZW1haW5pbmdgIOagoeWHhu+8mwozLiBgY2hlY2tfYnVkZ2V0YCDlnKjmr4/mrKHlt6XlhbfosIPnlKgqKuS5i+WJjSoq5omn6KGM4oCU4oCU6L+Z5LiA5p2hIE00IOW3sue7j+Wumuatu++8jOi/memHjOWPquaYr+aKiuWug+imhuebluWIsOaWsOaOpeWFpeeahCA0IOS4quW3peWFt+S4iuOAggoKKirokL3nrJTpobrluo8qKgoxLiDlu7ogYHJlZ2lzdHJ5LnB5YO+8jOWFiOWPquaUviBNMyDlt7LmnInnmoQgNCDkuKogZmFjdG9yee+8iOS4jeWQqyBgcXVlcnlfY2hhbmdlc2DvvInvvIzot5HkuIDmrKHnoa7orqTmsqHmjqXlnY/jgIIKMi4gUkVQTCDph4zpgJDkuKrnnJ/miZMgYHF1ZXJ5X2xvZ3NgL2BxdWVyeV90cmFjZWAvYHF1ZXJ5X2NtZGJg77yM5oqK6L+U5Zue5L+h5bCB6LS05Ye65p2l5qC45a+55a2X5q6144CCCjMuIOaWsOWGmSBgbWFrZV9xdWVyeV9jaGFuZ2VzYCDnmoQgYXJnc19zY2hlbWEgKyBgQHRvb2xg77yM55yf5omT5LiA5qyh44CCCjQuIOaKiiA1IOS4quW3peWFt+aOpei/myBgaW52ZXN0aWdhdGVgIOiKgueCueeahCBgYmluZF90b29sc2DjgIIKNS4g5o6lIGd1YXJkIOiuoeaVsO+8jOi/nuaJk+iLpeW5suasoeeciyBgdG9vbF9jYWxsc191c2VkYCDkuI7nvZHlhbPnmoQgYHRvb2xfY2FsbHNfcmVtYWluaW5nYCDmmK/lkKbkuIDoh7TjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0gYHF1ZXJ5X3RyYWNlYCDnmoQgYHRyYWNlX2lkYCDkuI3og73lh63nqbrpgKDvvJrlroPmnaXoh6ogYHF1ZXJ5X2xvZ3NgIOi/lOWbnumHjOeahCBgZGlzdGluY3RUcmFjZUlkc2DvvIzpqozmlLbml7bopoHmjInov5nkuKrpobrluo/kuLLotbfmnaXosIPvvIjnnJ/lrp7pk77ot6/mmK8gbG9ncyDihpIgdHJhY2XvvInjgIIKLSBQeWRhbnRpYyDlrZfmrrXlkI3vvIhzbmFrZV9jYXNl77yJ5ZKM572R5YWz5YWl5Y+C77yIY2FtZWxDYXNl77yJ55qE5pig5bCE5piv5omL5YaZ55qE77yM5YaZ6ZSZ5LiN5oql6ZSZ5Y+q6L+U5Zue56m65pWw5o2u4oCU4oCU5q+P5Liq5bel5YW356ys5LiA5qyh6LCD55So5b+F6aG76IKJ55y85qC45a+56L+U5Zue5L2T44CCCi0gYHF1ZXJ5X2NtZGJgIOW6lOivpeaYryoq56ys5LiA5LiqKirooqvosIPnmoTvvJpzZXJ2aWNlIOWQjeWvueS4jeS4iu+8jOWQjumdoiBtZXRyaWNzL2xvZ3MvdHJhY2Ug5YWo5piv56m644CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g5bel5YW36L+U5Zue56m6IGRhdGEg5L2GIGBvaz10cnVlYO+8muWFq+aIkOaYr+Wtl+auteWQjeaYoOWwhOmUmeS6huaIliBzZXJ2aWNlIOWQjeS4jeWcqCBDTURC77yM5YWI55SoIGBxdWVyeV9jbWRiYCDnoa7orqTmnI3liqHlkI3jgIIKLSDnvZHlhbMgNDAw77ya5oqKIGBHYXRld2F5UmVxdWVzdEVycm9yYCDph4zluKblh7rmnaXnmoQgYGJvZHlgIOaJk+WHuuadpe+8jE0yIOeahOS/oeWwgeS8muWGmeaYjuaYr+WTquS4quWPguaVsOS4jeWQiOazleOAggotIOinhumike+8mnZpZGVvLTIgUDEyLTE244CM5pm66IO95L2T5Lit5a6a5LmJ5bel5YW344CN44CCCi0g6ZeuIEFJ77ya44CM5oiR55SoIGBAdG9vbChhcmdzX3NjaGVtYT0uLi4pYCDljIXkuobkuIDkuKogSFRUUCDlt6XlhbfvvIzosIPnlKjov5Tlm54gb2s9dHJ1ZSDkvYYgZGF0YSDmmK/nqbrnmoTvvIzmiJHnmoQgYXJnc19zY2hlbWEg5ZKM572R5YWz5YWl5Y+C5aWR57qm6L+Z5qC377yI6LS05Ye677yJ77yM5oCO5LmI5o6S5p+l5piv5LiN5piv5a2X5q615pig5bCE6ZSZ5LqG77yf44CNCgoqKuecn+WuniBIVFRQIOmqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKY2QgaXJpcy1hZ2VudC1wbGF0Zm9ybQojIOmAkOS4quecn+aJk++8jOehruiupOi/lOWbnuecn+aVsOaNru+8iOS4jeaYryBtb2Nr44CB5LiN5piv56m6IGRhdGHvvIkKdXYgcnVuIHB5dGhvbiAtYyAiCmZyb20gYWdlbnQuY29uZmlnIGltcG9ydCBBZ2VudFJvbGUKZnJvbSBhZ2VudC50b29scy5HYXRld2F5Q2xpZW50IGltcG9ydCBHYXRld2F5Q2xpZW50CmZyb20gYWdlbnQudG9vbHMucmVnaXN0cnkgaW1wb3J0IG1ha2VfdGVtcGxhdGVfdG9vbHMKYyA9IEdhdGV3YXlDbGllbnQoaW5jaWRlbnRfaWQ9J2luYy10Ny1wcm9iZScsIGFnZW50X3JvbGU9QWdlbnRSb2xlLklOVkVTVElHQVRFKQp0b29scyA9IHt0Lm5hbWU6IHQgZm9yIHQgaW4gbWFrZV90ZW1wbGF0ZV90b29scyhjKX0KcHJpbnQodG9vbHNbJ3F1ZXJ5X2NtZGInXS5pbnZva2UoeydzZXJ2aWNlJzogJzxwbS1zdmM+J30pKQpwcmludCh0b29sc1sncXVlcnlfY2hhbmdlcyddLmludm9rZSh7J3NlcnZpY2UnOiAnPHBtLXN2Yz4nLCAnd2luZG93JzogMzYwMH0pKQpsb2dzID0gdG9vbHNbJ3F1ZXJ5X2xvZ3MnXS5pbnZva2UoeydzZXJ2aWNlJzogJzxwbS1zdmM+JywgJ3dpbmRvdyc6IDE4MDB9KQpwcmludChsb2dzKQp0aWQgPSBsb2dzWydkYXRhJ11bJ2Rpc3RpbmN0VHJhY2VJZHMnXVswXSAgICAgICAgICAgICAgIyB0cmFjZV9pZCDmnaXoh6ogbG9nc++8jOS4jeaYr+e8lueahApwcmludCh0b29sc1sncXVlcnlfdHJhY2UnXS5pbnZva2Uoeyd0cmFjZV9pZCc6IHRpZH0pKQoiCiMg5pyf5pyb77yaNSDkuKrlt6XlhbfvvIjlkKsgcXVlcnlfbWV0cmljc++8ieWQhOi/lOWbniBvaz10cnVlIOS4lCBkYXRhIOmdnuepugoKIyDlvILluLjot6/lvoTvvJrnu5nkuIDkuKogQ01EQiDph4zkuI3lrZjlnKjnmoQgc2VydmljZSDihpIg572R5YWzIDQwMO+8jOaKmyBHYXRld2F5UmVxdWVzdEVycm9yIOS4lOS/oeaBr+WPr+ivuwpgYGAK5Yik5a6a54m55b6B77yaNSDkuKrmqKHmnb/lt6XlhbflkITnnJ/lrp7osIPnlKjkuIDmrKHmi7/liLDnnJ/mlbDmja7vvJt0cmFjZV9pZCDmnaXoh6ogbG9ncyDnmoTnnJ/lrp7ov5Tlm57vvJvkuI3lrZjlnKjnmoQgc2VydmljZSDmiqXlj6/or7vplJnor6/jgILkvp3otZbnnJ/lrp7mnI3liqHvvJpNMiDnvZHlhbPjgIFQcm9tZXRoZXVzL0xva2kvVGVtcG8vTmFjb3PjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0gYHJlZ2lzdHJ5Lm1ha2VfdGVtcGxhdGVfdG9vbHNgIOi/lOWbniA1IOS4quW3peWFt++8jGBpbnZlc3RpZ2F0ZWAg6IqC54K55beyIGBiaW5kX3Rvb2xzYCDlhajpg6ggNSDkuKoKLSBbIF0gYG1ha2VfcXVlcnlfY2hhbmdlc2Ag5paw5YaZ5a6M5oiQ77yMYXJnc19zY2hlbWEg5a+56b2QIE0yIOWlkee6pgotIFsgXSA1IOS4quW3peWFt+WQhCoq55yf5a6e6LCD55So6L+H5LiA5qyhKirlubbmi7/liLDpnZ7nqbogZGF0Ye+8iOaciei/lOWbnuS9k+S4uuivge+8iQotIFsgXSBgcXVlcnlfdHJhY2VgIOeahCB0cmFjZV9pZCDlj5boh6ogYHF1ZXJ5X2xvZ3NgIOeahCBgZGlzdGluY3RUcmFjZUlkc2AKLSBbIF0gYGd1YXJkLmNoZWNrX2J1ZGdldGAgLyBgY2hhcmdlX3Rvb2xfY2FsbGAg6KaG55uW5Yiw5YWo6YOoIDUg5Liq5bel5YW377yM5pys5Zyw6K6h5pWw5LiO572R5YWzIGB0b29sX2NhbGxzX3JlbWFpbmluZ2Ag5LiA6Ie0CgotLS0KCiMjIOS7u+WKoSBUNy4zIMK3IOWNlSBBZ2VudCDmjpLmn6Ugc2ltcGxlX2ludmVzdGlnYXRvcgoKKippZCoq77yaVDcuMyDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk03IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrmioogTTQg6YKj5LiqIuiwg+S4gOasoSBxdWVyeV9tZXRyaWNzIOWwsee7k+adnyLnmoToioLngrnvvIzmjaLmiJAgYGNyZWF0ZV9hZ2VudGAg55qEIFJlQWN0IOW+queOr++8jOaMgeWFqOmDqOaooeadv+W3peWFt+WPluivgeOAgeeZu+iusOivgeaNruOAgei+k+WHuuW4puW8leeUqOeahCBgUmNhUmVwb3J0YOOAggoKKirliY3nva7nn6Xor4bvvIjiiaQyIOaWsOamguW/te+8iSoqCi0gKipgY3JlYXRlX2FnZW50YCArIFJlQWN0IOW+queOryoqCiAgMS4g57uZIEFnZW50IOS4gOe7hOW3peWFt+WSjOS4gOS4quebruagh++8jOWug+iHquW3seWGs+Wumuiwg+WTquS4quOAgeeci+e7k+aenOOAgeWGjeiwg++8jOebtOWIsOiDvee7mee7k+iuuuOAggogIDIuIGByZXNwb25zZV9mb3JtYXQ9UmNhUmVwb3J0YCDorqnlroPmnIDlkI7kuIDmraXkuqflh7rnu5PmnoTljJblr7nosaHogIzkuI3mmK/oh6rnlLHmlofmnKzjgIIKICAzLiDnlKjlrpjmlrkgYGNyZWF0ZV9hZ2VudGDvvIwqKuWIq+aJi+WGmeW+queOryoq77yM5Lmf5Yir55So5bey5byD55So55qEIGBjcmVhdGVfcmVhY3RfYWdlbnRg44CCCiAgNC4g5a+55q+UIE0077yaTTQg5pivIuaooeWei+mAieS4gOasoeW3peWFtyDihpIg5oiR5Lus5omL5Yqo6LCD5LiA5qyhIOKGkiDnu5PmnZ8i77yM546w5Zyo5pivIuaooeWei+iHquW3seW+queOr+WIsOaUtuaVmyLigJTigJTmiYDku6UgTTQg6YKj5Liq6LCD55So57KS5bqm55qEIGd1YXJkIOS7jui/memHjOW8gOWni+aJjeecn+ato+a0vuS4iueUqOWcuu+8iEg277yJ44CCCiAgNS4g8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdjaGFpbi9hZ2VudHMg77yIY3JlYXRlX2FnZW5077yM6ZyA5qC45a6e6ZSa54K577yJwrcgdmlkZW8tMiBQMTAtMTbjgIzliJvlu7ogQWdlbnTCt+WumuS5ieW3peWFt+OAjQotICoq6K+B5o2u55m76K6w5YGa5oiQ5bel5YW377yM6ICM5LiN5piv5LqL5ZCO6Kej5p6Q6Ieq55Sx5paH5pysKioKICAxLiDnu5kgQWdlbnQg5LiA5LiqIGByZWNvcmRfZXZpZGVuY2VgIOW3peWFt++8jOiuqeWug+S4u+WKqOeZu+iusO+8m+avlOS7juWug+eahOi+k+WHuumHjOato+WImeaKoOWPr+mdoOW+l+WkmuOAggogIDIuIGByZWNvcmRfZXZpZGVuY2VgIOWGhemDqOiwgyBUNy4xIOeahCBgRXZpZGVuY2VTdG9yZS53cml0ZWDvvIzov5Tlm57liIbphY3liLDnmoQgYEVWLSpgIOe8luWPt+e7mSBBZ2VudO+8jEFnZW50IOS5i+WQjuWcqOe7k+iuuumHjOW8leeUqOWug+OAggogIDMuICpKYXZhIOexu+avlCrvvJrorqnosIPnlKjmlrnmmL7lvI/osIPlrqHorqHmjqXlj6PvvIzogIzkuI3mmK/ku47ml6Xlv5fph4zmraPliJnmiqDjgIIKCiMjIyDwn5+hIOesrCAxIOautSDCtyDmlLnpgKDvvIjmioroioLngrnmjaLmiJAgQWdlbnTvvIkKCuWFiOWcqCBgc3RhdGUucHlgIOmHjOihpeS4iuacrOaooeWdl+i0n+i0o+eahOaooeWei++8mgoKYGBgcHl0aG9uCmNsYXNzIFJjYVJlcG9ydChCYXNlTW9kZWwpOgogICAgIiIi5Y2VIEFnZW5077yI5oiWIE0xMCDnmoQgbGVhZO+8ieS6p+WHuueahOagueWboOWIhuaekOe7k+iuuuOAgk03IOS6p+WHuu+8jE04IOWPqua4suafk+S4jemHjeWumuS5iS4iIiIKCiAgICByb290X3NlcnZpY2U6IHN0ciAgICAgICAgIyDmoLnlm6DmnI3liqHlkI3vvIzlv4XpobvmmK8gQ01EQiDph4znmoTnnJ/lrp7mnI3liqHlkI3vvJtNMTIg5Yik5YiG55qEIGFjY0BzZXJ2aWNlIOavlOWvueWugwogICAgcm9vdF9jYXVzZTogc3RyICAgICAgICAgICMg5qC55Zug5YiG57G777yM55So55+t6K+t6ICM6Z2e6ZW/5Y+l77yI5aaCICJzbG93X3F1ZXJ5IiAvICJ0aHJlYWRwb29sX2V4aGF1c3RlZCLvvInvvJvliKTliIbnmoQgYWNjQGNsYXNzIOavlOWvueWugwogICAgcm9vdF9kZXRhaWw6IHN0ciAgICAgICAgICMg5qC55Zug57uG6IqC77ya5YW35L2T5piv5ZOq5p2hIFNRTCAvIOWTquS4quaxoCAvIOWTquasoemFjee9ruWPmOabtAogICAgY29uZmlkZW5jZTogTGl0ZXJhbFsiaGlnaCIsICJtZWRpdW0iLCAibG93Il0gICMg572u5L+h5bqm77ybTTgg5Zyo6aqM5pS2IGZhaWwg5oiW6aKE566X6ICX5bC95pe25Lya5by65Yi26ZmN5Li6IGxvdwogICAgY2F1c2FsX2NoYWluOiBsaXN0W3N0cl0gICMg5Zug5p6c6ZO+77yM5LuO5qC55Zug5Yiw5ZGK6K2m546w6LGh55qE5pyJ5bqP5q2l6aqk77yM5q+P5q2l5LiA5Y+l6K+dCiAgICBldmlkZW5jZV9pZHM6IGxpc3Rbc3RyXSAgIyDmnKznu5PorrrlvJXnlKjnmoTlhajpg6jor4Hmja7nvJblj7fvvIzlv4Xpobvpg73og73lnKggZXZpZGVuY2UvIOmHjOaJvuWIsO+8iE05IOmihOajgOWwseafpei/meS4qu+8iQogICAgc3VtbWFyeV9tZDogc3RyICAgICAgICAgICMg57uZ5Lq66K+755qE5pGY6KaBIE1hcmtkb3du77ybKirlj6rmnInov5nkuKrlrZfmrrXlhYHorrggTTgg55qEIExMTSDmtqboibIqKgogICAgcmVtZWRpYXRpb246IHN0ciB8IE5vbmUgPSBOb25lICAjIOS/ruWkjeW7uuiuru+8m00xMiDnmoTlrqHmibnkuI7miafooYzku6XlroPkuLrovpPlhaXvvIzmhaLmn6Xor6Lnsbvlj6rlh4blu7rorq7kurrlt6XlpITnkIYKYGBgCgrlho3lhpkgYHNyYy9hZ2VudC9pbnZlc3RpZ2F0b3IucHlg77yaCgpgYGBweXRob24KZGVmIGJ1aWxkX3NpbXBsZV9pbnZlc3RpZ2F0b3IobW9kZWwsIHRvb2xzLCBldmlkZW5jZV9zdG9yZSwgdmVyaWZpZXJfZmVlZGJhY2spOgogICAgIiIi57uE6KOF5raI6J6NIEEyIOeahOWNlSBBZ2VudO+8mmNyZWF0ZV9hZ2VudChtb2RlbCwgdG9vbHMgKyBbcmVjb3JkX2V2aWRlbmNlXSwgcmVzcG9uc2VfZm9ybWF0PVJjYVJlcG9ydCkuIiIiCmBgYAoKc3lzdGVtIHByb21wdCDnmoTopoHngrnvvIzliIbngrnlhpnov5vljrvvvJoKMS4gKirlhYjlu7rnq4vlnLDln7oqKu+8muWFiCBgcXVlcnlfY21kYmAg56Gu6K6k5pyN5Yqh5LiO5ouT5omR77yM5YaNIGBxdWVyeV9jaGFuZ2VzYCDpl64i5pyA6L+R5pS55LqG5LuA5LmIIu+8jOeEtuWQjuaJjeaYryBtZXRyaWNzL2xvZ3MvdHJhY2XvvJsKMi4gKirmr4/mrKHlj5bor4HlkI7lv4XpobvosIMgYHJlY29yZF9ldmlkZW5jZWAg55m76K6wKirvvIzmi7/liLAgYEVWLSpgIOe8luWPt++8mwozLiAqKue7k+iuuumHjOeahOavj+S4gOadoeaWreiogOmDveimgeW4piBgW0VWLSpdYCDlvJXnlKgqKu+8jOayoeacieivgeaNruaUr+aSkeeahOaOqOa1i+imgeaYvuW8j+agh+aIkCLmnKrpqozor4HlgYforr4i77ybCjQuIOW3peWFt+i/lOWbniBgZGVncmFkZWQ9dHJ1ZWAg5oiWIGB0cnVuY2F0ZWQ9dHJ1ZWAg5pe2KirlpoLlrp7lj43mmKAqKu+8jOS4jeiuuOWBh+ijheaVsOaNrum9kOWFqO+8mwo1LiDpk77ot6/pobrluo/mj5DnpLrvvJp0cmFjZV9pZCDku44gYHF1ZXJ5X2xvZ3NgIOeahCBgZGlzdGluY3RUcmFjZUlkc2Ag6YeM5Y+W77yM5LiN6KaB5Yet56m65p6E6YCg44CCCgpgbm9kZXMvaW52ZXN0aWdhdGUucHlgIOaUuemAoO+8mgotIOW7uiBgRXZpZGVuY2VTdG9yZShpbmNpZGVudF9pZClgIOWSjCBgR2F0ZXdheUNsaWVudChpbmNpZGVudF9pZCwgYWdlbnRfcm9sZT0iaW52ZXN0aWdhdGUiKWDvvJsKLSBgdG9vbHMgPSBtYWtlX3RlbXBsYXRlX3Rvb2xzKGNsaWVudClg77yIVDcuMiDmjqXlhaXnmoQgNSDkuKrvvInvvJsKLSDot5EgQWdlbnTvvIzmioogYFJjYVJlcG9ydGAg6JC955uY5oiQIGBydW5zL2luY2lkZW50cy97aWR9L3JlcG9ydF9kcmFmdC5tZGDvvIxzdGF0ZSDph4zlj6rlhpkgYGRyYWZ0X3JlcG9ydF9yZWZgIOi3r+W+hO+8iE00IOeahOW8leeUqOW8j+Wtl+autee6puWumu+8ie+8mwotIGBpbnZlc3RpZ2F0ZV9yb3VuZHNgIOS7jeWcqOi/memHjCArMe+8iE00IOWumueahO+8jOi3r+eUseWHveaVsOS4jeaUuSBzdGF0Ze+8ieOAggoKIyMjIPCflLQg56ysIDIg5q61IMK3IOiHqueglO+8iOWbnua1geihpeivgSArIHRva2VuIOiuoemHj++8iQoKKirku47nqbrmlofku7YqKuWGmeWbnua1geWIhuaUr++8mgoxLiBgc3RhdGVbInZlcmlmaWVyX2ZlZWRiYWNrIl1gIOmdnuepuuaXtu+8jOaKiumps+WbnuaEj+ingeaLvOi/myBwcm9tcHTvvIzlubbmmL7lvI/lo7DmmI7kuInku7bkuovvvJoKICAgLSDlt7LmnInnmoTor4Hmja7nvJblj7fmuIXljZXvvIhgZXZpZGVuY2Vfc3RvcmUubGlzdF9pZHMoKWDvvInvvJsKICAgLSAiKirlop7ph4/ooaXor4EqKu+8jOS4jeimgemHjeWktOaKiuW3suacieeahOivgeaNruWGjeWPluS4gOmBjSLvvJsKICAgLSAi5aSN55So5bey5pyJIGBFVi0qYCDnvJblj7fvvIzlj6rkuLrmlrDlj5bnmoTor4Hmja7nlLPor7fmlrDnvJblj7ci44CCCjIuIEFnZW50IOavj+i9rue7k+adn+WQjuS7jiBgdXNhZ2VfbWV0YWRhdGFgIOivuyB0b2tlbiDntK/liqDov5sgYGJ1ZGdldC50b2tlbnNfdXNlZGDvvIjlpI3nlKggTTQg55qEIGBndWFyZC5jaGFyZ2VfdG9rZW5zYO+8ieKAlOKAlFJlQWN0IOW+queOr+mHjCBMTE0g5Lya6KKr6LCD5b6I5aSa5qyh77yM6L+Z6YeM5pivIHRva2VuIOecn+ato+W8gOWni+eDp+eahOWcsOaWueOAggozLiBgc3ViYWdlbnRzX2VuYWJsZWRgIOW8gOWFs+mihOeVme+8mmBub2Rlcy9pbnZlc3RpZ2F0ZS5weWAg6YeM55WZ5LiA5Liq5YiG5Y+R54K577yMYEZhbHNlYCDotbDmnKzmqKHlnZfnmoTljZUgQWdlbnTvvIhBMu+8ie+8jGBUcnVlYCDnlZnnu5kgTTEwIOeahCBsZWFk44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWFiOeUqCBUNy4yIOeahCA1IOS4quW3peWFtyArIOS4gOS4qiBgY3JlYXRlX2FnZW50YO+8jHN5c3RlbSBwcm9tcHQg5Y+q5YaZIuafpea4healmui/meS4quacjeWKoeS4uuS7gOS5iOWRiuitpiLvvIzot5HkuIDmrKHnnIvlroPkvJrmgI7kuYjosIPlt6XlhbfjgIHku4DkuYjml7blgJnlgZzjgIIKMi4g5YqgIGByZXNwb25zZV9mb3JtYXQ9UmNhUmVwb3J0YO+8jOehruiupOacgOWQjuS4gOatpeiDveS6p+WHuue7k+aehOWMluWvueixoeOAggozLiDliqAgYHJlY29yZF9ldmlkZW5jZWAg5bel5YW377yM6LeR5LiA5qyh55yLIGBldmlkZW5jZS9gIOebruW9lemHjOacieayoeacieaWh+S7tuOAggo0LiDmioogcHJvbXB0IOeahCA1IOadoeimgeeCueihpeWFqO+8jOWGjei3keS4gOasoe+8jOajgOafpee7k+iuuuaYr+WQpuadoeadoeW4piBgW0VWLSpdYOOAggo1LiDoh6rnoJTlm57mtYHvvJrmiYvlt6XlvoAgc3RhdGUg5aGe5LiA5p2hIGB2ZXJpZmllcl9mZWVkYmFja2DvvIjmraTml7YgTTkg6L+Y5rKh5YaZ77yM5L2GIE00IOeahOWtl+auteWSjOWbnua1gei+ueW3sue7j+WcqOS6hu+8jOWbnua1geaYryoq55yf5a6e5Zu+6KGM5Li6KirkuI3mmK/kvKrpgKDvvInvvIznoa7orqTnrKzkuozova7mmK/lop7ph4/ooaXor4HogIzkuI3mmK/ph43lpLTlho3mnaXjgIIKNi4g5o6lIHRva2VuIOiuoemHj++8jOi3keS4gOasoeeciyBgYnVkZ2V0LnRva2Vuc191c2VkYCDmmK/lkKbpmo/ova7mlbDlop7plb/jgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g55So5a6Y5pa5IGBjcmVhdGVfYWdlbnRg77yM5Yir5omL5YaZIEFnZW50IOW+queOr++8jOS5n+WIq+eUqOW3suW8g+eUqOeahCBgY3JlYXRlX3JlYWN0X2FnZW50YOOAggotIGByZWNvcmRfZXZpZGVuY2VgIOaYr+W3peWFt+S4jeaYr+ino+aekOKAlOKAlOWmguaenCBBZ2VudCDogIHkuI3osIPlroPvvIzpl67popjlpJrljYrlnKjlt6XlhbcgZGVzY3JpcHRpb24g6ICM5LiN5ZyoIHN5c3RlbSBwcm9tcHTjgIIKLSDov5nmmK/mtojono0gQTIg55qE5q2j5byP6YWN572u77yMTTEwIOS4iue6v+WkmiBBZ2VudCDlkI7pnaAgYHN1YmFnZW50c19lbmFibGVkYCDliIfmjaLvvIwqKuWIq+WIoCoq44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0gQWdlbnQg5LiA5Liq5bel5YW36YO95LiN6LCD77ya5YWI56Gu6K6kIGBhcmdzX3NjaGVtYWAg55qEIGBkZXNjcmlwdGlvbmAg5YaZ5b6X6K6p5qih5Z6L55yL5b6X5oeC77yITTMvVDcuMiDlrprkuYnnmoTvvInvvIzlho3noa7orqQgdG9vbHMg55yf55qE5Lyg6L+b5LqGIGBjcmVhdGVfYWdlbnRg44CCCi0gQWdlbnQg5peg6ZmQ5b6q546v77ya56Gu6K6kIE00IOeahCBndWFyZCDnnJ/nmoTlnKjmr4/mrKHosIPnlKjliY3mo4Dmn6XvvIhINiDor7TnmoTlsLHmmK/ov5nkuKrlnLrmma/vvInvvIzku6Xlj4ogYGNyZWF0ZV9hZ2VudGAg55qE5pyA5aSn5q2l5pWw5LiK6ZmQ6K6+5LqG44CCCi0g57uT6K665LiN5bim5byV55So77ya5oqKIuavj+adoeaWreiogOW/hemhu+W4piBbRVYtKl0i5LuOIHByb21wdCDkuK3mrrXmjKrliLAqKue7k+iuuuagvOW8j+imgeaxgioq6YKj5LiA6IqC77yM5bm257uZ5LiA5Liq5q2j5L6L44CCCi0g6KeG6aKR77yadmlkZW8tMSBQNTEtNTXjgIxBZ2VudCDmpoLov7DCt+iwg+eUqMK357uR5a6a5bel5YW344CN77ybdmlkZW8tMiBQMTTjgIzlt6XlhbfmtYvor5XlkowgQWdlbnQg5pW05ZCI44CN44CCCi0g6ZeuIEFJ77ya44CMTGFuZ0NoYWluIGBjcmVhdGVfYWdlbnRgIOe7meS6huW3peWFt+S9huaooeWei+aAu+S4jeiwgyBgcmVjb3JkX2V2aWRlbmNlYCDnmbvorrDor4Hmja7vvIzmiJHnmoQgc3lzdGVtIHByb21wdCDlkozlt6XlhbcgZGVzY3JpcHRpb24g6L+Z5qC377yI6LS05Ye677yJ77yM5oCO5LmI6K6p5a6D5q+P5qyh5Y+W6K+B5ZCO5b+F55m76K6w77yf44CNCgoqKuecn+WuniBIVFRQIOmqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKY2QgaXJpcy1hZ2VudC1wbGF0Zm9ybQp1diBydW4gdXZpY29ybiBhZ2VudC5hcHA6YXBwIC0tcG9ydCA4MDAwCgojIOazqOWFpeafkOS4quecn+WunuaVhemanCDihpIgd2ViaG9vayDihpIg55yLIGludmVzdGlnYXRlIOS6p+WHugpjdXJsIC1zIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAc29tZS1mYXVsdC1hbGVydC5qc29uCmxzIHJ1bnMvaW5jaWRlbnRzL2luYy0qL2V2aWRlbmNlLyAgICAgICAgICAgICAgICAgIyDoi6XlubIgRVYtKi5tZApjYXQgcnVucy9pbmNpZGVudHMvaW5jLSovcmVwb3J0X2RyYWZ0Lm1kICAgICAgICAgICMg57uT6K665p2h5p2h5bimIFtFVi0qXQpzcWxpdGUzIHJ1bnMvaW5jaWRlbnRzLmRiICJzZWxlY3Qgc3RhdHVzIGZyb20gaW5jaWRlbnQgb3JkZXIgYnkgY3JlYXRlZF9hdCBkZXNjIGxpbWl0IDE7IgoKIyDlvILluLjot6/lvoQg4pGg77yaZG9ja2VyIHN0b3AgbG9raSDihpIgcXVlcnlfbG9ncyDov5Tlm54gZGVncmFkZWQ9dHJ1ZQojICAg5pyf5pyb77ya6K+B5o2u5paH5Lu2IGZyb250bWF0dGVyIGRlZ3JhZGVkOiB0cnVl77yM5LiUIEFnZW50IOWcqOe7k+iuuumHjOazqOaYjiLml6Xlv5fkvqfmlbDmja7kuI3lj6/nlKgiCiMg5byC5bi46Lev5b6EIOKRoe+8muiuqeafkOasoeafpeivouWRveS4reWkp+mHj+aVsOaNruinpuWPkSBtZXRhLnRydW5jYXRlZAojICAg5pyf5pyb77ya6K+B5o2uIGZyb250bWF0dGVyIHRydW5jYXRlZDogdHJ1Ze+8jOS4lCBBZ2VudCDlvJXnlKjlroPkuIvnu5Porrrml7bms6jmmI4i5pWw5o2u5LiN5a6M5pW077yM5bu66K6u57yp5bCPIHdpbmRvdyDlpI3moLgiCmBgYArliKTlrprnibnlvoHvvJrnnJ/lrp7ms6jlhaUg4oaSIOeUn+aIkOivgeaNriArIHJlcG9ydF9kcmFmdO+8jOe7k+iuuuW4puW8leeUqO+8m2RlZ3JhZGVkL3RydW5jYXRlZCDlnYfooqvlpoLlrp7moIfms6jogIzkuI3mmK/ooqvlkJ7mjonjgILkvp3otZbnnJ/lrp7mnI3liqHvvJpNMiDnvZHlhbPjgIFQcm9tZXRoZXVzL0xva2kvVGVtcG/jgIFpbnZlc3RpZ2F0ZSDmqKHlnovjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0gYFJjYVJlcG9ydGAgOCDkuKrlrZfmrrXlrprkuYnlnKggYHN0YXRlLnB5YO+8iE04IOWPqua4suafk+S4jemHjeWumuS5ie+8iQotIFsgXSDljZUgQWdlbnQg5oyBIFQ3LjIg5o6l5YWl55qE5YWo6YOoIDUg5Liq5qih5p2/5bel5YW3ICsgYHJlY29yZF9ldmlkZW5jZWDvvIznnJ/lrp7lj5bor4HlubbnmbvorrAgRVYKLSBbIF0gYHJlcG9ydF9kcmFmdC5tZGAg6JC955uY77yMc3RhdGUg6YeM5Y+q5a2YIGBkcmFmdF9yZXBvcnRfcmVmYCDot6/lvoQKLSBbIF0g57uT6K665p2h5p2h5bimIGBbRVYtKl1g77yMYFJjYVJlcG9ydC5ldmlkZW5jZV9pZHNgIOS4jiBgZXZpZGVuY2UvYCDph4znmoTmlofku7bkuIDkuIDlr7nlvpfkuIoKLSBbIF0g5Zue5rWB5pe25aKe6YeP6KGl6K+B44CB5aSN55So5bey5pyJIGV2aWRlbmNlX2lk77yM5LiN6YeN5aS05YaN5p2lCi0gWyBdIGBidWRnZXQudG9rZW5zX3VzZWRgIOmajyBSZUFjdCDova7mlbDlop7plb/vvIhNNCDnmoQgZ3VhcmQg55yf55qE5o6l5LiK5LqG77yJCi0gWyBdIGBzdWJhZ2VudHNfZW5hYmxlZGAg5YiG5Y+R54K56aKE55WZ77yIQTIg6YWN572u77yJ77yM5pys5a6e546w5LiN5YigCgotLS0KCiMjIOS7u+WKoSBUNy40IMK3IHJhdyDpgJrpgZPmjqXlhaXvvIjlj5fpmZDpgIPnlJ/oiLHvvIkKCioqaWQqKu+8mlQ3LjQg772cICoq5omA5bGe5qih5Z2XKirvvJpNNyDvvZwgKirkvJjlhYjnuqcqKu+8mlAxCgoqKuS4gOWPpeivneebruaghyoq77ya5oqKIGBxdWVyeV9tZXRyaWNzX3Jhd2AgLyBgcXVlcnlfbG9nc19yYXdgIOS9nOS4uioq54us56uL6aKE566XICsg54us56uL5a6h6K6hKirnmoTlj5fpmZDog73lipvmjqXov5sgQWdlbnTvvIzogIzkuI3mmK/lkowgNSDkuKrmqKHmnb/lt6Xlhbfmt7flnKjkuIDotbfjgIIKCioq5YmN572u55+l6K+G77yI4omkMSDmlrDmpoLlv7XvvIkqKgotICoqcmF3IOmAmumBk+S4uuS7gOS5iOimgeWNleeLrOWvueW+hSoqCiAgMS4gKirog73lipvkuI3lkIwqKu+8muaooeadv+W3peWFt+eahOihqOi+vuW8j+aYr+e9keWFs+WGmeatu+eahO+8jHJhdyDpgJrpgZPorqnmqKHlnovoh6rlt7HlhpkgUHJvbVFML0xvZ1FM4oCU4oCU6KGo6L6+5Yqb5aSn5b6X5aSa77yM5Ye65LqL55qE5pa55byP5Lmf5aSa5b6X5aSa44CCCiAgMi4gKirpooTnrpfkuI3lkIwqKu+8mue9keWFs+S+p+aooeadv+mAmumBkyA0MCDmrKHjgIFyYXcg6YCa6YGTIDUg5qyh77yM5piv5Lik5Liq54us56uL6K6h5pWw5Zmo77yITTIg5aWR57qm77yJ77ybTTQg55qEIGBCdWRnZXRMZWRnZXJgIOS5n+aYr+WIhuW8gOeahCBgdG9vbF9jYWxsc191c2VkYCAvIGByYXdfY2FsbHNfdXNlZGDjgIIKICAzLiAqKuaKpOagj+S4jeWQjCoq77yacmF3IOafpeivouW/hemhu+WQq+iHs+WwkeS4gOS4qiBsYWJlbCBzZWxlY3Rvcu+8jOWQpuWImee9keWFs+ebtOaOpSA0MDMgYE5PVF9XSElURUxJU1RFRGDvvIjpmLLml6DojIPlm7TlhajooajmiavvvInjgIIKICA0LiAqKuWuoeiuoeS4jeWQjCoq77ya572R5YWzIGF1ZGl0X2xvZyDnmoQgYHRlbXBsYXRlX29yX3Jhd2Ag5a2X5q615qCHIHJhd++8jOeUqOS6juS6i+WQjumrmOS6riLov5nmrKHor4rmlq3ph4zmqKHlnovoh6rlt7Hlhpnkuobku4DkuYjmn6Xor6Ii44CCCiAgNS4g8J+Tlu+8iE0yIGBkb2NzL3Rvb2wtY29udHJhY3QubWRgIOeahCByYXcg56ug6IqC77ybYDAwLWV4ZWN1dGlvbi1wbGFuLm1kYCDCp00y77yJCgojIyMg8J+foSDnrKwgMSDmrrUgwrcg5pS56YCg77yI5paw5YaZIGxvZ3FsIHJhdyArIOS4gOi1t+aOpeWFpe+8iQoKMS4gKirmlrDlhpkgYG1ha2VfcXVlcnlfbG9nc19yYXdgKirvvIhgZGVmaW5ldGlvbnMucHlgIOmHjOebruWJjeWPquaciSBgbWFrZV9xdWVyeV9tZXRyaWNzX3Jhd2DvvIxsb2dxbCDkvqflrozlhajmsqHmnInvvInjgILnhacgYFF1ZXJ5TWV0cmljc1Jhd0lucHV0YCDnmoTlkIzkuIDlpZflhpnms5XvvJoKICAgLSBgcXVlcnk6IHN0cmDigJTigJTljp/lp4sgTG9nUUzvvIxgZGVzY3JpcHRpb25gIOmHjOW/hemhu+WGmeaYjiLooajovr7lvI/kuK3lv4XpobvlkKvoh7PlsJHkuIDkuKogbGFiZWwgc2VsZWN0b3LvvIzlkKbliJnnvZHlhbMgNDAzIu+8mwogICAtIGBzZXJ2aWNlYCAvIGB3aW5kb3dgIC8gYGVuZF9vZmZzZXRfc2Vjb25kc2Ag5LiJ5Liq5Y+C5pWw5LiOIGBxdWVyeV9tZXRyaWNzX3Jhd2Ag5L+d5oyB5LiA6Ie055qE6K+t5LmJ77ybCiAgIC0gZG9jc3RyaW5nIOaYjuehruWumuS9je+8mioq5qih5p2/5bel5YW3IGBxdWVyeV9sb2dzYCDopobnm5bkuI3kuobml7bmiY3nlKgqKuOAggogICA+IOWRveWQjeivtOaYju+8mmAwMC1leGVjdXRpb24tcGxhbi5tZGAg6YeM5Y+rIGByYXdfcHJvbXFsYC9gcmF3X2xvZ3FsYO+8jOecn+WunuS7o+eggemHjCBNMyDlt7Lnu4/miorliY3ogIXlhpnmiJDkuoYgYHF1ZXJ5X21ldHJpY3NfcmF3YO+8jOS4uuS/neaMgeS4gOiHtOacrOmhueebrue7n+S4gOeUqCBgcXVlcnlfbWV0cmljc19yYXdgL2BxdWVyeV9sb2dzX3Jhd2DjgIIKMi4gYHJlZ2lzdHJ5Lm1ha2VfcmF3X3Rvb2xzKGNsaWVudClgIOi/lOWbnui/meS4pOS4qu+8jCoq5ZKMIGBtYWtlX3RlbXBsYXRlX3Rvb2xzYCDliIblvIDkuKTkuKrlh73mlbAqKu+8iE0xMCDnmoQgc3ViYWdlbnQg6KaB5oyJ5Z+f5oyR77yMYGxvZ3MtaW52ZXN0aWdhdG9yYCDmi78gYHF1ZXJ5X2xvZ3MgKyBxdWVyeV9sb2dzX3Jhd2DvvIxgbWV0cmljcy1pbnZlc3RpZ2F0b3JgIOWPquaLvyBgcXVlcnlfbWV0cmljc2DvvInjgIIKMy4gQWdlbnQg55qEIHRvb2xzIOWIl+ihqOaUueaIkCBgbWFrZV90ZW1wbGF0ZV90b29scyhjKSArIG1ha2VfcmF3X3Rvb2xzKGMpYO+8jOW5tuWcqCBzeXN0ZW0gcHJvbXB0IOmHjOWNleeLrOWKoOS4gOiKgu+8mgogICAtICJyYXcg6YCa6YGT5YWo5LqL5pWF5Y+q5pyJIDUg5qyh77yM5qih5p2/5bel5YW36IO96KGo6L6+55qE5LiA5b6L6LWw5qih5p2/Iu+8mwogICAtICLlhpkgcmF3IOafpeivouaXtuW/hemhu+W4piBsYWJlbCBzZWxlY3Rvcu+8iOWmgiBge3NlcnZpY2U9InBtLXF1ZXN0aW9uIn1g77yJIu+8mwogICAtICLnlKjkuoYgcmF3IOmAmumBk+eahOivgeaNru+8jGBzb3VyY2VgIOWtl+auteimgeWOn+agt+iusOW9leS9oOWGmeeahOihqOi+vuW8jyLjgIIKCiMjIyDwn5S0IOesrCAyIOautSDCtyDoh6rnoJTvvIjni6znq4vpooTnrpforqHmlbAgKyDlrqHorqHmoLjlr7nvvIkKCjEuIHJhdyDlt6XlhbfnmoTov5Tlm57ot6/lvoTkuIrosIMgYGd1YXJkLmNoYXJnZV90b29sX2NhbGwobGVkZ2VyLCBlbnZlbG9wZSwgcmF3PVRydWUpYOKAlOKAlOi1sCBgcmF3X2NhbGxzX3VzZWRgIOiAjOS4jeaYryBgdG9vbF9jYWxsc191c2VkYO+8iE00IOW3sue7j+aKiuWtl+auteWIhuW8gOS6hu+8jOi/memHjOaYr+Wug+esrOS4gOasoeecn+ato+iiq+eUqOWIsO+8ie+8mwoyLiBgY2hlY2tfYnVkZ2V0YCDph4wgcmF3IOe7tOW6puinpumhtuWPquW6lOivpeaLpiByYXcg5bel5YW377yMKirkuI3og73miormqKHmnb/lt6XlhbfkuIDotbfmi6bmjokqKuKAlOKAlOWGmeS4gOS4quaMiemAmumBk+WIhuWIq+WIpOaWreeahOWIhuaUr++8jOW5tuecn+WunumqjOivge+8mui/nuaJkyA2IOasoSByYXcg5ZCO5qih5p2/5bel5YW35LuN54S25Y+v55So77ybCjMuIOS6i+WQjuaguOWvuee9keWFs+Wuoeiuoe+8mmBzZWxlY3QgdGVtcGxhdGVfb3JfcmF3LCBjb3VudCgqKSBmcm9tIGF1ZGl0X2xvZyB3aGVyZSBpbmNpZGVudF9pZD0/IGdyb3VwIGJ5IDFg77yMcmF3IOeahOadoeaVsOW6lOS4juacrOWcsCBgcmF3X2NhbGxzX3VzZWRgIOS4gOiHtOOAggoKKirokL3nrJTpobrluo8qKgoxLiDmlrDlhpkgYG1ha2VfcXVlcnlfbG9nc19yYXdgIOeahCBhcmdzX3NjaGVtYSArIGBAdG9vbGDjgIIKMi4gUkVQTCDph4zlkITnnJ/miZPkuIDmrKHkuKTkuKogcmF3IOW3peWFt++8iOW4piBsYWJlbCBzZWxlY3Rvcu+8ie+8jOehruiupOi/lOWbnuecn+aVsOaNruOAggozLiDmlYXmhI/miZPkuIDmnaEqKuS4jeW4piBsYWJlbCBzZWxlY3RvcioqIOeahOafpeivou+8jOehruiupOe9keWFsyA0MDMg5LiU6ZSZ6K+v5Y+v6K+744CCCjQuIOaOpei/myBBZ2VudCDnmoQgdG9vbHMg5YiX6KGo77yM6KGlIHN5c3RlbSBwcm9tcHQg55qEIHJhdyDpgqPkuIDoioLjgIIKNS4g5o6lIGBjaGFyZ2VfdG9vbF9jYWxsKHJhdz1UcnVlKWDvvIzov57miZMgNiDmrKHpqozor4HnrKwgNiDmrKHooqvmi6bjgIHkuJTmqKHmnb/lt6XlhbfmraTml7bku43lj6/nlKjjgIIKNi4g6LeR5LiA5qyh5a6M5pW05LqL5pWF77yM5qC45a+5572R5YWz5a6h6K6h6YeMIHJhdyDmnaHmlbDkuI7mnKzlnLDorqHmlbDkuIDoh7TjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0gcmF3IOeahOmihOeul+WSjOaooeadv+eahOmihOeul+aYryoq5Lik5Liq6K6h5pWw5ZmoKirvvIzliKvlhbHnlKjkuIDkuKrvvJvmi6bmiKrkuZ/opoHliIblvIDmi6bvvIzlkKbliJkgcmF3IOeUqOi2heS6huS8muaKiuaVtOi9ruiviuaWreW6n+aOieOAggotIOe9keWFs+eahCA0MDMgYE5PVF9XSElURUxJU1RFRGAg5piv56Gs5oqk5qCP77yM5L2GIHByb21wdCDph4zkuZ/opoHlhpnmuIXop4TliJnigJTigJTorqnmqKHlnovnrKzkuIDmrKHlsLHlhpnlr7nvvIzmr5TorqnlroPmkp7lopnlho3ph43or5XnnIHpooTnrpfjgIIKLSDnlKjkuoYgcmF3IOeahOivgeaNru+8jGBzb3VyY2VgIOmHjOimgeeVmeS4i+aooeWei+WGmeeahOWOn+Wni+ihqOi+vuW8j++8jOi/meaYr+S6i+WQjuWuoeiuoSLlroPliLDlupXmn6Xkuobku4DkuYgi55qE5ZSv5LiA57q/57Si44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0gcmF3IOS4gOebtCA0MDPvvJrmiorooajovr7lvI/miZPlh7rmnaXnnIvmnInmsqHmnIkgbGFiZWwgc2VsZWN0b3LvvJvnvZHlhbPnmoTmoKHpqozmmK/pnZnmgIHnmoTvvIxge31gIOepuiBzZWxlY3RvciDkuZ/nrpfmsqHmnInjgIIKLSByYXcg6aKE566X5oqK5qih5p2/5LiA6LW35oum5LqG77yaYGNoZWNrX2J1ZGdldGAg6ZyA6KaB55+l6YGTIui/measoeimgei1sOWTquS4qumAmumBkyLvvIzmiorpgJrpgZPkvZzkuLrlj4LmlbDkvKDov5vljrvvvIzliKvlj6rnnIsgbGVkZ2Vy44CCCi0g6KeG6aKR77ya5peg5a+55Y+j6KeG6aKR77yM5LulIE0yIOeahOe9keWFs+Wlkee6puaWh+aho+S4uuS4u+OAggotIOmXriBBSe+8muOAjOaIkeacieS4pOS4queLrOeri+mihOeul+eahOW3peWFt+mAmumBk++8iOaooeadvyA0MCDmrKEgLyByYXcgNSDmrKHvvInvvIzmgI7kuYjorr7orqHkuIDkuKogZ3VhcmQg6K6pIHJhdyDnlKjlsL3ml7blj6rmi6YgcmF344CB5LiN5b2x5ZON5qih5p2/6YCa6YGT77yf57uZ57uT5p6E44CC44CNCgoqKuecn+WuniBIVFRQIOmqjOaUtu+8iOWQq+W8guW4uOi3r+W+hO+8iSoqCmBgYGJhc2gKY2QgaXJpcy1hZ2VudC1wbGF0Zm9ybQp1diBydW4gcHl0aG9uIC1jICIKZnJvbSBhZ2VudC5jb25maWcgaW1wb3J0IEFnZW50Um9sZQpmcm9tIGFnZW50LnRvb2xzLkdhdGV3YXlDbGllbnQgaW1wb3J0IEdhdGV3YXlDbGllbnQKZnJvbSBhZ2VudC50b29scy5yZWdpc3RyeSBpbXBvcnQgbWFrZV9yYXdfdG9vbHMKYyA9IEdhdGV3YXlDbGllbnQoaW5jaWRlbnRfaWQ9J2luYy10NzQtcHJvYmUnLCBhZ2VudF9yb2xlPUFnZW50Um9sZS5JTlZFU1RJR0FURSkKcmF3ID0ge3QubmFtZTogdCBmb3IgdCBpbiBtYWtlX3Jhd190b29scyhjKX0KcHJpbnQocmF3WydxdWVyeV9tZXRyaWNzX3JhdyddLmludm9rZSh7J3F1ZXJ5JzogJ3JhdGUoaHR0cF9zZXJ2ZXJfcmVxdWVzdHNfc2Vjb25kc19jb3VudHtzZXJ2aWNlPVwiPHBtLXN2Yz5cIn1bNW1dKScsICdzZXJ2aWNlJzogJzxwbS1zdmM+JywgJ3dpbmRvdyc6IDE4MDB9KSkKcHJpbnQocmF3WydxdWVyeV9sb2dzX3JhdyddLmludm9rZSh7J3F1ZXJ5JzogJ3tzZXJ2aWNlPVwiPHBtLXN2Yz5cIn0gfD0gXCJFUlJPUlwiJywgJ3NlcnZpY2UnOiAnPHBtLXN2Yz4nLCAnd2luZG93JzogMTgwMH0pKQoiCiMg5pyf5pyb77ya5Lik5LiqIHJhdyDlt6XlhbflkITov5Tlm54gb2s9dHJ1ZSDkuJQgZGF0YSDpnZ7nqboKCiMg5byC5bi46Lev5b6EIOKRoO+8muS4jeW4piBsYWJlbCBzZWxlY3RvciDihpIg572R5YWzIDQwMyBOT1RfV0hJVEVMSVNURUTvvIzplJnor6/kv6Hmga/lj6/or7sKIyDlvILluLjot6/lvoQg4pGh77ya5ZCM5LiAIGluY2lkZW50IOi/nuaJkyA2IOasoSByYXcg4oaSIOesrCA2IOasoeiiq+acrOWcsCBndWFyZCDmiJbnvZHlhbMgNDI5IOaLpuS9j++8jAojICAgICAgICAgICAgIOS9huatpOaXtuaooeadv+W3peWFt++8iHF1ZXJ5X21ldHJpY3PvvInku43lj6/mraPluLjosIPnlKgKCiMg6LeR5LiA5qyh5a6M5pW05LqL5pWF5ZCO5qC45a+5572R5YWz5a6h6K6hCnNxbGl0ZTMgdG9vbC1nYXRld2F5L2RhdGEvKi5kYiBcCiAgInNlbGVjdCB0ZW1wbGF0ZV9vcl9yYXcsIGNvdW50KCopIGZyb20gYXVkaXRfbG9nIHdoZXJlIGluY2lkZW50X2lkPSdpbmMteHh4JyBncm91cCBieSAxOyIKIyDmnJ/mnJvvvJpyYXcg6YKj5LiA6KGM55qE5p2h5pWwID09IOacrOWcsCBidWRnZXQucmF3X2NhbGxzX3VzZWQKYGBgCuWIpOWumueJueW+ge+8muS4pOS4qiByYXcg5bel5YW355yf5a6e5Y+v55So77yb5pegIHNlbGVjdG9yIOiiqyA0MDPvvJtyYXcg6aKE566X54us56uL44CB55So5bC95LiN5b2x5ZON5qih5p2/6YCa6YGT77yb572R5YWz5a6h6K6h6IO96auY5LquIHJhdyDosIPnlKjjgILkvp3otZbnnJ/lrp7mnI3liqHvvJpNMiDnvZHlhbPjgIFQcm9tZXRoZXVz44CBTG9raeOAggoKKirlrozmiJDliKTlrpoqKgotIFsgXSBgbWFrZV9xdWVyeV9sb2dzX3Jhd2Ag5paw5YaZ5a6M5oiQ77yM5Lik5LiqIHJhdyDlt6XlhbflkITnnJ/lrp7osIPnlKjkuIDmrKHmi7/liLDnnJ/mlbDmja4KLSBbIF0gYHJlZ2lzdHJ5YCDmioogcmF3IOS4juaooeadv+WIhuaIkOS4pOS4quijhemFjeWHveaVsO+8iE0xMCDnmoTmnIDlsI/mnYPpmZAgc3ViYWdlbnQg5L6d6LWW6L+Z5Liq5YiG57uE77yJCi0gWyBdIHN5c3RlbSBwcm9tcHQg5pyJ54us56uL55qEIHJhdyDkvb/nlKjop4TliJnkuIDoioLvvIjmrKHmlbDkuIrpmZAgKyBsYWJlbCBzZWxlY3RvciArIHNvdXJjZSDorrDlvZXooajovr7lvI/vvIkKLSBbIF0gYGNoYXJnZV90b29sX2NhbGwocmF3PVRydWUpYCDotbAgYHJhd19jYWxsc191c2VkYO+8jOS4juaooeadv+iuoeaVsOWIhuW8gAotIFsgXSByYXcg6aKE566X55So5bC95Y+q5oumIHJhd++8jOaooeadv+W3peWFt+S7jeWPr+eUqO+8iOWunua1i+mqjOivgei/h++8iQotIFsgXSDnvZHlhbPlrqHorqEgYHRlbXBsYXRlX29yX3Jhdz0ncmF3J2Ag55qE5p2h5pWw5LiO5pys5ZywIGByYXdfY2FsbHNfdXNlZGAg5LiA6Ie0Ci0gWyBdICoq6Iez5q2kIDcg5Liq5bel5YW35YWo6YOo5o6l5YWl5bm25ZCE55yf5a6e6LCD55So6L+H5LiA5qyhKirigJTigJTlkI7nu63mqKHlnZflj6/ku6XmlL7lv4PlvJXnlKgKCi0tLQoq54mI5pysIEMg54m55b6B77ya5o6S5p+l5YWo6Z2gIuWcqOecn+WunuW3peeoi+S4iuaKiui6uuedgOayoeaOpeeahOW3peWFt+mAkOS4quaOpei/m+adpeecn+aJk+S4gOmBjSDihpIg5pS56YCg5oiQIGNyZWF0ZV9hZ2VudCDnmoQgUmVBY3Qg5b6q546vIOKGkiDoh6rnoJTlj7DotKbjgIHlm57mtYHooaXor4HkuI4gcmF3IOmAmumBk+aKpOagjyLvvIznrKzkuIDkuKrog73oh6rlt7Hlj5bor4HnmoQgQWdlbnQg5LuO5pys6aG555uu5bey5pyJ55qE5Luj56CB6ZW/5Ye65p2l77yM5LiN5piv5LuO5a6Y5pa55qC35L6L5oqE5p2l55qE44CCKgo=</script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
   <script>
     (function () {

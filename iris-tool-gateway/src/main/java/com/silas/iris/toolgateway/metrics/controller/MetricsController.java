@@ -142,16 +142,20 @@ public class MetricsController {
         Long remaining = redisService.consume_tool_calls(incidentId);
 
         // 2. 分发：解析 step、渲染 PromQL、推算时间范围、组装请求参数，并请求 Prometheus
+        // step 必须先于渲染算出来——模板里的 rate 区间由 step 反推，而不是直接用请求里的 window，
+        // 详见 resolveRateWindow 的注释。
         int window = windowQueryDTO.getWindow();
-        String promQL = metricsTemplateUtil.render(windowQueryDTO.getTemplateKey(), windowQueryDTO.getService(), StrUtil.toString(window));
+        int step = resolveStep(window);
+        String promQL = metricsTemplateUtil.render(
+                windowQueryDTO.getTemplateKey(), windowQueryDTO.getService(), resolveRateWindow(step));
         TimeRange timeRange = resolveTimeRange(window, windowQueryDTO.getEndOffsetSeconds());
-        Map<String, Object> queryRangeParams = buildQueryRangeParams(promQL, timeRange, resolveStep(window));
+        Map<String, Object> queryRangeParams = buildQueryRangeParams(promQL, timeRange, step);
         log.info("开始请求 Prometheus query_range，incidentId: {}", incidentId);
         QueryRangeVO data = fetchQueryRange(queryRangeParams);
 
         // 3. 组装结果：统一信封 + meta
-        log.info("指标查询完成，incidentId: {}, remaining: {}, elapsedMs: {}",
-                incidentId, remaining, System.currentTimeMillis() - startTask);
+        log.info("指标查询完成，incidentId: {}, remaining: {}, elapsedMs: {}, data：{}",
+                incidentId, remaining, System.currentTimeMillis() - startTask, data);
         return ApiEnvelope.ok(data, buildMeta(startTask, remaining));
     }
 
@@ -257,6 +261,22 @@ public class MetricsController {
     private int resolveStep(int window) {
         int requestStep = NumberUtil.ceilDiv(window, MetricsQueryConstants.MAX_SAMPLE_POINTS);
         return Math.max(requestStep, MetricsQueryConstants.DEFAULT_NATIVE_SCRAPE_INTERVAL_SECONDS);
+    }
+
+    /**
+     * 按采样 step 反推模板里 {@code rate()} 的区间长度，返回带单位的 PromQL duration。
+     * <p>
+     * 必须绑定 step 而不是查询窗口 window。rate 区间决定的是"每个采样点回看多久"，window 决定的是
+     * "曲线覆盖多长的时间跨度"，二者语义无关。早期版本把 window 直接塞进 {@code [{window}]}，
+     * window=1800 时每个点算的都是 30 分钟移动平均：13:42 瞬间打满的错误率会被抹成
+     * 13:42→13:48 的缓慢爬坡，排障侧据此会把突发故障误判成缓慢劣化、并把起始时间定错好几分钟；
+     * 而且曲线首点回看的 1800 秒整个落在 start 之前，等于在报告调用方没请求的时间段。
+     *
+     * @param step 采样步长，单位秒
+     * @return rate 区间长度，PromQL duration 格式（如 {@code 240s}）
+     */
+    private String resolveRateWindow(int step) {
+        return StrUtil.toString(step * MetricsQueryConstants.RATE_WINDOW_STEP_MULTIPLIER) + "s";
     }
 
     /**

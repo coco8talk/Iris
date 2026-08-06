@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="source-sha256" content="0abd3a055bd7ca3cf0ce94d2f69b1dd0bf78314921cb33b7a305d4a8a9181c72">
-  <title>模块 5 · webhook 入口 + 指纹去重 — 版本 C</title>
+  <meta name="source-sha256" content="24461bdc1cf36d1c4901fb21d3b272f533dedf5527769085de804cdcb2ecfed8">
+  <title>模块 5 · 自建 FastAPI 入口 + webhook 去重 + checkpointer — 版本 C</title>
   <style>
     :root {
       --bg: oklch(0.9697 0.0153 7.48);
@@ -800,135 +800,367 @@
   <main class="page-shell" data-od-id="page-shell">
     <div class="reader-layout">
       <article class="document" id="document-content" data-od-id="document-content">
-<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 5 · webhook 入口 + 指纹去重 — 版本 C</h1></header>
+<header class="glass-card hero reveal" data-od-id="document-title"><h1>模块 5 · 自建 FastAPI 入口 + webhook 去重 + checkpointer — 版本 C</h1></header>
 <blockquote>
-<p>编排理念：🟢复刻真实 Alertmanager payload 解析 → 🟡改造成去重逻辑 → 🔴自研死信兜底。<strong>这是整个系统唯一的入口。</strong></p>
+<p>编排理念：🟡在本项目真实代码上改造（<code>langgraph dev</code> 托管 → 自建 uvicorn 入口；无状态 run → 带 checkpointer 的续跑）→ 🔴自研指纹去重、告警落盘与死信兜底。<strong>这是整个系统唯一的入口，也是运行方式的分水岭。</strong></p>
 </blockquote>
+<p><strong>本模块的能力边界（运行方式在这里换挡，先对齐）</strong></p>
+<ul>
+<li><strong>端口从 2024 换到 8000</strong>：M3/M4 靠 <code>langgraph dev</code>（LangGraph Server 托管，端口 <strong>2024</strong>）触发图。本模块起，真实入口是<strong>自建 FastAPI + uvicorn（端口 8000）</strong>——因为 Alertmanager 只会往你给它的那个 URL POST 一份<strong>它自己格式</strong>的 payload，Server 自带的 <code>/runs</code> 接口没法直接收。M6 之后所有验收命令一律用 8000。</li>
+<li><strong><code>langgraph.json</code> 不删</strong>：它继续给 LangGraph Studio 做可视化调试用。做法见 T5.2——图的构建改成工厂函数，Studio 走无 checkpointer 的那份，uvicorn 走带 <code>AsyncSqliteSaver</code> 的那份。</li>
+<li><strong>checkpointer 落在这里而不是 M4</strong>：M4 时项目还跑在 LangGraph Server 托管模式下，persistence 由 Server 自己管，给 <code>compile(checkpointer=...)</code> 传自定义 checkpointer 会直接报错。有了自建 uvicorn 才轮得到自己管持久化，<code>thread_id = incident_id</code> 也才有真正的外部来源（webhook 生成的 incident_id）。</li>
+<li><strong>工具集不变</strong>：仍只有 <code>query_metrics</code> 一个真实接入，其余 6 个在 <strong>M7</strong> 接入。</li>
+<li><strong>本模块产出被后面复用</strong>：<code>incident_dir()</code> 的白名单校验是 M7 <code>EvidenceStore</code> 和 M8 报告落盘的共同地基；checkpointer 是 M10（内层 resume）和 M12（审批挂起 resume）的前提。</li>
+</ul>
 <section class="glass-card reveal" id="section-学完本模块你能做到的-3-件事" data-od-id="section-学完本模块你能做到的-3-件事"><h2 data-od-id="section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</h2>
 <ol>
-<li>解析真实 Alertmanager webhook 负载，抽出 alertname/service/labels。</li>
-<li>用告警指纹在 30 分钟窗口内去重——同一场事故的重复告警不会重复启动诊断。</li>
+<li>自建一个 FastAPI 应用做整个系统的入口，解析真实 Alertmanager webhook 负载，抽出 alertname/service/labels 并把原始告警落盘。</li>
+<li>用告警指纹在 30 分钟窗口内去重——同一场事故的重复告警不会重复启动诊断；并用 <code>AsyncSqliteSaver</code> + <code>thread_id=incident_id</code> 让图 kill 进程后能续跑。</li>
 <li>坏负载不丢、不让 Alertmanager 重试风暴：落死信文件并返回 200。</li>
 </ol>
 </section>
 <section class="glass-card reveal" id="section-本模块交付物清单-文件路径级" data-od-id="section-本模块交付物清单-文件路径级"><h2 data-od-id="section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</h2>
+<blockquote>
+<p>目录仍保持扁平：<code>state.py</code>/<code>graph.py</code>/<code>guard.py</code> 留在 <code>src/agent/</code> 顶层，本模块新增的也都放顶层。<code>langgraph.json</code> 的入口声明不动。</p>
+</blockquote>
 <ul>
-<li><code>src/.../webhook/models.py</code>（Alert 模型）</li>
-<li><code>src/.../webhook/ingest.py</code>（parse + fingerprint + new_incident_id）</li>
-<li><code>src/.../store/incidents.py</code>（incident 表 + find_active）</li>
-<li><code>src/.../webhook/router.py</code>（<code>POST /webhook/alertmanager</code>）</li>
+<li><code>iris-agent-platform/src/agent/app.py</code>（<strong>新建</strong>：FastAPI 应用 + <code>POST /webhook/alertmanager</code> + lifespan 管 checkpointer/后台任务）</li>
+<li><code>iris-agent-platform/src/agent/alerts.py</code>（<strong>新建</strong>：<code>Alert</code> 模型 + <code>parse_am_payload</code> + <code>fingerprint_of</code> + <code>new_incident_id</code>）</li>
+<li><code>iris-agent-platform/src/agent/paths.py</code>（<strong>新建</strong>：<code>incident_dir()</code>（白名单校验防路径穿越）+ <code>write_alert_fixture()</code>）</li>
+<li><code>iris-agent-platform/src/agent/store.py</code>（<strong>新建</strong>：SQLite incident 表 + <code>find_active</code> + <code>merge_alert</code> + <code>mark_failed</code>）</li>
+<li><code>iris-agent-platform/src/agent/graph.py</code>（<strong>改造</strong>：<code>graph = ...</code> 改成 <code>build_graph(checkpointer=None)</code> 工厂 + 保留模块级 <code>graph</code> 供 Studio）</li>
+<li><code>runs/checkpoints.db</code>、<code>runs/incidents/{id}/alert.json</code>、<code>runs/deadletter/*.json</code>（运行时产物）</li>
 </ul>
 </section>
-<section class="glass-card reveal" id="section-任务-t5-1-解析-webhook-指纹去重" data-od-id="section-任务-t5-1-解析-webhook-指纹去重"><h2 data-od-id="section-任务-t5-1-解析-webhook-指纹去重">任务 T5.1 · 解析 webhook + 指纹去重</h2>
+<section class="glass-card reveal" id="section-任务-t5-1-自建-fastapi-入口-解析-webhook-指纹去重-告警落盘" data-od-id="section-任务-t5-1-自建-fastapi-入口-解析-webhook-指纹去重-告警落盘"><h2 data-od-id="section-任务-t5-1-自建-fastapi-入口-解析-webhook-指纹去重-告警落盘">任务 T5.1 · 自建 FastAPI 入口 + 解析 webhook + 指纹去重 + 告警落盘</h2>
 <div class="meta-strip"><p><strong>id</strong>：T5.1 ｜ <strong>所属模块</strong>：M5 ｜ <strong>优先级</strong>：P0</p></div>
-<p><strong>一句话目标</strong>：把 Alertmanager 的 JSON 解析成 Alert 列表，并按指纹在 30 分钟内去重。</p>
+<p><strong>一句话目标</strong>：从 <code>langgraph dev</code> 换挡到自建 uvicorn，把 Alertmanager 的 JSON 解析成 Alert 列表，按指纹在 30 分钟内去重，并把原始告警落盘。</p>
 <p><strong>前置知识（≤2 新概念）</strong></p>
 <ul>
-<li><strong>Alertmanager webhook 格式 + 自带 fingerprint</strong>：AM v4 负载里 <code>alerts[*].labels.alertname/service</code>，且每条 alert <strong>自带 <code>fingerprint</code> 字段</strong>，去重直接用它。<em>Java 类比</em>：像收支付回调，<code>fingerprint</code> 就是天然的幂等键，不用自己算 hash。📖 <a href="https://prometheus.io/docs/alerting/latest/configuration/#webhook_config" rel="noreferrer" target="_blank">https://prometheus.io/docs/alerting/latest/configuration/#webhook_config</a> （webhook 负载，需核实锚点）</li>
-<li><strong>指纹去重窗口</strong>：30 分钟内同指纹且 open 的事故 → merge 不新建。<em>Java 类比</em>：像幂等表 + 时间窗，重复请求命中已有记录就合并。📖（自研；参考 Alertmanager 分组/抑制思想）</li>
+<li><strong>Alertmanager webhook 格式 + 自带 fingerprint</strong>
+<ol>
+<li>AM v4 负载顶层：<code>version</code>/<code>groupKey</code>/<code>status</code>/<code>receiver</code>/<code>commonLabels</code>/<code>alerts[]</code>。</li>
+<li>每条 alert 的关键路径：<code>alerts[*].labels.alertname</code>、<code>alerts[*].labels.service</code>、<code>alerts[*].labels.severity</code>、<code>alerts[*].status</code>、<code>alerts[*].startsAt</code>、<code>alerts[*].annotations</code>。</li>
+<li><strong>每条 alert 自带 <code>alerts[*].fingerprint</code></strong>——去重直接用它，不用自己算 hash。</li>
+<li><em>Java 类比</em>：像收支付回调，<code>fingerprint</code> 就是天然的幂等键。</li>
+<li>📖 <a href="https://prometheus.io/docs/alerting/latest/configuration/#webhook_config" rel="noreferrer" target="_blank">https://prometheus.io/docs/alerting/latest/configuration/#webhook_config</a> （webhook 负载，需核实锚点）</li>
+</ol>
+</li>
+<li><strong>不可信输入 → 路径穿越防护</strong>
+<ol>
+<li><code>incident_id</code> 由本系统生成，但 payload 里的字段（service/alertname）来自外部，任何用它们拼路径的地方都要先过白名单。</li>
+<li>校验做两层：①字符白名单正则；②<code>Path.resolve()</code> 后确认落在 <code>runs/incidents/</code> 之内。</li>
+<li><em>Java 类比</em>：文件上传时校验落地路径必须在白名单目录内，防目录穿越漏洞。</li>
+<li>📖 <a href="https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html" rel="noreferrer" target="_blank">https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html</a> （路径穿越防护，需核实锚点）</li>
+</ol>
+</li>
 </ul>
-<h3 data-od-id="section-第-1-段-复刻-4" id="section-第-1-段-复刻-4">🟢 第 1 段 · 复刻</h3>
+<h3 data-od-id="section-第-1-段-改造-把入口从-langgraph-dev-换成自建-fastapi-4" id="section-第-1-段-改造-把入口从-langgraph-dev-换成自建-fastapi-4">🟡 第 1 段 · 改造（把入口从 langgraph dev 换成自建 FastAPI）</h3>
+<ol>
+<li>新建 <code>src/agent/app.py</code>，先只放一个 <code>POST /webhook/alertmanager</code>，<strong>收到就把整个 payload <code>json.dumps</code> 打出来再返回 200</strong>——先用一份<strong>真实</strong>的 AM 负载（M1 注入故障时从 Alertmanager 抓的那份，不要用文档里的示例）把字段路径认准。</li>
+<li><code>uv run uvicorn agent.app:app --port 8000 --reload</code> 起服务，把 M1 的 Alertmanager 的 webhook 地址指过来（或直接 <code>curl -d @am-fixture.json</code>），确认真实负载能打进来。</li>
+<li>再写 <code>alerts.py</code> 把打印换成解析：</li>
+</ol>
+<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">class Alert(BaseModel):
+    """一条 Alertmanager 告警，字段全部来自 AM v4 负载，不做二次加工."""
+
+    alertname: str        # labels.alertname，告警规则名（M1 的 alert-rules.yaml 里定义）
+    service: str          # labels.service，告警指向的服务名，对齐 prunus-mume 真实 application 值 [R3]
+    severity: str         # labels.severity，AM 侧的严重度标签，注意它不等于 M6 triage 判出来的 severity
+    status: str           # "firing" | "resolved"
+    starts_at: datetime   # startsAt，告警开始时间
+    labels: dict[str, str]       # 完整 labels 原样保留，M6 的 triage prompt 会用到
+    annotations: dict[str, str]  # summary/description 等，M6 的 triage prompt 会用到
+    fingerprint: str      # AM 自带的 fingerprint，去重的第一优先来源
+
+
+def parse_am_payload(payload: dict) -&gt; list[Alert]:
+    """把 AM v4 负载解析成 Alert 列表；任一必需字段缺失就抛，由 T5.3 的死信兜底接住."""
+
+
+def fingerprint_of(alerts: list[Alert]) -&gt; str:
+    """取本组告警的指纹：
+    1. 优先用 alerts[0].fingerprint（AM 自带，稳定）；
+    2. 缺失时回退自算 sha256(alertname + service + 排序后的关键 labels)[:16]；
+    3. 回退算法里**不许**掺入 starts_at 等时间类 label，否则每条都算"不同"永远去不掉重。
+    """
+
+
+def new_incident_id() -&gt; str:
+    """生成 inc-YYYYMMDD-NNN 形式的事故 id；NNN 是当天序号，从 incident 表当天最大值 +1。
+    这个 id 同时是：网关 X-Incident-Id、落盘目录名、以及 T5.2 的 checkpointer thread_id。"""
+</code></pre></div>
+<h3 data-od-id="section-第-2-段-自研-incident-存储-告警落盘-5" id="section-第-2-段-自研-incident-存储-告警落盘-5">🔴 第 2 段 · 自研（incident 存储 + 告警落盘）</h3>
+<p><strong>从空文件</strong>写 <code>store.py</code>（SQLite，不引 ORM）：</p>
+<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">sql</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-sql">CREATE TABLE IF NOT EXISTS incident (
+    incident_id TEXT PRIMARY KEY,  -- inc-YYYYMMDD-NNN
+    fingerprint TEXT NOT NULL,     -- 去重键，建索引
+    status      TEXT NOT NULL,     -- open | running | closed | failed
+    created_at  REAL NOT NULL,     -- epoch 秒
+    updated_at  REAL NOT NULL,     -- 后台任务每次推进状态时更新
+    alerts_ref  TEXT,              -- runs/incidents/{id}/alert.json 的路径，不存 payload 全文
+    last_error  TEXT               -- 后台图执行异常时落这里，T5.3 用（不许让异常只活在日志里）
+);
+</code></pre></div>
 <ul>
-<li><strong>读什么</strong>：一份真实 Alertmanager webhook JSON 样例（M1 注入故障时 debug 抓一份，或官方文档示例）。</li>
-<li><strong>跑什么</strong>：写个最小解析把 <code>alerts[*].labels</code> 打印出来，先证明字段路径对。</li>
+<li><code>find_active(fingerprint: str, within_seconds: int = 1800) -&gt; str | None</code>：查 30 分钟内同指纹且 <code>status in ('open','running')</code> 的 incident_id。</li>
+<li><code>create_incident(incident_id, fingerprint, alerts_ref) -&gt; None</code></li>
+<li><code>merge_alert(incident_id: str, alert: Alert) -&gt; None</code>：命中去重时把这条告警并进已有事故（追加进 alert.json 的 <code>alerts[]</code>，更新 <code>updated_at</code>）。</li>
+<li><code>mark_status(incident_id, status, last_error=None) -&gt; None</code></li>
 </ul>
-<h3 data-od-id="section-第-2-段-改造-5" id="section-第-2-段-改造-5">🟡 第 2 段 · 改造</h3>
-<ul>
-<li><code>Alert(alertname,service,severity,status,starts_at,labels,annotations)</code>；<code>fingerprint(alerts)</code> <strong>优先取 AM 自带字段</strong>，回退才自算 <code>sha256(...)[:16]</code>；<code>new_incident_id()</code> = <code>inc-YYYYMMDD-NNN</code>。</li>
-</ul>
-<h3 data-od-id="section-第-3-段-自研-6" id="section-第-3-段-自研-6">🔴 第 3 段 · 自研</h3>
-<ul>
-<li><strong>从空文件</strong>写 <code>store/incidents.py</code>：SQLite <code>incident(incident_id PK,fingerprint,status,created_at,alerts_ref)</code>；<code>find_active(fingerprint, within=30min)-&gt;id|None</code>；<code>merge_alert(id, alert)</code>。</li>
-</ul>
+<p><strong>从空文件</strong>写 <code>paths.py</code>：</p>
+<div class="code-shell" data-od-id="code-3"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">RUNS_ROOT = Path("runs/incidents").resolve()
+_INCIDENT_ID_RE = re.compile(r"^inc-\d{8}-\d{3}$")
+
+
+def incident_dir(incident_id: str) -&gt; Path:
+    """返回 runs/incidents/{incident_id}/，不存在则创建.
+
+    incident_id 虽然是本系统生成的，但它会随 state 流转、也会从 HTTP path 参数
+    （M8 的 GET /incidents/{id}）回到这里，属于不可信输入，两层校验都要有：
+    1. 先用 _INCIDENT_ID_RE 白名单校验形状（只允许 inc-YYYYMMDD-NNN）；
+    2. 再 resolve() 后确认结果目录确实在 RUNS_ROOT 之内，否则抛 ValueError。
+    M7 的 EvidenceStore、M8 的报告落盘、M9 的 verdict 落盘都复用这一个函数，不要各写一份。
+    """
+
+
+def write_alert_fixture(incident_id: str, alert_payload: dict) -&gt; str:
+    """把 Alertmanager 原始 payload 原样落盘成 runs/incidents/{id}/alert.json，
+    返回相对仓库根的路径字符串，写进 IncidentState.alerts_ref。
+
+    落的是原样 payload 不是解析后的 Alert 列表——出问题时要能拿原文复现；
+    state 里只存这个返回值，不存 payload 全文（M4 定的 [R13] 引用式字段约定）。
+    """
+</code></pre></div>
 <p><strong>落笔顺序</strong></p>
 <ol class="steps">
-<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：抓真实 AM JSON，解析打印字段。</div></li>
-<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造：写 Alert 模型 + fingerprint。</div></li>
-<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次请求：<code>curl</code> 打 webhook fixture，看解析对不对。</div></li>
-<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 incident 存储 + find_active。</div></li>
-<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">再请求两次同指纹，验证第二次 deduped。</div></li>
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">建 <code>app.py</code>，只回显 payload，<code>uvicorn --port 8000</code> 起来，用真实 AM 负载打通一次。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">写 <code>alerts.py</code> 的 <code>Alert</code> + <code>parse_am_payload</code>，把回显换成解析结果。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">写 <code>fingerprint_of</code>，先只走"AM 自带字段"分支。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研 <code>store.py</code>：建表 + <code>create_incident</code> + <code>find_active</code>。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">连续打两次同一份 fixture，第二次应返回 <code>{"deduped": true}</code> 且不新建行。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">自研 <code>paths.py</code>，把原始 payload 落盘并把路径写进 <code>alerts_ref</code>；顺手用 <code>inc-../../etc</code> 这种 id 试一次，确认被拒。</div></li>
+<li><span aria-hidden="true" class="step-badge">7</span><div class="step-card">补 <code>fingerprint_of</code> 的回退分支（删掉 fixture 里的 <code>fingerprint</code> 字段验证它）。</div></li>
 </ol>
 <p><strong>关键提示（≤3）</strong></p>
 <ul>
-<li>指纹别把时间戳类 label 算进去，否则每条都"不同"永远去不掉重。</li>
-<li>先用 AM 自带 fingerprint，稳定且省事。</li>
-<li>incident_id 与 M4 的 thread_id 是同一个，命名保持一致。</li>
+<li>指纹别把时间戳类 label 算进去，否则每条都"不同"，永远去不掉重。</li>
+<li><code>incident_id</code> 就是 T5.2 的 <code>thread_id</code>，也是网关的 <code>X-Incident-Id</code>，三处必须是同一个值——起名和生成只留一个来源（<code>new_incident_id()</code>）。</li>
+<li>落盘只落原始 payload，<code>state</code> 里只存路径；这是 M4 定的引用式字段约定，从这里开始真正执行。</li>
 </ul>
 <p><strong>卡住降级路径（30 分钟没思路）</strong></p>
 <ul>
-<li>字段取不到：把整个 payload <code>json.dumps</code> 打出来对字段路径，别猜结构。</li>
-<li>视频：webhook 解析无对口视频；以 Alertmanager 官方 webhook 文档为主。</li>
-<li>问 AI：「这是一份 Alertmanager webhook JSON（贴出），我要抽 alertname/service 并用自带 fingerprint 去重，Pydantic 模型和 fingerprint 函数怎么写？」</li>
+<li>字段取不到：把整个 payload <code>json.dumps(indent=2)</code> 打出来对字段路径，别照文档猜结构（AM 版本之间有差异）。</li>
+<li>去不掉重：把两次的 <code>fingerprint_of</code> 结果和 <code>find_active</code> 的 SQL 参数一起打出来，先确认是"指纹不同"还是"时间窗判错"。</li>
+<li>视频：webhook 解析无对口视频，以 Alertmanager 官方 webhook 文档为主。</li>
+<li>问 AI：「这是一份真实 Alertmanager webhook JSON（贴出），我要抽 alertname/service 并用自带 fingerprint 去重，Pydantic 模型和 fingerprint 函数怎么写？」</li>
 </ul>
 <p><strong>真实 HTTP 验收（含异常路径）</strong></p>
-<div class="code-shell" data-od-id="code-1"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">curl -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json    # 200，incidents.db 落一行
-curl -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json    # 30min 内同指纹 → {"deduped":true}
-# 异常路径：改 fixture 的 starts_at 但保持核心 label 不变 → 仍去重（指纹对时间不敏感）
+<div class="code-shell" data-od-id="code-4"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">cd iris-agent-platform
+uv run uvicorn agent.app:app --port 8000 --reload
+
+curl -s -XPOST localhost:8000/webhook/alertmanager \
+  -H 'Content-Type: application/json' -d @am-fixture.json    # 200，incident 表落一行
+sqlite3 runs/incidents.db "select incident_id,fingerprint,status,alerts_ref from incident;"
+cat runs/incidents/inc-*/alert.json                          # 原始 payload 原样落盘
+
+curl -s -XPOST localhost:8000/webhook/alertmanager \
+  -H 'Content-Type: application/json' -d @am-fixture.json    # 30min 内同指纹 → {"deduped":true}
+sqlite3 runs/incidents.db "select count(*) from incident;"   # 仍是 1
+
+# 异常路径 ①：改 fixture 的 startsAt 但保持核心 label 不变 → 仍去重（指纹对时间不敏感）
+# 异常路径 ②：把 fixture 里的 fingerprint 字段删掉 → 走自算回退分支，两次仍能去重
 </code></pre></div>
-<p>判定特征：首次建 incident；30 分钟内同指纹 deduped；指纹对时间戳不敏感。依赖真实服务：无（纯确定性，但可用 M1 真实告警做 fixture）。</p>
+<p>判定特征：首次建 incident 且原始告警落盘；30 分钟内同指纹 deduped、31 分钟后新建；删掉 AM fingerprint 后回退算法仍能去重。依赖真实服务：无外部依赖（但 fixture 必须是 M1 抓的真实告警，不是手编的）。</p>
 <p><strong>完成判定</strong></p>
 <ul class="checklist">
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>真实 AM JSON 能解析出正确字段（复刻段）</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>fingerprint 优先用 AM 自带字段</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>30 分钟内同指纹去重、31 分钟后新建</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>incident_id 与 M4 thread_id 命名一致</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>uvicorn agent.app:app --port 8000</code> 能起，真实 AM 负载能解析出正确字段</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>fingerprint_of</code> 优先用 AM 自带字段，回退算法不含时间类 label</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>30 分钟内同指纹去重（<code>merge_alert</code> 并入已有事故）、31 分钟后新建</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>incident</code> 表 7 列齐全，<code>alerts_ref</code> 存路径而非 payload 全文</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>incident_dir()</code> 的白名单 + <code>resolve()</code> 两层校验都在，畸形 id 被拒</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-0-5" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>incident_id</code> 只有 <code>new_incident_id()</code> 一个生成来源</span></label></li>
 </ul>
 </section>
-<section class="glass-card reveal" id="section-任务-t5-2-异步启图-死信兜底" data-od-id="section-任务-t5-2-异步启图-死信兜底"><h2 data-od-id="section-任务-t5-2-异步启图-死信兜底">任务 T5.2 · 异步启图 + 死信兜底</h2>
+<section class="glass-card reveal" id="section-任务-t5-2-异步启图-checkpointer-断点续跑" data-od-id="section-任务-t5-2-异步启图-checkpointer-断点续跑"><h2 data-od-id="section-任务-t5-2-异步启图-checkpointer-断点续跑">任务 T5.2 · 异步启图 + checkpointer 断点续跑</h2>
 <div class="meta-strip"><p><strong>id</strong>：T5.2 ｜ <strong>所属模块</strong>：M5 ｜ <strong>优先级</strong>：P0</p></div>
-<p><strong>一句话目标</strong>：新事故异步启动诊断图，坏负载落死信并返回 200。</p>
+<p><strong>一句话目标</strong>：新事故异步启动诊断图，并用 <code>AsyncSqliteSaver</code> + <code>thread_id=incident_id</code> 让进程 kill 掉重启还能从上次的节点接着走。</p>
 <p><strong>前置知识（≤2 新概念）</strong></p>
 <ul>
-<li><strong>异步后台启图</strong>：webhook 收到后不能阻塞等诊断跑完，要异步触发图并立刻回 200。<em>Java 类比</em>：像 <code>@Async</code> 或投递到线程池后立即返回，但异常必须被托管、不能裸 <code>create_task</code> 丢异常。📖 <a href="https://docs.langchain.com/oss/python/langgraph" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langgraph</a> （ainvoke，需核实锚点）</li>
-<li><strong>死信（dead letter）</strong>：解析失败的负载存盘不丢，返回 200 防重试风暴。<em>Java 类比</em>：MQ 消费失败进死信队列。</li>
+<li><strong>checkpointer（AsyncSqliteSaver）</strong>
+<ol>
+<li>每个 superstep 结束时把整个 state 存盘，<code>thread_id</code> 标识一次会话，可从任意节点恢复。</li>
+<li>恢复的调用方式是<strong>同一个 <code>thread_id</code> 再 <code>ainvoke</code> 一次</strong>，input 传 <code>None</code> 表示"从上次断点继续"而不是重跑。</li>
+<li>自建 FastAPI 是异步的，所以用 <code>AsyncSqliteSaver</code> 而不是同步的 <code>SqliteSaver</code>。</li>
+<li><em>Java 类比</em>：把工作流实例状态持久化到库，重启后按实例 id 捞回来接着跑。</li>
+<li>📖 <a href="https://docs.langchain.com/oss/python/langgraph" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langgraph</a> （persistence/checkpointer，需核实锚点）· video-2 P44-47「记忆存储·短期·Postgres」</li>
+</ol>
+</li>
+<li><strong>异步后台启图 + 生命周期托管</strong>
+<ol>
+<li>webhook 收到后不能阻塞等诊断跑完（AM 会超时重试），要异步触发图并立刻回 200。</li>
+<li>但<strong>不能裸 <code>asyncio.create_task</code> 然后丢掉引用</strong>——异常会被静默吞掉，且进程退出时任务被硬砍。</li>
+<li>任务的异常必须落到 <code>incident.last_error</code> 可查，不能只活在日志里。</li>
+<li><em>Java 类比</em>：<code>@Async</code> 投线程池后立即返回，但线程池要受容器生命周期管理、异常要落库。</li>
+<li>📖 <a href="https://docs.langchain.com/oss/python/langgraph" rel="noreferrer" target="_blank">https://docs.langchain.com/oss/python/langgraph</a> （ainvoke，需核实锚点）· video-2 P66「异步+并发执行工具类」</li>
+</ol>
+</li>
 </ul>
-<h3 data-od-id="section-第-1-段-复刻-8" id="section-第-1-段-复刻-8">🟢 第 1 段 · 复刻</h3>
-<ul>
-<li><strong>读什么</strong>：M3/M4 已编译的图的 <code>graph.ainvoke(state, config)</code> 调用方式。</li>
-<li><strong>跑什么</strong>：在 webhook 里同步调一次图跑通（先不异步）。</li>
-</ul>
-<h3 data-od-id="section-第-2-段-改造-9" id="section-第-2-段-改造-9">🟡 第 2 段 · 改造</h3>
-<ul>
-<li>改成受应用生命周期管理的后台执行器调 <code>ainvoke</code>；任务状态/异常持久化到 incident 表；进程退出时停收新任务并等待/取消在途任务。</li>
-</ul>
-<h3 data-od-id="section-第-3-段-自研-10" id="section-第-3-段-自研-10">🔴 第 3 段 · 自研</h3>
-<ul>
-<li><strong>从空文件</strong>写死信逻辑：解析异常时把原始 payload 写 <code>runs/deadletter/&lt;ts&gt;.json</code> 并返回 200。</li>
-</ul>
+<h3 data-od-id="section-第-1-段-改造-把图的编译改成工厂-两种入口各拿一份-7" id="section-第-1-段-改造-把图的编译改成工厂-两种入口各拿一份-7">🟡 第 1 段 · 改造（把图的编译改成工厂，两种入口各拿一份）</h3>
+<p>问题：<code>langgraph.json</code> 指着 <code>graph.py:graph</code>，Studio 需要一个<strong>模块级、已编译、不带自定义 checkpointer</strong> 的图；而 uvicorn 需要一个<strong>带 <code>AsyncSqliteSaver</code></strong> 的图。两个需求不能塞进同一个模块级变量。</p>
+<p>解法是把编译过程抽成工厂，两边各取所需——<code>langgraph.json</code> 一个字都不用改：</p>
+<div class="code-shell" data-od-id="code-5"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">def build_graph(checkpointer=None):
+    """装配节点与边并编译。checkpointer=None 时交给托管方自己管 persistence."""
+    workflow = StateGraph(IncidentState)
+    ...  # M4 已经写好的节点注册 + 条件边，原样搬进来
+    return workflow.compile(checkpointer=checkpointer)
+
+
+graph = build_graph()   # 供 langgraph.json / LangGraph Studio 可视化调试用
+</code></pre></div>
+<p>FastAPI 侧在 lifespan 里建带 checkpointer 的那一份：</p>
+<div class="code-shell" data-od-id="code-6"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with AsyncSqliteSaver.from_conn_string("runs/checkpoints.db") as saver:
+        app.state.graph = build_graph(checkpointer=saver)
+        app.state.tasks = set()          # 持有后台任务引用，防被 GC
+        yield
+        # 退出：停收新任务 → 等在途任务收尾（超时就 cancel）
+        await _drain(app.state.tasks, timeout=30)
+</code></pre></div>
+<p>启图时把 <code>thread_id</code> 绑成 incident_id：</p>
+<div class="code-shell" data-od-id="code-7"><div class="code-toolbar"><span class="language-label">python</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-python">config = {"configurable": {"thread_id": incident_id}}
+await app.state.graph.ainvoke(initial_state, config)
+</code></pre></div>
+<h3 data-od-id="section-第-2-段-自研-后台任务托管-异常落库-8" id="section-第-2-段-自研-后台任务托管-异常落库-8">🔴 第 2 段 · 自研（后台任务托管 + 异常落库）</h3>
+<p><strong>从空文件</strong>写后台执行的那一层：</p>
+<ol>
+<li><code>spawn_incident_run(app, incident_id, initial_state)</code>：创建 task、<strong>存进 <code>app.state.tasks</code></strong>、加 <code>add_done_callback</code> 移除引用；</li>
+<li>task 内部包 try/except：成功 → <code>mark_status(incident_id, "closed")</code>；异常 → <code>mark_status(incident_id, "failed", last_error=traceback)</code>，绝不让异常只进日志；</li>
+<li><code>resume_incident_run(app, incident_id)</code>：用同一个 <code>thread_id</code>、input 传 <code>None</code> 再 <code>ainvoke</code> 一次，用于进程重启后手工续跑（M12 的 <code>copilot approve</code> 走的也是这条路）。</li>
+</ol>
 <p><strong>落笔顺序</strong></p>
 <ol class="steps">
-<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">复刻：webhook 里同步 ainvoke 跑通。</div></li>
-<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改造成异步后台执行 + 异常持久化。</div></li>
-<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">发一次坏 payload：看是否落死信 + 返回 200。</div></li>
-<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研死信目录 + 恢复排查说明。</div></li>
-<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">验证坏负载不触发 AM 重试。</div></li>
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">先在 webhook 里<strong>同步</strong> <code>await graph.ainvoke(...)</code> 跑通一次（图能从入口走到 report），确认接线对。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">改成工厂 <code>build_graph(checkpointer=...)</code>，模块级 <code>graph</code> 保留，<code>langgraph dev</code> 仍能起（证明没把 Studio 弄坏）。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">接 <code>AsyncSqliteSaver</code> + lifespan，跑一次，确认 <code>runs/checkpoints.db</code> 有该 thread 的多步记录。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">改成异步后台执行，webhook 立即返回 200。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">自研异常落库：故意把网关 token 改错，看 <code>incident.last_error</code> 有没有内容。</div></li>
+<li><span aria-hidden="true" class="step-badge">6</span><div class="step-card">验证断点续跑：图跑到 investigate 时 kill uvicorn，重启后调 resume，确认从上次节点继续而不是从头跑。</div></li>
 </ol>
 <p><strong>关键提示（≤3）</strong></p>
 <ul>
-<li>别裸 <code>asyncio.create_task</code> 后丢异常——异常要落 incident 表可观察。</li>
-<li>坏负载返回 200 是故意的（防 AM 重试风暴），但必须落死信可追。</li>
-<li>进程退出要优雅：停收新任务、处理在途。</li>
+<li><code>thread_id</code> 必须等于 <code>incident_id</code>：不一致会导致"恢复"实际上开了一条新会话，从头跑一遍，还会把网关预算再花一遍。</li>
+<li>别裸 <code>create_task</code> 丢引用——Python 只对 task 持弱引用，丢了引用可能被 GC 掉，异常也会被静默吞。</li>
+<li><code>langgraph dev</code> 和 uvicorn 不要同时跑同一份 <code>runs/checkpoints.db</code>：SQLite 并发写会锁；调试时二选一。</li>
 </ul>
 <p><strong>卡住降级路径（30 分钟没思路）</strong></p>
 <ul>
-<li>异步任务悄悄失败：给后台任务包 try/except 把异常写库并打日志。</li>
-<li>视频：video-2 P66「异步+并发执行工具类」讲异步执行思路（可参考）。</li>
-<li>问 AI：「FastAPI 里我想收到 webhook 后异步启动一个 LangGraph 图并立即返回 200，但异步任务的异常要能查到，正确写法是什么？给结构不要整段实现。」</li>
+<li>恢复不了、每次都从头跑：确认两次调用 <code>thread_id</code> 一致，且恢复那次 input 传的是 <code>None</code> 而不是完整 state（传完整 state 等于覆盖，会从头开始）。</li>
+<li><code>compile(checkpointer=...)</code> 报错：确认你现在跑的是自建 uvicorn，不是 <code>langgraph dev</code>——托管模式下不允许传自定义 checkpointer。</li>
+<li>后台任务悄悄失败：先确认 <code>add_done_callback</code> 里读了 <code>task.exception()</code>，否则异常永远不会浮出来。</li>
+<li>视频：video-2 P45-46「短期记忆案例·Postgres 短期存储」对口讲解。</li>
+<li>问 AI：「LangGraph 用 AsyncSqliteSaver，我 kill 进程重启后同一 thread_id 却从头跑，我的 compile、config 和 resume 调用这样写（贴出），哪里错了？」</li>
 </ul>
 <p><strong>真实 HTTP 验收（含异常路径）</strong></p>
-<div class="code-shell" data-od-id="code-2"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">curl -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json   # 200，后台图启动，incidents.db 状态推进
-curl -XPOST localhost:8000/webhook/alertmanager -d '{"bad":"payload"}' # 200，runs/deadletter/ 落一份
-ls runs/deadletter/    # 有坏负载文件
+<div class="code-shell" data-od-id="code-8"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">uv run uvicorn agent.app:app --port 8000
+
+curl -s -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json   # 200，立即返回
+sqlite3 runs/incidents.db "select incident_id,status from incident;"     # status 推进到 running
+sqlite3 runs/checkpoints.db \
+  "select count(*) from checkpoints where thread_id='inc-YYYYMMDD-001';" # &gt;1（多步都存了）
+
+# 断点续跑：趁图还在 investigate 时 kill uvicorn，重启后 resume
+kill %1 &amp;&amp; uv run uvicorn agent.app:app --port 8000 &amp;
+curl -s -XPOST localhost:8000/incidents/inc-YYYYMMDD-001/resume          # 从上次节点继续
+# 期望：日志里 investigate 之前的节点不再重跑；网关审计里也没有重复的 query_metrics 调用
+
+# 异常路径 ①：用一个没跑过的 thread_id 去 resume → 从头开始（证明记忆按 incident 隔离）
+# 异常路径 ②：把 GATEWAY_BEARER_TOKEN 改错 → 后台任务异常，incident.status='failed' 且 last_error 有栈
+sqlite3 runs/incidents.db "select status,last_error from incident order by created_at desc limit 1;"
 </code></pre></div>
-<p>判定特征：正常负载异步启图；坏负载落死信 + 200；后台异常可在 incident 表/日志查到。依赖真实服务：网关、LLM（图内会真实调用）。</p>
+<p>判定特征：<code>checkpoints.db</code> 有该 thread 的多步记录；kill-重启后同 incident 续跑、不重复调网关；后台异常落 <code>last_error</code> 可查。依赖真实服务：M2 网关、Prometheus、investigate 模型。</p>
 <p><strong>完成判定</strong></p>
 <ul class="checklist">
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>webhook 异步启图、立即返回 200</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>后台任务异常持久化到 incident 表、可观察</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>坏 payload 落死信文件并返回 200</span></label></li>
-<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>进程退出优雅处理在途任务</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span><code>build_graph(checkpointer=None)</code> 工厂成型，模块级 <code>graph</code> 保留，<code>langgraph dev</code> 仍能起</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>uvicorn 侧用 <code>AsyncSqliteSaver</code>，<code>thread_id == incident_id</code></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>webhook 立即返回 200，图在后台跑</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>后台任务引用被持有，异常落 <code>incident.last_error</code></span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>kill 进程重启后同 incident 能从上次节点续跑，且不重复消耗网关预算</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-1-5" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>异 thread_id 恢复 → 从头开始（记忆按 incident 隔离）</span></label></li>
 </ul>
-<p class="closing-note"><em>版本 C 特征：入口全靠"复刻真实 AM 负载/ainvoke 调用 → 改造成去重与异步启图 → 自研死信兜底"。</em></p>
+</section>
+<section class="glass-card reveal" id="section-任务-t5-3-死信兜底-优雅退出" data-od-id="section-任务-t5-3-死信兜底-优雅退出"><h2 data-od-id="section-任务-t5-3-死信兜底-优雅退出">任务 T5.3 · 死信兜底 + 优雅退出</h2>
+<div class="meta-strip"><p><strong>id</strong>：T5.3 ｜ <strong>所属模块</strong>：M5 ｜ <strong>优先级</strong>：P0</p></div>
+<p><strong>一句话目标</strong>：坏负载落死信文件并返回 200，进程退出时不硬砍在途事故。</p>
+<p><strong>前置知识（≤1 新概念）</strong></p>
+<ul>
+<li><strong>死信（dead letter）</strong>
+<ol>
+<li>解析失败的负载<strong>原样</strong>存盘不丢，返回 200 防 Alertmanager 重试风暴。</li>
+<li>返回 200 是故意的：AM 对非 2xx 会按 <code>retry_interval</code> 反复重投，一份坏 payload 能把入口打爆。</li>
+<li>存盘的是原始 bytes，不是解析到一半的中间结果——事后要能拿原文复现。</li>
+<li><em>Java 类比</em>：MQ 消费失败进死信队列，消息不丢但也不阻塞正常消费。</li>
+</ol>
+</li>
+</ul>
+<h3 data-od-id="section-第-1-段-改造-把解析异常从-500-变成-200-落盘-10" id="section-第-1-段-改造-把解析异常从-500-变成-200-落盘-10">🟡 第 1 段 · 改造（把解析异常从 500 变成 200 + 落盘）</h3>
+<ol>
+<li>把 <code>parse_am_payload</code> 的调用包起来：任何 <code>ValidationError</code>/<code>KeyError</code>/<code>json</code> 解析异常 → 写 <code>runs/deadletter/&lt;epoch_ms&gt;-&lt;uuid4hex[:8]&gt;.json</code>，内容是<strong>请求的原始 body</strong>（<code>await request.body()</code>，不是 <code>await request.json()</code>——后者对非 JSON 直接就炸了）；</li>
+<li>死信文件旁边同名写一份 <code>.err</code> 记异常类型与栈，方便事后判断是格式变了还是数据脏；</li>
+<li>返回 <code>{"deadlettered": true, "file": "&lt;path&gt;"}</code> + HTTP 200。</li>
+</ol>
+<h3 data-od-id="section-第-2-段-自研-优雅退出-11" id="section-第-2-段-自研-优雅退出-11">🔴 第 2 段 · 自研（优雅退出）</h3>
+<p><strong>从空文件</strong>写 lifespan 的退出段：</p>
+<ol>
+<li>置一个 <code>app.state.accepting = False</code>，之后进来的 webhook 直接 503（不再接新事故）；</li>
+<li><code>await asyncio.wait(app.state.tasks, timeout=30)</code>；</li>
+<li>超时仍未结束的任务 <code>cancel()</code>，并把这些 incident <code>mark_status(..., "failed", last_error="cancelled on shutdown")</code>——<strong>有了 T5.2 的 checkpointer，这些事故重启后仍可 resume</strong>，所以标 failed 不等于丢了。</li>
+</ol>
+<p><strong>落笔顺序</strong></p>
+<ol class="steps">
+<li><span aria-hidden="true" class="step-badge">1</span><div class="step-card">打一份坏 payload（<code>{"bad":"payload"}</code>），确认现在是 500。</div></li>
+<li><span aria-hidden="true" class="step-badge">2</span><div class="step-card">加死信分支，再打一次，确认变成 200 且 <code>runs/deadletter/</code> 落了文件。</div></li>
+<li><span aria-hidden="true" class="step-badge">3</span><div class="step-card">打一份<strong>非 JSON</strong>的 body（<code>-d 'not-json'</code>），确认也能落死信而不是在 <code>request.json()</code> 处炸掉。</div></li>
+<li><span aria-hidden="true" class="step-badge">4</span><div class="step-card">自研优雅退出：起一次事故后立刻 Ctrl-C，观察日志里等待在途任务的过程。</div></li>
+<li><span aria-hidden="true" class="step-badge">5</span><div class="step-card">重启后对刚才被 cancel 的 incident 调 resume，确认能接着跑（与 T5.2 联动验证）。</div></li>
+</ol>
+<p><strong>关键提示（≤3）</strong></p>
+<ul>
+<li>用 <code>await request.body()</code> 拿原始 bytes 再自己 <code>json.loads</code>；直接 <code>await request.json()</code> 遇到非 JSON body 会先抛，死信分支根本轮不上。</li>
+<li>坏负载返回 200 是故意的（防 AM 重试风暴），但必须落死信可追——"返回 200 且什么都没留"才是真丢数据。</li>
+<li>退出时被 cancel 的事故不是丢了：checkpointer 已经存了断点，重启 resume 即可，<code>last_error</code> 里写清原因就行。</li>
+</ul>
+<p><strong>卡住降级路径（30 分钟没思路）</strong></p>
+<ul>
+<li>死信没落：确认异常捕获包住了 <code>json.loads</code> 和 Pydantic 校验两段，且 <code>except Exception</code> 兜底而不是只 catch 一种。</li>
+<li>Ctrl-C 直接就退了：确认后台任务真的被 <code>app.state.tasks</code> 持有，否则 lifespan 退出段等的是一个空集合。</li>
+<li>视频：video-2 P66「异步+并发执行工具类」讲异步执行思路（可参考）。</li>
+<li>问 AI：「FastAPI 的 lifespan 里，我想在退出时停收新请求、等待在途后台任务最多 30 秒再 cancel，正确的结构是什么？给结构不要整段实现。」</li>
+</ul>
+<p><strong>真实 HTTP 验收（含异常路径）</strong></p>
+<div class="code-shell" data-od-id="code-9"><div class="code-toolbar"><span class="language-label">bash</span><button aria-label="复制代码" class="copy-code" type="button"><svg aria-hidden="true" viewbox="0 0 24 24"><rect height="10" rx="2" width="10" x="9" y="9"></rect><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></div><pre><code class="language-bash">uv run uvicorn agent.app:app --port 8000
+
+curl -s -XPOST localhost:8000/webhook/alertmanager -d '{"bad":"payload"}'   # 200 + {"deadlettered":true}
+curl -s -XPOST localhost:8000/webhook/alertmanager -d 'not-json-at-all'     # 200，同样落死信
+ls runs/deadletter/                        # 两份 .json + 两份 .err
+
+# 优雅退出：起一次真实事故后立刻 Ctrl-C
+curl -s -XPOST localhost:8000/webhook/alertmanager -d @am-fixture.json &amp;
+sleep 2 &amp;&amp; kill -INT %1
+# 期望：日志显示"停收新请求 → 等待 N 个在途任务"；超时的被 cancel 且 last_error 写明原因
+# 重启后 resume 该 incident → 能接着跑（不是从头）
+</code></pre></div>
+<p>判定特征：坏负载（含非 JSON）一律 200 + 落死信；退出时在途任务被等待而非硬砍；被 cancel 的事故重启后可 resume。依赖真实服务：无（死信路径纯本地）。</p>
+<p><strong>完成判定</strong></p>
+<ul class="checklist">
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-2-0" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>坏 payload 落 <code>runs/deadletter/</code> 并返回 200</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-2-1" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>非 JSON body 也能落死信（用的是 <code>request.body()</code> 不是 <code>request.json()</code>）</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-2-2" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>死信旁边有 <code>.err</code> 记异常类型与栈</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-2-3" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>退出时停收新请求、等待在途任务、超时才 cancel</span></label></li>
+<li><label class="completion-label"><input class="completion-checkbox" data-check-key="m5-learning-guide-check-2-4" type="checkbox"/><span aria-hidden="true" class="check-box"></span><span>被 cancel 的 incident <code>last_error</code> 写明原因，且重启后能 resume</span></label></li>
+</ul>
+<p class="closing-note"><em>版本 C 特征：入口全靠"在真实工程上把托管入口改造成自建 FastAPI + checkpointer → 自研指纹去重、告警落盘与死信兜底"长出来；从这里开始，端口 8000 是整个系统唯一的门。</em></p>
 </section>
       </article>
       <aside class="toc" data-od-id="table-of-contents">
@@ -941,15 +1173,16 @@ ls runs/deadletter/    # 有坏负载文件
           <ol class="toc-list" id="toc-list">
             <li><a href="#section-学完本模块你能做到的-3-件事">学完本模块你能做到的 3 件事</a></li>
             <li><a href="#section-本模块交付物清单-文件路径级">本模块交付物清单（文件路径级）</a></li>
-            <li><a href="#section-任务-t5-1-解析-webhook-指纹去重">任务 T5.1 · 解析 webhook + 指纹去重</a></li>
-            <li><a href="#section-任务-t5-2-异步启图-死信兜底">任务 T5.2 · 异步启图 + 死信兜底</a></li>
+            <li><a href="#section-任务-t5-1-自建-fastapi-入口-解析-webhook-指纹去重-告警落盘">任务 T5.1 · 自建 FastAPI 入口 + 解析 webhook + 指纹去重 + 告警落盘</a></li>
+            <li><a href="#section-任务-t5-2-异步启图-checkpointer-断点续跑">任务 T5.2 · 异步启图 + checkpointer 断点续跑</a></li>
+            <li><a href="#section-任务-t5-3-死信兜底-优雅退出">任务 T5.3 · 死信兜底 + 优雅退出</a></li>
           </ol>
         </details>
       </aside>
     </div>
   </main>
 
-  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNSDCtyB3ZWJob29rIOWFpeWPoyArIOaMh+e6ueWOu+mHjSDigJQg54mI5pysIEMKCj4g57yW5o6S55CG5b+177ya8J+fouWkjeWIu+ecn+WuniBBbGVydG1hbmFnZXIgcGF5bG9hZCDop6PmnpAg4oaSIPCfn6HmlLnpgKDmiJDljrvph43pgLvovpEg4oaSIPCflLToh6rnoJTmrbvkv6HlhZzlupXjgIIqKui/meaYr+aVtOS4quezu+e7n+WUr+S4gOeahOWFpeWPo+OAgioqCgojIyDlrablrozmnKzmqKHlnZfkvaDog73lgZrliLDnmoQgMyDku7bkuosKMS4g6Kej5p6Q55yf5a6eIEFsZXJ0bWFuYWdlciB3ZWJob29rIOi0n+i9ve+8jOaKveWHuiBhbGVydG5hbWUvc2VydmljZS9sYWJlbHPjgIIKMi4g55So5ZGK6K2m5oyH57q55ZyoIDMwIOWIhumSn+eql+WPo+WGheWOu+mHjeKAlOKAlOWQjOS4gOWcuuS6i+aVheeahOmHjeWkjeWRiuitpuS4jeS8mumHjeWkjeWQr+WKqOiviuaWreOAggozLiDlnY/otJ/ovb3kuI3kuKLjgIHkuI3orqkgQWxlcnRtYW5hZ2VyIOmHjeivlemjjuaatO+8muiQveatu+S/oeaWh+S7tuW5tui/lOWbniAyMDDjgIIKCiMjIOacrOaooeWdl+S6pOS7mOeJqea4heWNle+8iOaWh+S7tui3r+W+hOe6p++8iQotIGBzcmMvLi4uL3dlYmhvb2svbW9kZWxzLnB5YO+8iEFsZXJ0IOaooeWei++8iQotIGBzcmMvLi4uL3dlYmhvb2svaW5nZXN0LnB5YO+8iHBhcnNlICsgZmluZ2VycHJpbnQgKyBuZXdfaW5jaWRlbnRfaWTvvIkKLSBgc3JjLy4uLi9zdG9yZS9pbmNpZGVudHMucHlg77yIaW5jaWRlbnQg6KGoICsgZmluZF9hY3RpdmXvvIkKLSBgc3JjLy4uLi93ZWJob29rL3JvdXRlci5weWDvvIhgUE9TVCAvd2ViaG9vay9hbGVydG1hbmFnZXJg77yJCgotLS0KCiMjIOS7u+WKoSBUNS4xIMK3IOino+aekCB3ZWJob29rICsg5oyH57q55Y676YeNCgoqKmlkKirvvJpUNS4xIO+9nCAqKuaJgOWxnuaooeWdlyoq77yaTTUg772cICoq5LyY5YWI57qnKirvvJpQMAoKKirkuIDlj6Xor53nm67moIcqKu+8muaKiiBBbGVydG1hbmFnZXIg55qEIEpTT04g6Kej5p6Q5oiQIEFsZXJ0IOWIl+ihqO+8jOW5tuaMieaMh+e6ueWcqCAzMCDliIbpkp/lhoXljrvph43jgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoqQWxlcnRtYW5hZ2VyIHdlYmhvb2sg5qC85byPICsg6Ieq5bimIGZpbmdlcnByaW50KirvvJpBTSB2NCDotJ/ovb3ph4wgYGFsZXJ0c1sqXS5sYWJlbHMuYWxlcnRuYW1lL3NlcnZpY2Vg77yM5LiU5q+P5p2hIGFsZXJ0ICoq6Ieq5bimIGBmaW5nZXJwcmludGAg5a2X5q61KirvvIzljrvph43nm7TmjqXnlKjlroPjgIIqSmF2YSDnsbvmr5Qq77ya5YOP5pS25pSv5LuY5Zue6LCD77yMYGZpbmdlcnByaW50YCDlsLHmmK/lpKnnhLbnmoTluYLnrYnplK7vvIzkuI3nlKjoh6rlt7HnrpcgaGFzaOOAgvCfk5YgaHR0cHM6Ly9wcm9tZXRoZXVzLmlvL2RvY3MvYWxlcnRpbmcvbGF0ZXN0L2NvbmZpZ3VyYXRpb24vI3dlYmhvb2tfY29uZmlnIO+8iHdlYmhvb2sg6LSf6L2977yM6ZyA5qC45a6e6ZSa54K577yJCi0gKirmjIfnurnljrvph43nqpflj6MqKu+8mjMwIOWIhumSn+WGheWQjOaMh+e6ueS4lCBvcGVuIOeahOS6i+aVhSDihpIgbWVyZ2Ug5LiN5paw5bu644CCKkphdmEg57G75q+UKu+8muWDj+W5guetieihqCArIOaXtumXtOeql++8jOmHjeWkjeivt+axguWRveS4reW3suacieiusOW9leWwseWQiOW5tuOAgvCfk5bvvIjoh6rnoJTvvJvlj4LogIMgQWxlcnRtYW5hZ2VyIOWIhue7hC/mipHliLbmgJ3mg7PvvIkKCiMjIyDwn5+iIOesrCAxIOautSDCtyDlpI3liLsKLSAqKuivu+S7gOS5iCoq77ya5LiA5Lu955yf5a6eIEFsZXJ0bWFuYWdlciB3ZWJob29rIEpTT04g5qC35L6L77yITTEg5rOo5YWl5pWF6Zqc5pe2IGRlYnVnIOaKk+S4gOS7ve+8jOaIluWumOaWueaWh+aho+ekuuS+i++8ieOAggotICoq6LeR5LuA5LmIKirvvJrlhpnkuKrmnIDlsI/op6PmnpDmioogYGFsZXJ0c1sqXS5sYWJlbHNgIOaJk+WNsOWHuuadpe+8jOWFiOivgeaYjuWtl+autei3r+W+hOWvueOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIGBBbGVydChhbGVydG5hbWUsc2VydmljZSxzZXZlcml0eSxzdGF0dXMsc3RhcnRzX2F0LGxhYmVscyxhbm5vdGF0aW9ucylg77ybYGZpbmdlcnByaW50KGFsZXJ0cylgICoq5LyY5YWI5Y+WIEFNIOiHquW4puWtl+autSoq77yM5Zue6YCA5omN6Ieq566XIGBzaGEyNTYoLi4uKVs6MTZdYO+8m2BuZXdfaW5jaWRlbnRfaWQoKWAgPSBgaW5jLVlZWVlNTURELU5OTmDjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJQKLSAqKuS7juepuuaWh+S7tioq5YaZIGBzdG9yZS9pbmNpZGVudHMucHlg77yaU1FMaXRlIGBpbmNpZGVudChpbmNpZGVudF9pZCBQSyxmaW5nZXJwcmludCxzdGF0dXMsY3JlYXRlZF9hdCxhbGVydHNfcmVmKWDvvJtgZmluZF9hY3RpdmUoZmluZ2VycHJpbnQsIHdpdGhpbj0zMG1pbiktPmlkfE5vbmVg77ybYG1lcmdlX2FsZXJ0KGlkLCBhbGVydClg44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWkjeWIu++8muaKk+ecn+WuniBBTSBKU09O77yM6Kej5p6Q5omT5Y2w5a2X5q6144CCCjIuIOaUuemAoO+8muWGmSBBbGVydCDmqKHlnosgKyBmaW5nZXJwcmludOOAggozLiDlj5HkuIDmrKHor7fmsYLvvJpgY3VybGAg5omTIHdlYmhvb2sgZml4dHVyZe+8jOeci+ino+aekOWvueS4jeWvueOAggo0LiDoh6rnoJQgaW5jaWRlbnQg5a2Y5YKoICsgZmluZF9hY3RpdmXjgIIKNS4g5YaN6K+35rGC5Lik5qyh5ZCM5oyH57q577yM6aqM6K+B56ys5LqM5qyhIGRlZHVwZWTjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g5oyH57q55Yir5oqK5pe26Ze05oiz57G7IGxhYmVsIOeul+i/m+WOu++8jOWQpuWImeavj+adoemDvSLkuI3lkIwi5rC46L+c5Y675LiN5o6J6YeN44CCCi0g5YWI55SoIEFNIOiHquW4piBmaW5nZXJwcmludO+8jOeos+WumuS4lOecgeS6i+OAggotIGluY2lkZW50X2lkIOS4jiBNNCDnmoQgdGhyZWFkX2lkIOaYr+WQjOS4gOS4qu+8jOWRveWQjeS/neaMgeS4gOiHtOOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOWtl+auteWPluS4jeWIsO+8muaKiuaVtOS4qiBwYXlsb2FkIGBqc29uLmR1bXBzYCDmiZPlh7rmnaXlr7nlrZfmrrXot6/lvoTvvIzliKvnjJznu5PmnoTjgIIKLSDop4bpopHvvJp3ZWJob29rIOino+aekOaXoOWvueWPo+inhumike+8m+S7pSBBbGVydG1hbmFnZXIg5a6Y5pa5IHdlYmhvb2sg5paH5qGj5Li65Li744CCCi0g6ZeuIEFJ77ya44CM6L+Z5piv5LiA5Lu9IEFsZXJ0bWFuYWdlciB3ZWJob29rIEpTT07vvIjotLTlh7rvvInvvIzmiJHopoHmir0gYWxlcnRuYW1lL3NlcnZpY2Ug5bm255So6Ieq5bimIGZpbmdlcnByaW50IOWOu+mHje+8jFB5ZGFudGljIOaooeWei+WSjCBmaW5nZXJwcmludCDlh73mlbDmgI7kuYjlhpnvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICAgICMgMjAw77yMaW5jaWRlbnRzLmRiIOiQveS4gOihjApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICAgICMgMzBtaW4g5YaF5ZCM5oyH57q5IOKGkiB7ImRlZHVwZWQiOnRydWV9CiMg5byC5bi46Lev5b6E77ya5pS5IGZpeHR1cmUg55qEIHN0YXJ0c19hdCDkvYbkv53mjIHmoLjlv4MgbGFiZWwg5LiN5Y+YIOKGkiDku43ljrvph43vvIjmjIfnurnlr7nml7bpl7TkuI3mlY/mhJ/vvIkKYGBgCuWIpOWumueJueW+ge+8mummluasoeW7uiBpbmNpZGVudO+8mzMwIOWIhumSn+WGheWQjOaMh+e6uSBkZWR1cGVk77yb5oyH57q55a+55pe26Ze05oiz5LiN5pWP5oSf44CC5L6d6LWW55yf5a6e5pyN5Yqh77ya5peg77yI57qv56Gu5a6a5oCn77yM5L2G5Y+v55SoIE0xIOecn+WunuWRiuitpuWBmiBmaXh0dXJl77yJ44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIOecn+WuniBBTSBKU09OIOiDveino+aekOWHuuato+ehruWtl+aute+8iOWkjeWIu+aute+8iQotIFsgXSBmaW5nZXJwcmludCDkvJjlhYjnlKggQU0g6Ieq5bim5a2X5q61Ci0gWyBdIDMwIOWIhumSn+WGheWQjOaMh+e6ueWOu+mHjeOAgTMxIOWIhumSn+WQjuaWsOW7ugotIFsgXSBpbmNpZGVudF9pZCDkuI4gTTQgdGhyZWFkX2lkIOWRveWQjeS4gOiHtAoKLS0tCgojIyDku7vliqEgVDUuMiDCtyDlvILmraXlkK/lm74gKyDmrbvkv6HlhZzlupUKCioqaWQqKu+8mlQ1LjIg772cICoq5omA5bGe5qih5Z2XKirvvJpNNSDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5paw5LqL5pWF5byC5q2l5ZCv5Yqo6K+K5pat5Zu+77yM5Z2P6LSf6L296JC95q275L+h5bm26L+U5ZueIDIwMOOAggoKKirliY3nva7nn6Xor4bvvIjiiaQyIOaWsOamguW/te+8iSoqCi0gKirlvILmraXlkI7lj7DlkK/lm74qKu+8mndlYmhvb2sg5pS25Yiw5ZCO5LiN6IO96Zi75aGe562J6K+K5pat6LeR5a6M77yM6KaB5byC5q2l6Kem5Y+R5Zu+5bm256uL5Yi75ZueIDIwMOOAgipKYXZhIOexu+avlCrvvJrlg48gYEBBc3luY2Ag5oiW5oqV6YCS5Yiw57q/56iL5rGg5ZCO56uL5Y2z6L+U5Zue77yM5L2G5byC5bi45b+F6aG76KKr5omY566h44CB5LiN6IO96KO4IGBjcmVhdGVfdGFza2Ag5Lii5byC5bi444CC8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdncmFwaCDvvIhhaW52b2tl77yM6ZyA5qC45a6e6ZSa54K577yJCi0gKirmrbvkv6HvvIhkZWFkIGxldHRlcu+8iSoq77ya6Kej5p6Q5aSx6LSl55qE6LSf6L295a2Y55uY5LiN5Lii77yM6L+U5ZueIDIwMCDpmLLph43or5Xpo47mmrTjgIIqSmF2YSDnsbvmr5Qq77yaTVEg5raI6LS55aSx6LSl6L+b5q275L+h6Zif5YiX44CCCgojIyMg8J+foiDnrKwgMSDmrrUgwrcg5aSN5Yi7Ci0gKiror7vku4DkuYgqKu+8mk0zL000IOW3sue8luivkeeahOWbvueahCBgZ3JhcGguYWludm9rZShzdGF0ZSwgY29uZmlnKWAg6LCD55So5pa55byP44CCCi0gKirot5Hku4DkuYgqKu+8muWcqCB3ZWJob29rIOmHjOWQjOatpeiwg+S4gOasoeWbvui3kemAmu+8iOWFiOS4jeW8guatpe+8ieOAggoKIyMjIPCfn6Eg56ysIDIg5q61IMK3IOaUuemAoAotIOaUueaIkOWPl+W6lOeUqOeUn+WRveWRqOacn+euoeeQhueahOWQjuWPsOaJp+ihjOWZqOiwgyBgYWludm9rZWDvvJvku7vliqHnirbmgIEv5byC5bi45oyB5LmF5YyW5YiwIGluY2lkZW50IOihqO+8m+i/m+eoi+mAgOWHuuaXtuWBnOaUtuaWsOS7u+WKoeW5tuetieW+hS/lj5bmtojlnKjpgJTku7vliqHjgIIKCiMjIyDwn5S0IOesrCAzIOautSDCtyDoh6rnoJQKLSAqKuS7juepuuaWh+S7tioq5YaZ5q275L+h6YC76L6R77ya6Kej5p6Q5byC5bi45pe25oqK5Y6f5aeLIHBheWxvYWQg5YaZIGBydW5zL2RlYWRsZXR0ZXIvPHRzPi5qc29uYCDlubbov5Tlm54gMjAw44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWkjeWIu++8mndlYmhvb2sg6YeM5ZCM5q2lIGFpbnZva2Ug6LeR6YCa44CCCjIuIOaUuemAoOaIkOW8guatpeWQjuWPsOaJp+ihjCArIOW8guW4uOaMgeS5heWMluOAggozLiDlj5HkuIDmrKHlnY8gcGF5bG9hZO+8mueci+aYr+WQpuiQveatu+S/oSArIOi/lOWbniAyMDDjgIIKNC4g6Ieq56CU5q275L+h55uu5b2VICsg5oGi5aSN5o6S5p+l6K+05piO44CCCjUuIOmqjOivgeWdj+i0n+i9veS4jeinpuWPkSBBTSDph43or5XjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g5Yir6KO4IGBhc3luY2lvLmNyZWF0ZV90YXNrYCDlkI7kuKLlvILluLjigJTigJTlvILluLjopoHokL0gaW5jaWRlbnQg6KGo5Y+v6KeC5a+f44CCCi0g5Z2P6LSf6L296L+U5ZueIDIwMCDmmK/mlYXmhI/nmoTvvIjpmLIgQU0g6YeN6K+V6aOO5pq077yJ77yM5L2G5b+F6aG76JC95q275L+h5Y+v6L+944CCCi0g6L+b56iL6YCA5Ye66KaB5LyY6ZuF77ya5YGc5pS25paw5Lu75Yqh44CB5aSE55CG5Zyo6YCU44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g5byC5q2l5Lu75Yqh5oKE5oKE5aSx6LSl77ya57uZ5ZCO5Y+w5Lu75Yqh5YyFIHRyeS9leGNlcHQg5oqK5byC5bi45YaZ5bqT5bm25omT5pel5b+X44CCCi0g6KeG6aKR77yadmlkZW8tMiBQNjbjgIzlvILmraUr5bm25Y+R5omn6KGM5bel5YW357G744CN6K6y5byC5q2l5omn6KGM5oCd6Lev77yI5Y+v5Y+C6ICD77yJ44CCCi0g6ZeuIEFJ77ya44CMRmFzdEFQSSDph4zmiJHmg7PmlLbliLAgd2ViaG9vayDlkI7lvILmraXlkK/liqjkuIDkuKogTGFuZ0dyYXBoIOWbvuW5tueri+WNs+i/lOWbniAyMDDvvIzkvYblvILmraXku7vliqHnmoTlvILluLjopoHog73mn6XliLDvvIzmraPnoa7lhpnms5XmmK/ku4DkuYjvvJ/nu5nnu5PmnoTkuI3opoHmlbTmrrXlrp7njrDjgILjgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaApjdXJsIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICAgIyAyMDDvvIzlkI7lj7Dlm77lkK/liqjvvIxpbmNpZGVudHMuZGIg54q25oCB5o6o6L+bCmN1cmwgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kICd7ImJhZCI6InBheWxvYWQifScgIyAyMDDvvIxydW5zL2RlYWRsZXR0ZXIvIOiQveS4gOS7vQpscyBydW5zL2RlYWRsZXR0ZXIvICAgICMg5pyJ5Z2P6LSf6L295paH5Lu2CmBgYArliKTlrprnibnlvoHvvJrmraPluLjotJ/ovb3lvILmraXlkK/lm77vvJvlnY/otJ/ovb3okL3mrbvkv6EgKyAyMDDvvJvlkI7lj7DlvILluLjlj6/lnKggaW5jaWRlbnQg6KGoL+aXpeW/l+afpeWIsOOAguS+nei1luecn+WunuacjeWKoe+8mue9keWFs+OAgUxMTe+8iOWbvuWGheS8muecn+Wunuiwg+eUqO+8ieOAggoKKirlrozmiJDliKTlrpoqKgotIFsgXSB3ZWJob29rIOW8guatpeWQr+WbvuOAgeeri+WNs+i/lOWbniAyMDAKLSBbIF0g5ZCO5Y+w5Lu75Yqh5byC5bi45oyB5LmF5YyW5YiwIGluY2lkZW50IOihqOOAgeWPr+inguWvnwotIFsgXSDlnY8gcGF5bG9hZCDokL3mrbvkv6Hmlofku7blubbov5Tlm54gMjAwCi0gWyBdIOi/m+eoi+mAgOWHuuS8mOmbheWkhOeQhuWcqOmAlOS7u+WKoQoKLS0tCirniYjmnKwgQyDnibnlvoHvvJrlhaXlj6PlhajpnaAi5aSN5Yi755yf5a6eIEFNIOi0n+i9vS9haW52b2tlIOiwg+eUqCDihpIg5pS56YCg5oiQ5Y676YeN5LiO5byC5q2l5ZCv5Zu+IOKGkiDoh6rnoJTmrbvkv6HlhZzlupUi44CCKgo=</script>
+  <script id="source-markdown" type="text/plain" data-encoding="base64">IyDmqKHlnZcgNSDCtyDoh6rlu7ogRmFzdEFQSSDlhaXlj6MgKyB3ZWJob29rIOWOu+mHjSArIGNoZWNrcG9pbnRlciDigJQg54mI5pysIEMKCj4g57yW5o6S55CG5b+177ya8J+foeWcqOacrOmhueebruecn+WunuS7o+eggeS4iuaUuemAoO+8iGBsYW5nZ3JhcGggZGV2YCDmiZjnrqEg4oaSIOiHquW7uiB1dmljb3JuIOWFpeWPo++8m+aXoOeKtuaAgSBydW4g4oaSIOW4piBjaGVja3BvaW50ZXIg55qE57ut6LeR77yJ4oaSIPCflLToh6rnoJTmjIfnurnljrvph43jgIHlkYrorabokL3nm5jkuI7mrbvkv6HlhZzlupXjgIIqKui/meaYr+aVtOS4quezu+e7n+WUr+S4gOeahOWFpeWPo++8jOS5n+aYr+i/kOihjOaWueW8j+eahOWIhuawtOWyreOAgioqCgoqKuacrOaooeWdl+eahOiDveWKm+i+ueeVjO+8iOi/kOihjOaWueW8j+WcqOi/memHjOaNouaMoe+8jOWFiOWvuem9kO+8iSoqCi0gKirnq6/lj6Pku44gMjAyNCDmjaLliLAgODAwMCoq77yaTTMvTTQg6Z2gIGBsYW5nZ3JhcGggZGV2YO+8iExhbmdHcmFwaCBTZXJ2ZXIg5omY566h77yM56uv5Y+jICoqMjAyNCoq77yJ6Kem5Y+R5Zu+44CC5pys5qih5Z2X6LW377yM55yf5a6e5YWl5Y+j5pivKiroh6rlu7ogRmFzdEFQSSArIHV2aWNvcm7vvIjnq6/lj6MgODAwMO+8iSoq4oCU4oCU5Zug5Li6IEFsZXJ0bWFuYWdlciDlj6rkvJrlvoDkvaDnu5nlroPnmoTpgqPkuKogVVJMIFBPU1Qg5LiA5Lu9KirlroPoh6rlt7HmoLzlvI8qKueahCBwYXlsb2Fk77yMU2VydmVyIOiHquW4pueahCBgL3J1bnNgIOaOpeWPo+ayoeazleebtOaOpeaUtuOAgk02IOS5i+WQjuaJgOaciemqjOaUtuWRveS7pOS4gOW+i+eUqCA4MDAw44CCCi0gKipgbGFuZ2dyYXBoLmpzb25gIOS4jeWIoCoq77ya5a6D57un57ut57uZIExhbmdHcmFwaCBTdHVkaW8g5YGa5Y+v6KeG5YyW6LCD6K+V55So44CC5YGa5rOV6KeBIFQ1LjLigJTigJTlm77nmoTmnoTlu7rmlLnmiJDlt6XljoLlh73mlbDvvIxTdHVkaW8g6LWw5pegIGNoZWNrcG9pbnRlciDnmoTpgqPku73vvIx1dmljb3JuIOi1sOW4piBgQXN5bmNTcWxpdGVTYXZlcmAg55qE6YKj5Lu944CCCi0gKipjaGVja3BvaW50ZXIg6JC95Zyo6L+Z6YeM6ICM5LiN5pivIE00KirvvJpNNCDml7bpobnnm67ov5jot5HlnKggTGFuZ0dyYXBoIFNlcnZlciDmiZjnrqHmqKHlvI/kuIvvvIxwZXJzaXN0ZW5jZSDnlLEgU2VydmVyIOiHquW3seeuoe+8jOe7mSBgY29tcGlsZShjaGVja3BvaW50ZXI9Li4uKWAg5Lyg6Ieq5a6a5LmJIGNoZWNrcG9pbnRlciDkvJrnm7TmjqXmiqXplJnjgILmnInkuoboh6rlu7ogdXZpY29ybiDmiY3ova7lvpfliLDoh6rlt7HnrqHmjIHkuYXljJbvvIxgdGhyZWFkX2lkID0gaW5jaWRlbnRfaWRgIOS5n+aJjeacieecn+ato+eahOWklumDqOadpea6kO+8iHdlYmhvb2sg55Sf5oiQ55qEIGluY2lkZW50X2lk77yJ44CCCi0gKirlt6Xlhbfpm4bkuI3lj5gqKu+8muS7jeWPquaciSBgcXVlcnlfbWV0cmljc2Ag5LiA5Liq55yf5a6e5o6l5YWl77yM5YW25L2ZIDYg5Liq5ZyoICoqTTcqKiDmjqXlhaXjgIIKLSAqKuacrOaooeWdl+S6p+WHuuiiq+WQjumdouWkjeeUqCoq77yaYGluY2lkZW50X2RpcigpYCDnmoTnmb3lkI3ljZXmoKHpqozmmK8gTTcgYEV2aWRlbmNlU3RvcmVgIOWSjCBNOCDmiqXlkYrokL3nm5jnmoTlhbHlkIzlnLDln7rvvJtjaGVja3BvaW50ZXIg5pivIE0xMO+8iOWGheWxgiByZXN1bWXvvInlkowgTTEy77yI5a6h5om55oyC6LW3IHJlc3VtZe+8ieeahOWJjeaPkOOAggoKIyMg5a2m5a6M5pys5qih5Z2X5L2g6IO95YGa5Yiw55qEIDMg5Lu25LqLCjEuIOiHquW7uuS4gOS4qiBGYXN0QVBJIOW6lOeUqOWBmuaVtOS4quezu+e7n+eahOWFpeWPo++8jOino+aekOecn+WuniBBbGVydG1hbmFnZXIgd2ViaG9vayDotJ/ovb3vvIzmir3lh7ogYWxlcnRuYW1lL3NlcnZpY2UvbGFiZWxzIOW5tuaKiuWOn+Wni+WRiuitpuiQveebmOOAggoyLiDnlKjlkYrorabmjIfnurnlnKggMzAg5YiG6ZKf56qX5Y+j5YaF5Y676YeN4oCU4oCU5ZCM5LiA5Zy65LqL5pWF55qE6YeN5aSN5ZGK6K2m5LiN5Lya6YeN5aSN5ZCv5Yqo6K+K5pat77yb5bm255SoIGBBc3luY1NxbGl0ZVNhdmVyYCArIGB0aHJlYWRfaWQ9aW5jaWRlbnRfaWRgIOiuqeWbviBraWxsIOi/m+eoi+WQjuiDvee7rei3keOAggozLiDlnY/otJ/ovb3kuI3kuKLjgIHkuI3orqkgQWxlcnRtYW5hZ2VyIOmHjeivlemjjuaatO+8muiQveatu+S/oeaWh+S7tuW5tui/lOWbniAyMDDjgIIKCiMjIOacrOaooeWdl+S6pOS7mOeJqea4heWNle+8iOaWh+S7tui3r+W+hOe6p++8iQoKPiDnm67lvZXku43kv53mjIHmiYHlubPvvJpgc3RhdGUucHlgL2BncmFwaC5weWAvYGd1YXJkLnB5YCDnlZnlnKggYHNyYy9hZ2VudC9gIOmhtuWxgu+8jOacrOaooeWdl+aWsOWinueahOS5n+mDveaUvumhtuWxguOAgmBsYW5nZ3JhcGguanNvbmAg55qE5YWl5Y+j5aOw5piO5LiN5Yqo44CCCgotIGBpcmlzLWFnZW50LXBsYXRmb3JtL3NyYy9hZ2VudC9hcHAucHlg77yIKirmlrDlu7oqKu+8mkZhc3RBUEkg5bqU55SoICsgYFBPU1QgL3dlYmhvb2svYWxlcnRtYW5hZ2VyYCArIGxpZmVzcGFuIOeuoSBjaGVja3BvaW50ZXIv5ZCO5Y+w5Lu75Yqh77yJCi0gYGlyaXMtYWdlbnQtcGxhdGZvcm0vc3JjL2FnZW50L2FsZXJ0cy5weWDvvIgqKuaWsOW7uioq77yaYEFsZXJ0YCDmqKHlnosgKyBgcGFyc2VfYW1fcGF5bG9hZGAgKyBgZmluZ2VycHJpbnRfb2ZgICsgYG5ld19pbmNpZGVudF9pZGDvvIkKLSBgaXJpcy1hZ2VudC1wbGF0Zm9ybS9zcmMvYWdlbnQvcGF0aHMucHlg77yIKirmlrDlu7oqKu+8mmBpbmNpZGVudF9kaXIoKWDvvIjnmb3lkI3ljZXmoKHpqozpmLLot6/lvoTnqb/otorvvIkrIGB3cml0ZV9hbGVydF9maXh0dXJlKClg77yJCi0gYGlyaXMtYWdlbnQtcGxhdGZvcm0vc3JjL2FnZW50L3N0b3JlLnB5YO+8iCoq5paw5bu6KirvvJpTUUxpdGUgaW5jaWRlbnQg6KGoICsgYGZpbmRfYWN0aXZlYCArIGBtZXJnZV9hbGVydGAgKyBgbWFya19mYWlsZWRg77yJCi0gYGlyaXMtYWdlbnQtcGxhdGZvcm0vc3JjL2FnZW50L2dyYXBoLnB5YO+8iCoq5pS56YCgKirvvJpgZ3JhcGggPSAuLi5gIOaUueaIkCBgYnVpbGRfZ3JhcGgoY2hlY2twb2ludGVyPU5vbmUpYCDlt6XljoIgKyDkv53nlZnmqKHlnZfnuqcgYGdyYXBoYCDkvpsgU3R1ZGlv77yJCi0gYHJ1bnMvY2hlY2twb2ludHMuZGJg44CBYHJ1bnMvaW5jaWRlbnRzL3tpZH0vYWxlcnQuanNvbmDjgIFgcnVucy9kZWFkbGV0dGVyLyouanNvbmDvvIjov5DooYzml7bkuqfnianvvIkKCi0tLQoKIyMg5Lu75YqhIFQ1LjEgwrcg6Ieq5bu6IEZhc3RBUEkg5YWl5Y+jICsg6Kej5p6QIHdlYmhvb2sgKyDmjIfnurnljrvph40gKyDlkYrorabokL3nm5gKCioqaWQqKu+8mlQ1LjEg772cICoq5omA5bGe5qih5Z2XKirvvJpNNSDvvZwgKirkvJjlhYjnuqcqKu+8mlAwCgoqKuS4gOWPpeivneebruaghyoq77ya5LuOIGBsYW5nZ3JhcGggZGV2YCDmjaLmjKHliLDoh6rlu7ogdXZpY29ybu+8jOaKiiBBbGVydG1hbmFnZXIg55qEIEpTT04g6Kej5p6Q5oiQIEFsZXJ0IOWIl+ihqO+8jOaMieaMh+e6ueWcqCAzMCDliIbpkp/lhoXljrvph43vvIzlubbmiorljp/lp4vlkYrorabokL3nm5jjgIIKCioq5YmN572u55+l6K+G77yI4omkMiDmlrDmpoLlv7XvvIkqKgotICoqQWxlcnRtYW5hZ2VyIHdlYmhvb2sg5qC85byPICsg6Ieq5bimIGZpbmdlcnByaW50KioKICAxLiBBTSB2NCDotJ/ovb3pobblsYLvvJpgdmVyc2lvbmAvYGdyb3VwS2V5YC9gc3RhdHVzYC9gcmVjZWl2ZXJgL2Bjb21tb25MYWJlbHNgL2BhbGVydHNbXWDjgIIKICAyLiDmr4/mnaEgYWxlcnQg55qE5YWz6ZSu6Lev5b6E77yaYGFsZXJ0c1sqXS5sYWJlbHMuYWxlcnRuYW1lYOOAgWBhbGVydHNbKl0ubGFiZWxzLnNlcnZpY2Vg44CBYGFsZXJ0c1sqXS5sYWJlbHMuc2V2ZXJpdHlg44CBYGFsZXJ0c1sqXS5zdGF0dXNg44CBYGFsZXJ0c1sqXS5zdGFydHNBdGDjgIFgYWxlcnRzWypdLmFubm90YXRpb25zYOOAggogIDMuICoq5q+P5p2hIGFsZXJ0IOiHquW4piBgYWxlcnRzWypdLmZpbmdlcnByaW50YCoq4oCU4oCU5Y676YeN55u05o6l55So5a6D77yM5LiN55So6Ieq5bex566XIGhhc2jjgIIKICA0LiAqSmF2YSDnsbvmr5Qq77ya5YOP5pS25pSv5LuY5Zue6LCD77yMYGZpbmdlcnByaW50YCDlsLHmmK/lpKnnhLbnmoTluYLnrYnplK7jgIIKICA1LiDwn5OWIGh0dHBzOi8vcHJvbWV0aGV1cy5pby9kb2NzL2FsZXJ0aW5nL2xhdGVzdC9jb25maWd1cmF0aW9uLyN3ZWJob29rX2NvbmZpZyDvvIh3ZWJob29rIOi0n+i9ve+8jOmcgOaguOWunumUmueCue+8iQotICoq5LiN5Y+v5L+h6L6T5YWlIOKGkiDot6/lvoTnqb/otorpmLLmiqQqKgogIDEuIGBpbmNpZGVudF9pZGAg55Sx5pys57O757uf55Sf5oiQ77yM5L2GIHBheWxvYWQg6YeM55qE5a2X5q6177yIc2VydmljZS9hbGVydG5hbWXvvInmnaXoh6rlpJbpg6jvvIzku7vkvZXnlKjlroPku6zmi7zot6/lvoTnmoTlnLDmlrnpg73opoHlhYjov4fnmb3lkI3ljZXjgIIKICAyLiDmoKHpqozlgZrkuKTlsYLvvJrikaDlrZfnrKbnmb3lkI3ljZXmraPliJnvvJvikaFgUGF0aC5yZXNvbHZlKClgIOWQjuehruiupOiQveWcqCBgcnVucy9pbmNpZGVudHMvYCDkuYvlhoXjgIIKICAzLiAqSmF2YSDnsbvmr5Qq77ya5paH5Lu25LiK5Lyg5pe25qCh6aqM6JC95Zyw6Lev5b6E5b+F6aG75Zyo55m95ZCN5Y2V55uu5b2V5YaF77yM6Ziy55uu5b2V56m/6LaK5ryP5rSe44CCCiAgNC4g8J+TliBodHRwczovL2NoZWF0c2hlZXRzZXJpZXMub3dhc3Aub3JnL2NoZWF0c2hlZXRzL0ZpbGVfVXBsb2FkX0NoZWF0X1NoZWV0Lmh0bWwg77yI6Lev5b6E56m/6LaK6Ziy5oqk77yM6ZyA5qC45a6e6ZSa54K577yJCgojIyMg8J+foSDnrKwgMSDmrrUgwrcg5pS56YCg77yI5oqK5YWl5Y+j5LuOIGxhbmdncmFwaCBkZXYg5o2i5oiQ6Ieq5bu6IEZhc3RBUEnvvIkKCjEuIOaWsOW7uiBgc3JjL2FnZW50L2FwcC5weWDvvIzlhYjlj6rmlL7kuIDkuKogYFBPU1QgL3dlYmhvb2svYWxlcnRtYW5hZ2VyYO+8jCoq5pS25Yiw5bCx5oqK5pW05LiqIHBheWxvYWQgYGpzb24uZHVtcHNgIOaJk+WHuuadpeWGjei/lOWbniAyMDAqKuKAlOKAlOWFiOeUqOS4gOS7vSoq55yf5a6eKirnmoQgQU0g6LSf6L2977yITTEg5rOo5YWl5pWF6Zqc5pe25LuOIEFsZXJ0bWFuYWdlciDmipPnmoTpgqPku73vvIzkuI3opoHnlKjmlofmoaPph4znmoTnpLrkvovvvInmiorlrZfmrrXot6/lvoTorqTlh4bjgIIKMi4gYHV2IHJ1biB1dmljb3JuIGFnZW50LmFwcDphcHAgLS1wb3J0IDgwMDAgLS1yZWxvYWRgIOi1t+acjeWKoe+8jOaKiiBNMSDnmoQgQWxlcnRtYW5hZ2VyIOeahCB3ZWJob29rIOWcsOWdgOaMh+i/h+adpe+8iOaIluebtOaOpSBgY3VybCAtZCBAYW0tZml4dHVyZS5qc29uYO+8ie+8jOehruiupOecn+Wunui0n+i9veiDveaJk+i/m+adpeOAggozLiDlho3lhpkgYGFsZXJ0cy5weWAg5oqK5omT5Y2w5o2i5oiQ6Kej5p6Q77yaCgpgYGBweXRob24KY2xhc3MgQWxlcnQoQmFzZU1vZGVsKToKICAgICIiIuS4gOadoSBBbGVydG1hbmFnZXIg5ZGK6K2m77yM5a2X5q615YWo6YOo5p2l6IeqIEFNIHY0IOi0n+i9ve+8jOS4jeWBmuS6jOasoeWKoOW3pS4iIiIKCiAgICBhbGVydG5hbWU6IHN0ciAgICAgICAgIyBsYWJlbHMuYWxlcnRuYW1l77yM5ZGK6K2m6KeE5YiZ5ZCN77yITTEg55qEIGFsZXJ0LXJ1bGVzLnlhbWwg6YeM5a6a5LmJ77yJCiAgICBzZXJ2aWNlOiBzdHIgICAgICAgICAgIyBsYWJlbHMuc2VydmljZe+8jOWRiuitpuaMh+WQkeeahOacjeWKoeWQje+8jOWvuem9kCBwcnVudXMtbXVtZSDnnJ/lrp4gYXBwbGljYXRpb24g5YC8IFtSM10KICAgIHNldmVyaXR5OiBzdHIgICAgICAgICAjIGxhYmVscy5zZXZlcml0ee+8jEFNIOS+p+eahOS4pemHjeW6puagh+etvu+8jOazqOaEj+Wug+S4jeetieS6jiBNNiB0cmlhZ2Ug5Yik5Ye65p2l55qEIHNldmVyaXR5CiAgICBzdGF0dXM6IHN0ciAgICAgICAgICAgIyAiZmlyaW5nIiB8ICJyZXNvbHZlZCIKICAgIHN0YXJ0c19hdDogZGF0ZXRpbWUgICAjIHN0YXJ0c0F077yM5ZGK6K2m5byA5aeL5pe26Ze0CiAgICBsYWJlbHM6IGRpY3Rbc3RyLCBzdHJdICAgICAgICMg5a6M5pW0IGxhYmVscyDljp/moLfkv53nlZnvvIxNNiDnmoQgdHJpYWdlIHByb21wdCDkvJrnlKjliLAKICAgIGFubm90YXRpb25zOiBkaWN0W3N0ciwgc3RyXSAgIyBzdW1tYXJ5L2Rlc2NyaXB0aW9uIOetie+8jE02IOeahCB0cmlhZ2UgcHJvbXB0IOS8mueUqOWIsAogICAgZmluZ2VycHJpbnQ6IHN0ciAgICAgICMgQU0g6Ieq5bim55qEIGZpbmdlcnByaW5077yM5Y676YeN55qE56ys5LiA5LyY5YWI5p2l5rqQCgoKZGVmIHBhcnNlX2FtX3BheWxvYWQocGF5bG9hZDogZGljdCkgLT4gbGlzdFtBbGVydF06CiAgICAiIiLmioogQU0gdjQg6LSf6L296Kej5p6Q5oiQIEFsZXJ0IOWIl+ihqO+8m+S7u+S4gOW/hemcgOWtl+autee8uuWkseWwseaKm++8jOeUsSBUNS4zIOeahOatu+S/oeWFnOW6leaOpeS9jy4iIiIKCgpkZWYgZmluZ2VycHJpbnRfb2YoYWxlcnRzOiBsaXN0W0FsZXJ0XSkgLT4gc3RyOgogICAgIiIi5Y+W5pys57uE5ZGK6K2m55qE5oyH57q577yaCiAgICAxLiDkvJjlhYjnlKggYWxlcnRzWzBdLmZpbmdlcnByaW5077yIQU0g6Ieq5bim77yM56iz5a6a77yJ77ybCiAgICAyLiDnvLrlpLHml7blm57pgIDoh6rnrpcgc2hhMjU2KGFsZXJ0bmFtZSArIHNlcnZpY2UgKyDmjpLluo/lkI7nmoTlhbPplK4gbGFiZWxzKVs6MTZd77ybCiAgICAzLiDlm57pgIDnrpfms5Xph4wqKuS4jeiuuCoq5o665YWlIHN0YXJ0c19hdCDnrYnml7bpl7TnsbsgbGFiZWzvvIzlkKbliJnmr4/mnaHpg73nrpci5LiN5ZCMIuawuOi/nOWOu+S4jeaOiemHjeOAggogICAgIiIiCgoKZGVmIG5ld19pbmNpZGVudF9pZCgpIC0+IHN0cjoKICAgICIiIueUn+aIkCBpbmMtWVlZWU1NREQtTk5OIOW9ouW8j+eahOS6i+aVhSBpZO+8m05OTiDmmK/lvZPlpKnluo/lj7fvvIzku44gaW5jaWRlbnQg6KGo5b2T5aSp5pyA5aSn5YC8ICsx44CCCiAgICDov5nkuKogaWQg5ZCM5pe25piv77ya572R5YWzIFgtSW5jaWRlbnQtSWTjgIHokL3nm5jnm67lvZXlkI3jgIHku6Xlj4ogVDUuMiDnmoQgY2hlY2twb2ludGVyIHRocmVhZF9pZOOAgiIiIgpgYGAKCiMjIyDwn5S0IOesrCAyIOautSDCtyDoh6rnoJTvvIhpbmNpZGVudCDlrZjlgqggKyDlkYrorabokL3nm5jvvIkKCioq5LuO56m65paH5Lu2KirlhpkgYHN0b3JlLnB5YO+8iFNRTGl0Ze+8jOS4jeW8lSBPUk3vvInvvJoKCmBgYHNxbApDUkVBVEUgVEFCTEUgSUYgTk9UIEVYSVNUUyBpbmNpZGVudCAoCiAgICBpbmNpZGVudF9pZCBURVhUIFBSSU1BUlkgS0VZLCAgLS0gaW5jLVlZWVlNTURELU5OTgogICAgZmluZ2VycHJpbnQgVEVYVCBOT1QgTlVMTCwgICAgIC0tIOWOu+mHjemUru+8jOW7uue0ouW8lQogICAgc3RhdHVzICAgICAgVEVYVCBOT1QgTlVMTCwgICAgIC0tIG9wZW4gfCBydW5uaW5nIHwgY2xvc2VkIHwgZmFpbGVkCiAgICBjcmVhdGVkX2F0ICBSRUFMIE5PVCBOVUxMLCAgICAgLS0gZXBvY2gg56eSCiAgICB1cGRhdGVkX2F0ICBSRUFMIE5PVCBOVUxMLCAgICAgLS0g5ZCO5Y+w5Lu75Yqh5q+P5qyh5o6o6L+b54q25oCB5pe25pu05pawCiAgICBhbGVydHNfcmVmICBURVhULCAgICAgICAgICAgICAgLS0gcnVucy9pbmNpZGVudHMve2lkfS9hbGVydC5qc29uIOeahOi3r+W+hO+8jOS4jeWtmCBwYXlsb2FkIOWFqOaWhwogICAgbGFzdF9lcnJvciAgVEVYVCAgICAgICAgICAgICAgIC0tIOWQjuWPsOWbvuaJp+ihjOW8guW4uOaXtuiQvei/memHjO+8jFQ1LjMg55So77yI5LiN6K646K6p5byC5bi45Y+q5rS75Zyo5pel5b+X6YeM77yJCik7CmBgYAoKLSBgZmluZF9hY3RpdmUoZmluZ2VycHJpbnQ6IHN0ciwgd2l0aGluX3NlY29uZHM6IGludCA9IDE4MDApIC0+IHN0ciB8IE5vbmVg77ya5p+lIDMwIOWIhumSn+WGheWQjOaMh+e6ueS4lCBgc3RhdHVzIGluICgnb3BlbicsJ3J1bm5pbmcnKWAg55qEIGluY2lkZW50X2lk44CCCi0gYGNyZWF0ZV9pbmNpZGVudChpbmNpZGVudF9pZCwgZmluZ2VycHJpbnQsIGFsZXJ0c19yZWYpIC0+IE5vbmVgCi0gYG1lcmdlX2FsZXJ0KGluY2lkZW50X2lkOiBzdHIsIGFsZXJ0OiBBbGVydCkgLT4gTm9uZWDvvJrlkb3kuK3ljrvph43ml7bmiorov5nmnaHlkYrorablubbov5vlt7LmnInkuovmlYXvvIjov73liqDov5sgYWxlcnQuanNvbiDnmoQgYGFsZXJ0c1tdYO+8jOabtOaWsCBgdXBkYXRlZF9hdGDvvInjgIIKLSBgbWFya19zdGF0dXMoaW5jaWRlbnRfaWQsIHN0YXR1cywgbGFzdF9lcnJvcj1Ob25lKSAtPiBOb25lYAoKKirku47nqbrmlofku7YqKuWGmSBgcGF0aHMucHlg77yaCgpgYGBweXRob24KUlVOU19ST09UID0gUGF0aCgicnVucy9pbmNpZGVudHMiKS5yZXNvbHZlKCkKX0lOQ0lERU5UX0lEX1JFID0gcmUuY29tcGlsZShyIl5pbmMtXGR7OH0tXGR7M30kIikKCgpkZWYgaW5jaWRlbnRfZGlyKGluY2lkZW50X2lkOiBzdHIpIC0+IFBhdGg6CiAgICAiIiLov5Tlm54gcnVucy9pbmNpZGVudHMve2luY2lkZW50X2lkfS/vvIzkuI3lrZjlnKjliJnliJvlu7ouCgogICAgaW5jaWRlbnRfaWQg6Jm954S25piv5pys57O757uf55Sf5oiQ55qE77yM5L2G5a6D5Lya6ZqPIHN0YXRlIOa1gei9rOOAgeS5n+S8muS7jiBIVFRQIHBhdGgg5Y+C5pWwCiAgICDvvIhNOCDnmoQgR0VUIC9pbmNpZGVudHMve2lkfe+8ieWbnuWIsOi/memHjO+8jOWxnuS6juS4jeWPr+S/oei+k+WFpe+8jOS4pOWxguagoemqjOmDveimgeacie+8mgogICAgMS4g5YWI55SoIF9JTkNJREVOVF9JRF9SRSDnmb3lkI3ljZXmoKHpqozlvaLnirbvvIjlj6rlhYHorrggaW5jLVlZWVlNTURELU5OTu+8ie+8mwogICAgMi4g5YaNIHJlc29sdmUoKSDlkI7noa7orqTnu5Pmnpznm67lvZXnoa7lrp7lnKggUlVOU19ST09UIOS5i+WGhe+8jOWQpuWImeaKmyBWYWx1ZUVycm9y44CCCiAgICBNNyDnmoQgRXZpZGVuY2VTdG9yZeOAgU04IOeahOaKpeWRiuiQveebmOOAgU05IOeahCB2ZXJkaWN0IOiQveebmOmDveWkjeeUqOi/meS4gOS4quWHveaVsO+8jOS4jeimgeWQhOWGmeS4gOS7veOAggogICAgIiIiCgoKZGVmIHdyaXRlX2FsZXJ0X2ZpeHR1cmUoaW5jaWRlbnRfaWQ6IHN0ciwgYWxlcnRfcGF5bG9hZDogZGljdCkgLT4gc3RyOgogICAgIiIi5oqKIEFsZXJ0bWFuYWdlciDljp/lp4sgcGF5bG9hZCDljp/moLfokL3nm5jmiJAgcnVucy9pbmNpZGVudHMve2lkfS9hbGVydC5qc29u77yMCiAgICDov5Tlm57nm7jlr7nku5PlupPmoLnnmoTot6/lvoTlrZfnrKbkuLLvvIzlhpnov5sgSW5jaWRlbnRTdGF0ZS5hbGVydHNfcmVm44CCCgogICAg6JC955qE5piv5Y6f5qC3IHBheWxvYWQg5LiN5piv6Kej5p6Q5ZCO55qEIEFsZXJ0IOWIl+ihqOKAlOKAlOWHuumXrumimOaXtuimgeiDveaLv+WOn+aWh+WkjeeOsO+8mwogICAgc3RhdGUg6YeM5Y+q5a2Y6L+Z5Liq6L+U5Zue5YC877yM5LiN5a2YIHBheWxvYWQg5YWo5paH77yITTQg5a6a55qEIFtSMTNdIOW8leeUqOW8j+Wtl+autee6puWumu+8ieOAggogICAgIiIiCmBgYAoKKirokL3nrJTpobrluo8qKgoxLiDlu7ogYGFwcC5weWDvvIzlj6rlm57mmL4gcGF5bG9hZO+8jGB1dmljb3JuIC0tcG9ydCA4MDAwYCDotbfmnaXvvIznlKjnnJ/lrp4gQU0g6LSf6L295omT6YCa5LiA5qyh44CCCjIuIOWGmSBgYWxlcnRzLnB5YCDnmoQgYEFsZXJ0YCArIGBwYXJzZV9hbV9wYXlsb2FkYO+8jOaKiuWbnuaYvuaNouaIkOino+aekOe7k+aenOOAggozLiDlhpkgYGZpbmdlcnByaW50X29mYO+8jOWFiOWPqui1sCJBTSDoh6rluKblrZfmrrUi5YiG5pSv44CCCjQuIOiHqueglCBgc3RvcmUucHlg77ya5bu66KGoICsgYGNyZWF0ZV9pbmNpZGVudGAgKyBgZmluZF9hY3RpdmVg44CCCjUuIOi/nue7reaJk+S4pOasoeWQjOS4gOS7vSBmaXh0dXJl77yM56ys5LqM5qyh5bqU6L+U5ZueIGB7ImRlZHVwZWQiOiB0cnVlfWAg5LiU5LiN5paw5bu66KGM44CCCjYuIOiHqueglCBgcGF0aHMucHlg77yM5oqK5Y6f5aeLIHBheWxvYWQg6JC955uY5bm25oqK6Lev5b6E5YaZ6L+bIGBhbGVydHNfcmVmYO+8m+mhuuaJi+eUqCBgaW5jLS4uLy4uL2V0Y2Ag6L+Z56eNIGlkIOivleS4gOasoe+8jOehruiupOiiq+aLkuOAggo3LiDooaUgYGZpbmdlcnByaW50X29mYCDnmoTlm57pgIDliIbmlK/vvIjliKDmjokgZml4dHVyZSDph4znmoQgYGZpbmdlcnByaW50YCDlrZfmrrXpqozor4HlroPvvInjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g5oyH57q55Yir5oqK5pe26Ze05oiz57G7IGxhYmVsIOeul+i/m+WOu++8jOWQpuWImeavj+adoemDvSLkuI3lkIwi77yM5rC46L+c5Y675LiN5o6J6YeN44CCCi0gYGluY2lkZW50X2lkYCDlsLHmmK8gVDUuMiDnmoQgYHRocmVhZF9pZGDvvIzkuZ/mmK/nvZHlhbPnmoQgYFgtSW5jaWRlbnQtSWRg77yM5LiJ5aSE5b+F6aG75piv5ZCM5LiA5Liq5YC84oCU4oCU6LW35ZCN5ZKM55Sf5oiQ5Y+q55WZ5LiA5Liq5p2l5rqQ77yIYG5ld19pbmNpZGVudF9pZCgpYO+8ieOAggotIOiQveebmOWPquiQveWOn+WniyBwYXlsb2Fk77yMYHN0YXRlYCDph4zlj6rlrZjot6/lvoTvvJvov5nmmK8gTTQg5a6a55qE5byV55So5byP5a2X5q6157qm5a6a77yM5LuO6L+Z6YeM5byA5aeL55yf5q2j5omn6KGM44CCCgoqKuWNoeS9j+mZjee6p+i3r+W+hO+8iDMwIOWIhumSn+ayoeaAnei3r++8iSoqCi0g5a2X5q615Y+W5LiN5Yiw77ya5oqK5pW05LiqIHBheWxvYWQgYGpzb24uZHVtcHMoaW5kZW50PTIpYCDmiZPlh7rmnaXlr7nlrZfmrrXot6/lvoTvvIzliKvnhafmlofmoaPnjJznu5PmnoTvvIhBTSDniYjmnKzkuYvpl7TmnInlt67lvILvvInjgIIKLSDljrvkuI3mjonph43vvJrmiorkuKTmrKHnmoQgYGZpbmdlcnByaW50X29mYCDnu5PmnpzlkowgYGZpbmRfYWN0aXZlYCDnmoQgU1FMIOWPguaVsOS4gOi1t+aJk+WHuuadpe+8jOWFiOehruiupOaYryLmjIfnurnkuI3lkIwi6L+Y5pivIuaXtumXtOeql+WIpOmUmSLjgIIKLSDop4bpopHvvJp3ZWJob29rIOino+aekOaXoOWvueWPo+inhumike+8jOS7pSBBbGVydG1hbmFnZXIg5a6Y5pa5IHdlYmhvb2sg5paH5qGj5Li65Li744CCCi0g6ZeuIEFJ77ya44CM6L+Z5piv5LiA5Lu955yf5a6eIEFsZXJ0bWFuYWdlciB3ZWJob29rIEpTT07vvIjotLTlh7rvvInvvIzmiJHopoHmir0gYWxlcnRuYW1lL3NlcnZpY2Ug5bm255So6Ieq5bimIGZpbmdlcnByaW50IOWOu+mHje+8jFB5ZGFudGljIOaooeWei+WSjCBmaW5nZXJwcmludCDlh73mlbDmgI7kuYjlhpnvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaApjZCBpcmlzLWFnZW50LXBsYXRmb3JtCnV2IHJ1biB1dmljb3JuIGFnZW50LmFwcDphcHAgLS1wb3J0IDgwMDAgLS1yZWxvYWQKCmN1cmwgLXMgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIFwKICAtSCAnQ29udGVudC1UeXBlOiBhcHBsaWNhdGlvbi9qc29uJyAtZCBAYW0tZml4dHVyZS5qc29uICAgICMgMjAw77yMaW5jaWRlbnQg6KGo6JC95LiA6KGMCnNxbGl0ZTMgcnVucy9pbmNpZGVudHMuZGIgInNlbGVjdCBpbmNpZGVudF9pZCxmaW5nZXJwcmludCxzdGF0dXMsYWxlcnRzX3JlZiBmcm9tIGluY2lkZW50OyIKY2F0IHJ1bnMvaW5jaWRlbnRzL2luYy0qL2FsZXJ0Lmpzb24gICAgICAgICAgICAgICAgICAgICAgICAgICMg5Y6f5aeLIHBheWxvYWQg5Y6f5qC36JC955uYCgpjdXJsIC1zIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciBcCiAgLUggJ0NvbnRlbnQtVHlwZTogYXBwbGljYXRpb24vanNvbicgLWQgQGFtLWZpeHR1cmUuanNvbiAgICAjIDMwbWluIOWGheWQjOaMh+e6uSDihpIgeyJkZWR1cGVkIjp0cnVlfQpzcWxpdGUzIHJ1bnMvaW5jaWRlbnRzLmRiICJzZWxlY3QgY291bnQoKikgZnJvbSBpbmNpZGVudDsiICAgIyDku43mmK8gMQoKIyDlvILluLjot6/lvoQg4pGg77ya5pS5IGZpeHR1cmUg55qEIHN0YXJ0c0F0IOS9huS/neaMgeaguOW/gyBsYWJlbCDkuI3lj5gg4oaSIOS7jeWOu+mHje+8iOaMh+e6ueWvueaXtumXtOS4jeaVj+aEn++8iQojIOW8guW4uOi3r+W+hCDikaHvvJrmioogZml4dHVyZSDph4znmoQgZmluZ2VycHJpbnQg5a2X5q615Yig5o6JIOKGkiDotbDoh6rnrpflm57pgIDliIbmlK/vvIzkuKTmrKHku43og73ljrvph40KYGBgCuWIpOWumueJueW+ge+8mummluasoeW7uiBpbmNpZGVudCDkuJTljp/lp4vlkYrorabokL3nm5jvvJszMCDliIbpkp/lhoXlkIzmjIfnurkgZGVkdXBlZOOAgTMxIOWIhumSn+WQjuaWsOW7uu+8m+WIoOaOiSBBTSBmaW5nZXJwcmludCDlkI7lm57pgIDnrpfms5Xku43og73ljrvph43jgILkvp3otZbnnJ/lrp7mnI3liqHvvJrml6DlpJbpg6jkvp3otZbvvIjkvYYgZml4dHVyZSDlv4XpobvmmK8gTTEg5oqT55qE55yf5a6e5ZGK6K2m77yM5LiN5piv5omL57yW55qE77yJ44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGB1dmljb3JuIGFnZW50LmFwcDphcHAgLS1wb3J0IDgwMDBgIOiDvei1t++8jOecn+WuniBBTSDotJ/ovb3og73op6PmnpDlh7rmraPnoa7lrZfmrrUKLSBbIF0gYGZpbmdlcnByaW50X29mYCDkvJjlhYjnlKggQU0g6Ieq5bim5a2X5q6177yM5Zue6YCA566X5rOV5LiN5ZCr5pe26Ze057G7IGxhYmVsCi0gWyBdIDMwIOWIhumSn+WGheWQjOaMh+e6ueWOu+mHje+8iGBtZXJnZV9hbGVydGAg5bm25YWl5bey5pyJ5LqL5pWF77yJ44CBMzEg5YiG6ZKf5ZCO5paw5bu6Ci0gWyBdIGBpbmNpZGVudGAg6KGoIDcg5YiX6b2Q5YWo77yMYGFsZXJ0c19yZWZgIOWtmOi3r+W+hOiAjOmdniBwYXlsb2FkIOWFqOaWhwotIFsgXSBgaW5jaWRlbnRfZGlyKClgIOeahOeZveWQjeWNlSArIGByZXNvbHZlKClgIOS4pOWxguagoemqjOmDveWcqO+8jOeVuOW9oiBpZCDooqvmi5IKLSBbIF0gYGluY2lkZW50X2lkYCDlj6rmnIkgYG5ld19pbmNpZGVudF9pZCgpYCDkuIDkuKrnlJ/miJDmnaXmupAKCi0tLQoKIyMg5Lu75YqhIFQ1LjIgwrcg5byC5q2l5ZCv5Zu+ICsgY2hlY2twb2ludGVyIOaWreeCuee7rei3kQoKKippZCoq77yaVDUuMiDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk01IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrmlrDkuovmlYXlvILmraXlkK/liqjor4rmlq3lm77vvIzlubbnlKggYEFzeW5jU3FsaXRlU2F2ZXJgICsgYHRocmVhZF9pZD1pbmNpZGVudF9pZGAg6K6p6L+b56iLIGtpbGwg5o6J6YeN5ZCv6L+Y6IO95LuO5LiK5qyh55qE6IqC54K55o6l552A6LWw44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDIg5paw5qaC5b+177yJKioKLSAqKmNoZWNrcG9pbnRlcu+8iEFzeW5jU3FsaXRlU2F2ZXLvvIkqKgogIDEuIOavj+S4qiBzdXBlcnN0ZXAg57uT5p2f5pe25oqK5pW05LiqIHN0YXRlIOWtmOebmO+8jGB0aHJlYWRfaWRgIOagh+ivhuS4gOasoeS8muivne+8jOWPr+S7juS7u+aEj+iKgueCueaBouWkjeOAggogIDIuIOaBouWkjeeahOiwg+eUqOaWueW8j+aYryoq5ZCM5LiA5LiqIGB0aHJlYWRfaWRgIOWGjSBgYWludm9rZWAg5LiA5qyhKirvvIxpbnB1dCDkvKAgYE5vbmVgIOihqOekuiLku47kuIrmrKHmlq3ngrnnu6fnu60i6ICM5LiN5piv6YeN6LeR44CCCiAgMy4g6Ieq5bu6IEZhc3RBUEkg5piv5byC5q2l55qE77yM5omA5Lul55SoIGBBc3luY1NxbGl0ZVNhdmVyYCDogIzkuI3mmK/lkIzmraXnmoQgYFNxbGl0ZVNhdmVyYOOAggogIDQuICpKYXZhIOexu+avlCrvvJrmiorlt6XkvZzmtYHlrp7kvovnirbmgIHmjIHkuYXljJbliLDlupPvvIzph43lkK/lkI7mjInlrp7kvosgaWQg5o2e5Zue5p2l5o6l552A6LeR44CCCiAgNS4g8J+TliBodHRwczovL2RvY3MubGFuZ2NoYWluLmNvbS9vc3MvcHl0aG9uL2xhbmdncmFwaCDvvIhwZXJzaXN0ZW5jZS9jaGVja3BvaW50ZXLvvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFA0NC00N+OAjOiusOW/huWtmOWCqMK355+t5pyfwrdQb3N0Z3Jlc+OAjQotICoq5byC5q2l5ZCO5Y+w5ZCv5Zu+ICsg55Sf5ZG95ZGo5pyf5omY566hKioKICAxLiB3ZWJob29rIOaUtuWIsOWQjuS4jeiDvemYu+WhnuetieiviuaWrei3keWujO+8iEFNIOS8mui2heaXtumHjeivle+8ie+8jOimgeW8guatpeinpuWPkeWbvuW5tueri+WIu+WbniAyMDDjgIIKICAyLiDkvYYqKuS4jeiDveijuCBgYXN5bmNpby5jcmVhdGVfdGFza2Ag54S25ZCO5Lii5o6J5byV55SoKirigJTigJTlvILluLjkvJrooqvpnZnpu5jlkJ7mjonvvIzkuJTov5vnqIvpgIDlh7rml7bku7vliqHooqvnoaznoI3jgIIKICAzLiDku7vliqHnmoTlvILluLjlv4XpobvokL3liLAgYGluY2lkZW50Lmxhc3RfZXJyb3JgIOWPr+afpe+8jOS4jeiDveWPqua0u+WcqOaXpeW/l+mHjOOAggogIDQuICpKYXZhIOexu+avlCrvvJpgQEFzeW5jYCDmipXnur/nqIvmsaDlkI7nq4vljbPov5Tlm57vvIzkvYbnur/nqIvmsaDopoHlj5flrrnlmajnlJ/lkb3lkajmnJ/nrqHnkIbjgIHlvILluLjopoHokL3lupPjgIIKICA1LiDwn5OWIGh0dHBzOi8vZG9jcy5sYW5nY2hhaW4uY29tL29zcy9weXRob24vbGFuZ2dyYXBoIO+8iGFpbnZva2XvvIzpnIDmoLjlrp7plJrngrnvvInCtyB2aWRlby0yIFA2NuOAjOW8guatpSvlubblj5HmiafooYzlt6XlhbfnsbvjgI0KCiMjIyDwn5+hIOesrCAxIOautSDCtyDmlLnpgKDvvIjmiorlm77nmoTnvJbor5HmlLnmiJDlt6XljoLvvIzkuKTnp43lhaXlj6PlkITmi7/kuIDku73vvIkKCumXrumimO+8mmBsYW5nZ3JhcGguanNvbmAg5oyH552AIGBncmFwaC5weTpncmFwaGDvvIxTdHVkaW8g6ZyA6KaB5LiA5LiqKirmqKHlnZfnuqfjgIHlt7LnvJbor5HjgIHkuI3luKboh6rlrprkuYkgY2hlY2twb2ludGVyKiog55qE5Zu+77yb6ICMIHV2aWNvcm4g6ZyA6KaB5LiA5LiqKirluKYgYEFzeW5jU3FsaXRlU2F2ZXJgKiog55qE5Zu+44CC5Lik5Liq6ZyA5rGC5LiN6IO95aGe6L+b5ZCM5LiA5Liq5qih5Z2X57qn5Y+Y6YeP44CCCgrop6Pms5XmmK/miornvJbor5Hov4fnqIvmir3miJDlt6XljoLvvIzkuKTovrnlkITlj5bmiYDpnIDigJTigJRgbGFuZ2dyYXBoLmpzb25gIOS4gOS4quWtl+mDveS4jeeUqOaUue+8mgoKYGBgcHl0aG9uCmRlZiBidWlsZF9ncmFwaChjaGVja3BvaW50ZXI9Tm9uZSk6CiAgICAiIiLoo4XphY3oioLngrnkuI7ovrnlubbnvJbor5HjgIJjaGVja3BvaW50ZXI9Tm9uZSDml7bkuqTnu5nmiZjnrqHmlrnoh6rlt7HnrqEgcGVyc2lzdGVuY2UuIiIiCiAgICB3b3JrZmxvdyA9IFN0YXRlR3JhcGgoSW5jaWRlbnRTdGF0ZSkKICAgIC4uLiAgIyBNNCDlt7Lnu4/lhpnlpb3nmoToioLngrnms6jlhowgKyDmnaHku7bovrnvvIzljp/moLfmkKzov5vmnaUKICAgIHJldHVybiB3b3JrZmxvdy5jb21waWxlKGNoZWNrcG9pbnRlcj1jaGVja3BvaW50ZXIpCgoKZ3JhcGggPSBidWlsZF9ncmFwaCgpICAgIyDkvpsgbGFuZ2dyYXBoLmpzb24gLyBMYW5nR3JhcGggU3R1ZGlvIOWPr+inhuWMluiwg+ivleeUqApgYGAKCkZhc3RBUEkg5L6n5ZyoIGxpZmVzcGFuIOmHjOW7uuW4piBjaGVja3BvaW50ZXIg55qE6YKj5LiA5Lu977yaCgpgYGBweXRob24KQGFzeW5jY29udGV4dG1hbmFnZXIKYXN5bmMgZGVmIGxpZmVzcGFuKGFwcDogRmFzdEFQSSk6CiAgICBhc3luYyB3aXRoIEFzeW5jU3FsaXRlU2F2ZXIuZnJvbV9jb25uX3N0cmluZygicnVucy9jaGVja3BvaW50cy5kYiIpIGFzIHNhdmVyOgogICAgICAgIGFwcC5zdGF0ZS5ncmFwaCA9IGJ1aWxkX2dyYXBoKGNoZWNrcG9pbnRlcj1zYXZlcikKICAgICAgICBhcHAuc3RhdGUudGFza3MgPSBzZXQoKSAgICAgICAgICAjIOaMgeacieWQjuWPsOS7u+WKoeW8leeUqO+8jOmYsuiiqyBHQwogICAgICAgIHlpZWxkCiAgICAgICAgIyDpgIDlh7rvvJrlgZzmlLbmlrDku7vliqEg4oaSIOetieWcqOmAlOS7u+WKoeaUtuWwvu+8iOi2heaXtuWwsSBjYW5jZWzvvIkKICAgICAgICBhd2FpdCBfZHJhaW4oYXBwLnN0YXRlLnRhc2tzLCB0aW1lb3V0PTMwKQpgYGAKCuWQr+WbvuaXtuaKiiBgdGhyZWFkX2lkYCDnu5HmiJAgaW5jaWRlbnRfaWTvvJoKCmBgYHB5dGhvbgpjb25maWcgPSB7ImNvbmZpZ3VyYWJsZSI6IHsidGhyZWFkX2lkIjogaW5jaWRlbnRfaWR9fQphd2FpdCBhcHAuc3RhdGUuZ3JhcGguYWludm9rZShpbml0aWFsX3N0YXRlLCBjb25maWcpCmBgYAoKIyMjIPCflLQg56ysIDIg5q61IMK3IOiHqueglO+8iOWQjuWPsOS7u+WKoeaJmOeuoSArIOW8guW4uOiQveW6k++8iQoKKirku47nqbrmlofku7YqKuWGmeWQjuWPsOaJp+ihjOeahOmCo+S4gOWxgu+8mgoxLiBgc3Bhd25faW5jaWRlbnRfcnVuKGFwcCwgaW5jaWRlbnRfaWQsIGluaXRpYWxfc3RhdGUpYO+8muWIm+W7uiB0YXNr44CBKirlrZjov5sgYGFwcC5zdGF0ZS50YXNrc2AqKuOAgeWKoCBgYWRkX2RvbmVfY2FsbGJhY2tgIOenu+mZpOW8leeUqO+8mwoyLiB0YXNrIOWGhemDqOWMhSB0cnkvZXhjZXB077ya5oiQ5YqfIOKGkiBgbWFya19zdGF0dXMoaW5jaWRlbnRfaWQsICJjbG9zZWQiKWDvvJvlvILluLgg4oaSIGBtYXJrX3N0YXR1cyhpbmNpZGVudF9pZCwgImZhaWxlZCIsIGxhc3RfZXJyb3I9dHJhY2ViYWNrKWDvvIznu53kuI3orqnlvILluLjlj6rov5vml6Xlv5fvvJsKMy4gYHJlc3VtZV9pbmNpZGVudF9ydW4oYXBwLCBpbmNpZGVudF9pZClg77ya55So5ZCM5LiA5LiqIGB0aHJlYWRfaWRg44CBaW5wdXQg5LygIGBOb25lYCDlho0gYGFpbnZva2VgIOS4gOasoe+8jOeUqOS6jui/m+eoi+mHjeWQr+WQjuaJi+W3pee7rei3ke+8iE0xMiDnmoQgYGNvcGlsb3QgYXBwcm92ZWAg6LWw55qE5Lmf5piv6L+Z5p2h6Lev77yJ44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOWFiOWcqCB3ZWJob29rIOmHjCoq5ZCM5q2lKiogYGF3YWl0IGdyYXBoLmFpbnZva2UoLi4uKWAg6LeR6YCa5LiA5qyh77yI5Zu+6IO95LuO5YWl5Y+j6LWw5YiwIHJlcG9ydO+8ie+8jOehruiupOaOpee6v+WvueOAggoyLiDmlLnmiJDlt6XljoIgYGJ1aWxkX2dyYXBoKGNoZWNrcG9pbnRlcj0uLi4pYO+8jOaooeWdl+e6pyBgZ3JhcGhgIOS/neeVme+8jGBsYW5nZ3JhcGggZGV2YCDku43og73otbfvvIjor4HmmI7msqHmioogU3R1ZGlvIOW8hOWdj++8ieOAggozLiDmjqUgYEFzeW5jU3FsaXRlU2F2ZXJgICsgbGlmZXNwYW7vvIzot5HkuIDmrKHvvIznoa7orqQgYHJ1bnMvY2hlY2twb2ludHMuZGJgIOacieivpSB0aHJlYWQg55qE5aSa5q2l6K6w5b2V44CCCjQuIOaUueaIkOW8guatpeWQjuWPsOaJp+ihjO+8jHdlYmhvb2sg56uL5Y2z6L+U5ZueIDIwMOOAggo1LiDoh6rnoJTlvILluLjokL3lupPvvJrmlYXmhI/miornvZHlhbMgdG9rZW4g5pS56ZSZ77yM55yLIGBpbmNpZGVudC5sYXN0X2Vycm9yYCDmnInmsqHmnInlhoXlrrnjgIIKNi4g6aqM6K+B5pat54K557ut6LeR77ya5Zu+6LeR5YiwIGludmVzdGlnYXRlIOaXtiBraWxsIHV2aWNvcm7vvIzph43lkK/lkI7osIMgcmVzdW1l77yM56Gu6K6k5LuO5LiK5qyh6IqC54K557un57ut6ICM5LiN5piv5LuO5aS06LeR44CCCgoqKuWFs+mUruaPkOekuu+8iOKJpDPvvIkqKgotIGB0aHJlYWRfaWRgIOW/hemhu+etieS6jiBgaW5jaWRlbnRfaWRg77ya5LiN5LiA6Ie05Lya5a+86Ie0IuaBouWkjSLlrp7pmYXkuIrlvIDkuobkuIDmnaHmlrDkvJror53vvIzku47lpLTot5HkuIDpgY3vvIzov5jkvJrmiornvZHlhbPpooTnrpflho3oirHkuIDpgY3jgIIKLSDliKvoo7ggYGNyZWF0ZV90YXNrYCDkuKLlvJXnlKjigJTigJRQeXRob24g5Y+q5a+5IHRhc2sg5oyB5byx5byV55So77yM5Lii5LqG5byV55So5Y+v6IO96KKrIEdDIOaOie+8jOW8guW4uOS5n+S8muiiq+mdmem7mOWQnuOAggotIGBsYW5nZ3JhcGggZGV2YCDlkowgdXZpY29ybiDkuI3opoHlkIzml7bot5HlkIzkuIDku70gYHJ1bnMvY2hlY2twb2ludHMuZGJg77yaU1FMaXRlIOW5tuWPkeWGmeS8mumUge+8m+iwg+ivleaXtuS6jOmAieS4gOOAggoKKirljaHkvY/pmY3nuqfot6/lvoTvvIgzMCDliIbpkp/msqHmgJ3ot6/vvIkqKgotIOaBouWkjeS4jeS6huOAgeavj+asoemDveS7juWktOi3ke+8muehruiupOS4pOasoeiwg+eUqCBgdGhyZWFkX2lkYCDkuIDoh7TvvIzkuJTmgaLlpI3pgqPmrKEgaW5wdXQg5Lyg55qE5pivIGBOb25lYCDogIzkuI3mmK/lrozmlbQgc3RhdGXvvIjkvKDlrozmlbQgc3RhdGUg562J5LqO6KaG55uW77yM5Lya5LuO5aS05byA5aeL77yJ44CCCi0gYGNvbXBpbGUoY2hlY2twb2ludGVyPS4uLilgIOaKpemUme+8muehruiupOS9oOeOsOWcqOi3keeahOaYr+iHquW7uiB1dmljb3Ju77yM5LiN5pivIGBsYW5nZ3JhcGggZGV2YOKAlOKAlOaJmOeuoeaooeW8j+S4i+S4jeWFgeiuuOS8oOiHquWumuS5iSBjaGVja3BvaW50ZXLjgIIKLSDlkI7lj7Dku7vliqHmgoTmgoTlpLHotKXvvJrlhYjnoa7orqQgYGFkZF9kb25lX2NhbGxiYWNrYCDph4zor7vkuoYgYHRhc2suZXhjZXB0aW9uKClg77yM5ZCm5YiZ5byC5bi45rC46L+c5LiN5Lya5rWu5Ye65p2l44CCCi0g6KeG6aKR77yadmlkZW8tMiBQNDUtNDbjgIznn63mnJ/orrDlv4bmoYjkvovCt1Bvc3RncmVzIOefreacn+WtmOWCqOOAjeWvueWPo+iusuino+OAggotIOmXriBBSe+8muOAjExhbmdHcmFwaCDnlKggQXN5bmNTcWxpdGVTYXZlcu+8jOaIkSBraWxsIOi/m+eoi+mHjeWQr+WQjuWQjOS4gCB0aHJlYWRfaWQg5Y205LuO5aS06LeR77yM5oiR55qEIGNvbXBpbGXjgIFjb25maWcg5ZKMIHJlc3VtZSDosIPnlKjov5nmoLflhpnvvIjotLTlh7rvvInvvIzlk6rph4zplJnkuobvvJ/jgI0KCioq55yf5a6eIEhUVFAg6aqM5pS277yI5ZCr5byC5bi46Lev5b6E77yJKioKYGBgYmFzaAp1diBydW4gdXZpY29ybiBhZ2VudC5hcHA6YXBwIC0tcG9ydCA4MDAwCgpjdXJsIC1zIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICAgIyAyMDDvvIznq4vljbPov5Tlm54Kc3FsaXRlMyBydW5zL2luY2lkZW50cy5kYiAic2VsZWN0IGluY2lkZW50X2lkLHN0YXR1cyBmcm9tIGluY2lkZW50OyIgICAgICMgc3RhdHVzIOaOqOi/m+WIsCBydW5uaW5nCnNxbGl0ZTMgcnVucy9jaGVja3BvaW50cy5kYiBcCiAgInNlbGVjdCBjb3VudCgqKSBmcm9tIGNoZWNrcG9pbnRzIHdoZXJlIHRocmVhZF9pZD0naW5jLVlZWVlNTURELTAwMSc7IiAjID4x77yI5aSa5q2l6YO95a2Y5LqG77yJCgojIOaWreeCuee7rei3ke+8mui2geWbvui/mOWcqCBpbnZlc3RpZ2F0ZSDml7Yga2lsbCB1dmljb3Ju77yM6YeN5ZCv5ZCOIHJlc3VtZQpraWxsICUxICYmIHV2IHJ1biB1dmljb3JuIGFnZW50LmFwcDphcHAgLS1wb3J0IDgwMDAgJgpjdXJsIC1zIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC9pbmNpZGVudHMvaW5jLVlZWVlNTURELTAwMS9yZXN1bWUgICAgICAgICAgIyDku47kuIrmrKHoioLngrnnu6fnu60KIyDmnJ/mnJvvvJrml6Xlv5fph4wgaW52ZXN0aWdhdGUg5LmL5YmN55qE6IqC54K55LiN5YaN6YeN6LeR77yb572R5YWz5a6h6K6h6YeM5Lmf5rKh5pyJ6YeN5aSN55qEIHF1ZXJ5X21ldHJpY3Mg6LCD55SoCgojIOW8guW4uOi3r+W+hCDikaDvvJrnlKjkuIDkuKrmsqHot5Hov4fnmoQgdGhyZWFkX2lkIOWOuyByZXN1bWUg4oaSIOS7juWktOW8gOWni++8iOivgeaYjuiusOW/huaMiSBpbmNpZGVudCDpmpTnprvvvIkKIyDlvILluLjot6/lvoQg4pGh77ya5oqKIEdBVEVXQVlfQkVBUkVSX1RPS0VOIOaUuemUmSDihpIg5ZCO5Y+w5Lu75Yqh5byC5bi477yMaW5jaWRlbnQuc3RhdHVzPSdmYWlsZWQnIOS4lCBsYXN0X2Vycm9yIOacieagiApzcWxpdGUzIHJ1bnMvaW5jaWRlbnRzLmRiICJzZWxlY3Qgc3RhdHVzLGxhc3RfZXJyb3IgZnJvbSBpbmNpZGVudCBvcmRlciBieSBjcmVhdGVkX2F0IGRlc2MgbGltaXQgMTsiCmBgYArliKTlrprnibnlvoHvvJpgY2hlY2twb2ludHMuZGJgIOacieivpSB0aHJlYWQg55qE5aSa5q2l6K6w5b2V77yba2lsbC3ph43lkK/lkI7lkIwgaW5jaWRlbnQg57ut6LeR44CB5LiN6YeN5aSN6LCD572R5YWz77yb5ZCO5Y+w5byC5bi46JC9IGBsYXN0X2Vycm9yYCDlj6/mn6XjgILkvp3otZbnnJ/lrp7mnI3liqHvvJpNMiDnvZHlhbPjgIFQcm9tZXRoZXVz44CBaW52ZXN0aWdhdGUg5qih5Z6L44CCCgoqKuWujOaIkOWIpOWumioqCi0gWyBdIGBidWlsZF9ncmFwaChjaGVja3BvaW50ZXI9Tm9uZSlgIOW3peWOguaIkOWei++8jOaooeWdl+e6pyBgZ3JhcGhgIOS/neeVme+8jGBsYW5nZ3JhcGggZGV2YCDku43og73otbcKLSBbIF0gdXZpY29ybiDkvqfnlKggYEFzeW5jU3FsaXRlU2F2ZXJg77yMYHRocmVhZF9pZCA9PSBpbmNpZGVudF9pZGAKLSBbIF0gd2ViaG9vayDnq4vljbPov5Tlm54gMjAw77yM5Zu+5Zyo5ZCO5Y+w6LeRCi0gWyBdIOWQjuWPsOS7u+WKoeW8leeUqOiiq+aMgeacie+8jOW8guW4uOiQvSBgaW5jaWRlbnQubGFzdF9lcnJvcmAKLSBbIF0ga2lsbCDov5vnqIvph43lkK/lkI7lkIwgaW5jaWRlbnQg6IO95LuO5LiK5qyh6IqC54K557ut6LeR77yM5LiU5LiN6YeN5aSN5raI6ICX572R5YWz6aKE566XCi0gWyBdIOW8giB0aHJlYWRfaWQg5oGi5aSNIOKGkiDku47lpLTlvIDlp4vvvIjorrDlv4bmjIkgaW5jaWRlbnQg6ZqU56a777yJCgotLS0KCiMjIOS7u+WKoSBUNS4zIMK3IOatu+S/oeWFnOW6lSArIOS8mOmbhemAgOWHugoKKippZCoq77yaVDUuMyDvvZwgKirmiYDlsZ7mqKHlnZcqKu+8mk01IO+9nCAqKuS8mOWFiOe6pyoq77yaUDAKCioq5LiA5Y+l6K+d55uu5qCHKirvvJrlnY/otJ/ovb3okL3mrbvkv6Hmlofku7blubbov5Tlm54gMjAw77yM6L+b56iL6YCA5Ye65pe25LiN56Gs56CN5Zyo6YCU5LqL5pWF44CCCgoqKuWJjee9ruefpeivhu+8iOKJpDEg5paw5qaC5b+177yJKioKLSAqKuatu+S/oe+8iGRlYWQgbGV0dGVy77yJKioKICAxLiDop6PmnpDlpLHotKXnmoTotJ/ovb0qKuWOn+agtyoq5a2Y55uY5LiN5Lii77yM6L+U5ZueIDIwMCDpmLIgQWxlcnRtYW5hZ2VyIOmHjeivlemjjuaatOOAggogIDIuIOi/lOWbniAyMDAg5piv5pWF5oSP55qE77yaQU0g5a+56Z2eIDJ4eCDkvJrmjIkgYHJldHJ5X2ludGVydmFsYCDlj43lpI3ph43mipXvvIzkuIDku73lnY8gcGF5bG9hZCDog73miorlhaXlj6PmiZPniIbjgIIKICAzLiDlrZjnm5jnmoTmmK/ljp/lp4sgYnl0ZXPvvIzkuI3mmK/op6PmnpDliLDkuIDljYrnmoTkuK3pl7Tnu5PmnpzigJTigJTkuovlkI7opoHog73mi7/ljp/mloflpI3njrDjgIIKICA0LiAqSmF2YSDnsbvmr5Qq77yaTVEg5raI6LS55aSx6LSl6L+b5q275L+h6Zif5YiX77yM5raI5oGv5LiN5Lii5L2G5Lmf5LiN6Zi75aGe5q2j5bi45raI6LS544CCCgojIyMg8J+foSDnrKwgMSDmrrUgwrcg5pS56YCg77yI5oqK6Kej5p6Q5byC5bi45LuOIDUwMCDlj5jmiJAgMjAwICsg6JC955uY77yJCgoxLiDmioogYHBhcnNlX2FtX3BheWxvYWRgIOeahOiwg+eUqOWMhei1t+adpe+8muS7u+S9lSBgVmFsaWRhdGlvbkVycm9yYC9gS2V5RXJyb3JgL2Bqc29uYCDop6PmnpDlvILluLgg4oaSIOWGmSBgcnVucy9kZWFkbGV0dGVyLzxlcG9jaF9tcz4tPHV1aWQ0aGV4Wzo4XT4uanNvbmDvvIzlhoXlrrnmmK8qKuivt+axgueahOWOn+WniyBib2R5KirvvIhgYXdhaXQgcmVxdWVzdC5ib2R5KClg77yM5LiN5pivIGBhd2FpdCByZXF1ZXN0Lmpzb24oKWDigJTigJTlkI7ogIXlr7npnZ4gSlNPTiDnm7TmjqXlsLHngrjkuobvvInvvJsKMi4g5q275L+h5paH5Lu25peB6L655ZCM5ZCN5YaZ5LiA5Lu9IGAuZXJyYCDorrDlvILluLjnsbvlnovkuI7moIjvvIzmlrnkvr/kuovlkI7liKTmlq3mmK/moLzlvI/lj5jkuobov5jmmK/mlbDmja7ohI/vvJsKMy4g6L+U5ZueIGB7ImRlYWRsZXR0ZXJlZCI6IHRydWUsICJmaWxlIjogIjxwYXRoPiJ9YCArIEhUVFAgMjAw44CCCgojIyMg8J+UtCDnrKwgMiDmrrUgwrcg6Ieq56CU77yI5LyY6ZuF6YCA5Ye677yJCgoqKuS7juepuuaWh+S7tioq5YaZIGxpZmVzcGFuIOeahOmAgOWHuuaute+8mgoxLiDnva7kuIDkuKogYGFwcC5zdGF0ZS5hY2NlcHRpbmcgPSBGYWxzZWDvvIzkuYvlkI7ov5vmnaXnmoQgd2ViaG9vayDnm7TmjqUgNTAz77yI5LiN5YaN5o6l5paw5LqL5pWF77yJ77ybCjIuIGBhd2FpdCBhc3luY2lvLndhaXQoYXBwLnN0YXRlLnRhc2tzLCB0aW1lb3V0PTMwKWDvvJsKMy4g6LaF5pe25LuN5pyq57uT5p2f55qE5Lu75YqhIGBjYW5jZWwoKWDvvIzlubbmiorov5nkupsgaW5jaWRlbnQgYG1hcmtfc3RhdHVzKC4uLiwgImZhaWxlZCIsIGxhc3RfZXJyb3I9ImNhbmNlbGxlZCBvbiBzaHV0ZG93biIpYOKAlOKAlCoq5pyJ5LqGIFQ1LjIg55qEIGNoZWNrcG9pbnRlcu+8jOi/meS6m+S6i+aVhemHjeWQr+WQjuS7jeWPryByZXN1bWUqKu+8jOaJgOS7peaghyBmYWlsZWQg5LiN562J5LqO5Lii5LqG44CCCgoqKuiQveeslOmhuuW6jyoqCjEuIOaJk+S4gOS7veWdjyBwYXlsb2Fk77yIYHsiYmFkIjoicGF5bG9hZCJ9YO+8ie+8jOehruiupOeOsOWcqOaYryA1MDDjgIIKMi4g5Yqg5q275L+h5YiG5pSv77yM5YaN5omT5LiA5qyh77yM56Gu6K6k5Y+Y5oiQIDIwMCDkuJQgYHJ1bnMvZGVhZGxldHRlci9gIOiQveS6huaWh+S7tuOAggozLiDmiZPkuIDku70qKumdniBKU09OKirnmoQgYm9kee+8iGAtZCAnbm90LWpzb24nYO+8ie+8jOehruiupOS5n+iDveiQveatu+S/oeiAjOS4jeaYr+WcqCBgcmVxdWVzdC5qc29uKClgIOWkhOeCuOaOieOAggo0LiDoh6rnoJTkvJjpm4XpgIDlh7rvvJrotbfkuIDmrKHkuovmlYXlkI7nq4vliLsgQ3RybC1D77yM6KeC5a+f5pel5b+X6YeM562J5b6F5Zyo6YCU5Lu75Yqh55qE6L+H56iL44CCCjUuIOmHjeWQr+WQjuWvueWImuaJjeiiqyBjYW5jZWwg55qEIGluY2lkZW50IOiwgyByZXN1bWXvvIznoa7orqTog73mjqXnnYDot5HvvIjkuI4gVDUuMiDogZTliqjpqozor4HvvInjgIIKCioq5YWz6ZSu5o+Q56S677yI4omkM++8iSoqCi0g55SoIGBhd2FpdCByZXF1ZXN0LmJvZHkoKWAg5ou/5Y6f5aeLIGJ5dGVzIOWGjeiHquW3sSBganNvbi5sb2Fkc2DvvJvnm7TmjqUgYGF3YWl0IHJlcXVlc3QuanNvbigpYCDpgYfliLDpnZ4gSlNPTiBib2R5IOS8muWFiOaKm++8jOatu+S/oeWIhuaUr+agueacrOi9ruS4jeS4iuOAggotIOWdj+i0n+i9vei/lOWbniAyMDAg5piv5pWF5oSP55qE77yI6ZiyIEFNIOmHjeivlemjjuaatO+8ie+8jOS9huW/hemhu+iQveatu+S/oeWPr+i/veKAlOKAlCLov5Tlm54gMjAwIOS4lOS7gOS5iOmDveayoeeVmSLmiY3mmK/nnJ/kuKLmlbDmja7jgIIKLSDpgIDlh7rml7booqsgY2FuY2VsIOeahOS6i+aVheS4jeaYr+S4ouS6hu+8mmNoZWNrcG9pbnRlciDlt7Lnu4/lrZjkuobmlq3ngrnvvIzph43lkK8gcmVzdW1lIOWNs+WPr++8jGBsYXN0X2Vycm9yYCDph4zlhpnmuIXljp/lm6DlsLHooYzjgIIKCioq5Y2h5L2P6ZmN57qn6Lev5b6E77yIMzAg5YiG6ZKf5rKh5oCd6Lev77yJKioKLSDmrbvkv6HmsqHokL3vvJrnoa7orqTlvILluLjmjZXojrfljIXkvY/kuoYgYGpzb24ubG9hZHNgIOWSjCBQeWRhbnRpYyDmoKHpqozkuKTmrrXvvIzkuJQgYGV4Y2VwdCBFeGNlcHRpb25gIOWFnOW6leiAjOS4jeaYr+WPqiBjYXRjaCDkuIDnp43jgIIKLSBDdHJsLUMg55u05o6l5bCx6YCA5LqG77ya56Gu6K6k5ZCO5Y+w5Lu75Yqh55yf55qE6KKrIGBhcHAuc3RhdGUudGFza3NgIOaMgeacie+8jOWQpuWImSBsaWZlc3BhbiDpgIDlh7rmrrXnrYnnmoTmmK/kuIDkuKrnqbrpm4blkIjjgIIKLSDop4bpopHvvJp2aWRlby0yIFA2NuOAjOW8guatpSvlubblj5HmiafooYzlt6XlhbfnsbvjgI3orrLlvILmraXmiafooYzmgJ3ot6/vvIjlj6/lj4LogIPvvInjgIIKLSDpl64gQUnvvJrjgIxGYXN0QVBJIOeahCBsaWZlc3BhbiDph4zvvIzmiJHmg7PlnKjpgIDlh7rml7blgZzmlLbmlrDor7fmsYLjgIHnrYnlvoXlnKjpgJTlkI7lj7Dku7vliqHmnIDlpJogMzAg56eS5YaNIGNhbmNlbO+8jOato+ehrueahOe7k+aehOaYr+S7gOS5iO+8n+e7mee7k+aehOS4jeimgeaVtOauteWunueOsOOAguOAjQoKKirnnJ/lrp4gSFRUUCDpqozmlLbvvIjlkKvlvILluLjot6/lvoTvvIkqKgpgYGBiYXNoCnV2IHJ1biB1dmljb3JuIGFnZW50LmFwcDphcHAgLS1wb3J0IDgwMDAKCmN1cmwgLXMgLVhQT1NUIGxvY2FsaG9zdDo4MDAwL3dlYmhvb2svYWxlcnRtYW5hZ2VyIC1kICd7ImJhZCI6InBheWxvYWQifScgICAjIDIwMCArIHsiZGVhZGxldHRlcmVkIjp0cnVlfQpjdXJsIC1zIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCAnbm90LWpzb24tYXQtYWxsJyAgICAgIyAyMDDvvIzlkIzmoLfokL3mrbvkv6EKbHMgcnVucy9kZWFkbGV0dGVyLyAgICAgICAgICAgICAgICAgICAgICAgICMg5Lik5Lu9IC5qc29uICsg5Lik5Lu9IC5lcnIKCiMg5LyY6ZuF6YCA5Ye677ya6LW35LiA5qyh55yf5a6e5LqL5pWF5ZCO56uL5Yi7IEN0cmwtQwpjdXJsIC1zIC1YUE9TVCBsb2NhbGhvc3Q6ODAwMC93ZWJob29rL2FsZXJ0bWFuYWdlciAtZCBAYW0tZml4dHVyZS5qc29uICYKc2xlZXAgMiAmJiBraWxsIC1JTlQgJTEKIyDmnJ/mnJvvvJrml6Xlv5fmmL7npLoi5YGc5pS25paw6K+35rGCIOKGkiDnrYnlvoUgTiDkuKrlnKjpgJTku7vliqEi77yb6LaF5pe255qE6KKrIGNhbmNlbCDkuJQgbGFzdF9lcnJvciDlhpnmmI7ljp/lm6AKIyDph43lkK/lkI4gcmVzdW1lIOivpSBpbmNpZGVudCDihpIg6IO95o6l552A6LeR77yI5LiN5piv5LuO5aS077yJCmBgYArliKTlrprnibnlvoHvvJrlnY/otJ/ovb3vvIjlkKvpnZ4gSlNPTu+8ieS4gOW+iyAyMDAgKyDokL3mrbvkv6HvvJvpgIDlh7rml7blnKjpgJTku7vliqHooqvnrYnlvoXogIzpnZ7noaznoI3vvJvooqsgY2FuY2VsIOeahOS6i+aVhemHjeWQr+WQjuWPryByZXN1bWXjgILkvp3otZbnnJ/lrp7mnI3liqHvvJrml6DvvIjmrbvkv6Hot6/lvoTnuq/mnKzlnLDvvInjgIIKCioq5a6M5oiQ5Yik5a6aKioKLSBbIF0g5Z2PIHBheWxvYWQg6JC9IGBydW5zL2RlYWRsZXR0ZXIvYCDlubbov5Tlm54gMjAwCi0gWyBdIOmdniBKU09OIGJvZHkg5Lmf6IO96JC95q275L+h77yI55So55qE5pivIGByZXF1ZXN0LmJvZHkoKWAg5LiN5pivIGByZXF1ZXN0Lmpzb24oKWDvvIkKLSBbIF0g5q275L+h5peB6L655pyJIGAuZXJyYCDorrDlvILluLjnsbvlnovkuI7moIgKLSBbIF0g6YCA5Ye65pe25YGc5pS25paw6K+35rGC44CB562J5b6F5Zyo6YCU5Lu75Yqh44CB6LaF5pe25omNIGNhbmNlbAotIFsgXSDooqsgY2FuY2VsIOeahCBpbmNpZGVudCBgbGFzdF9lcnJvcmAg5YaZ5piO5Y6f5Zug77yM5LiU6YeN5ZCv5ZCO6IO9IHJlc3VtZQoKLS0tCirniYjmnKwgQyDnibnlvoHvvJrlhaXlj6PlhajpnaAi5Zyo55yf5a6e5bel56iL5LiK5oqK5omY566h5YWl5Y+j5pS56YCg5oiQ6Ieq5bu6IEZhc3RBUEkgKyBjaGVja3BvaW50ZXIg4oaSIOiHqueglOaMh+e6ueWOu+mHjeOAgeWRiuitpuiQveebmOS4juatu+S/oeWFnOW6lSLplb/lh7rmnaXvvJvku47ov5nph4zlvIDlp4vvvIznq6/lj6MgODAwMCDmmK/mlbTkuKrns7vnu5/llK/kuIDnmoTpl6jjgIIqCg==</script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
   <script>
     (function () {
