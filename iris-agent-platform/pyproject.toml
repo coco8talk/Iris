@@ -22,6 +22,7 @@ dependencies = [
     "fastapi",
     "sqlmodel",
     "sqlalchemy>=2.0.51",
+    "langgraph-checkpoint-sqlite",
 ]
 
 

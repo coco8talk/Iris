@@ -4,6 +4,8 @@ from datetime import UTC
 
 from pydantic import BaseModel
 
+from agent.store import next_daily_seq
+
 
 class Alert(BaseModel):
     """一条 Alertmanager 告警，字段全部来自 AM v4 负载，不做二次加工."""
@@ -69,10 +71,8 @@ def new_incident_id() -> str:
     这个 id 同时是：网关 X-Incident-Id、落盘目录名、以及 T5.2 的 checkpointer thread_id。
     """
     today = datetime.now(UTC).strftime("%Y%m%d")
-
-    # TODO: 改成从数据库中取最大值
-    
-    return f"inc-{today}-{1}"
+    seq = next_daily_seq(today)
+    return f"inc-{today}-{seq}"
 
 
 

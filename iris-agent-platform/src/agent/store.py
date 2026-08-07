@@ -11,8 +11,6 @@ from sqlalchemy import update
 from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 from sqlmodel import Field, Session, SQLModel, col, create_engine, select
 
-from agent.alert import Alert
-
 DB_PATH = Path("runs/incidents.db")
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -81,7 +79,7 @@ def find_active(fingerprint: str, within_seconds: int = 1800) -> str | None:
         .limit(1)
     )
     with Session(engine) as session:
-        incident = session.exec(statement)
+        incident = session.exec(statement).first()
         if incident is None:
             return None
         return incident.incident_id
@@ -103,15 +101,12 @@ def create_incident(incident_id: str, fingerprint: str, alerts_ref: str) -> None
         session.commit()
 
 
-def merge_alert(incident_id: str, alert: Alert) -> None:
+def merge_alert(incident_id: str) -> None:
     """命中去重时的落库部分：只推进 updated_at，扩大 30 分钟去重窗口.
 
     alerts_ref 不在这里改——它一直指向同一个 alert.json；把新告警追加进该文件的
-    alerts[] 是调用方经 paths.py 完成的文件操作，不属于这一层。
+    alerts[] 是调用方经 paths.py 完成的文件操作，不属于这一层，所以这里不需要接收 Alert 本身。
     """
-    # Alert payload persistence belongs to the caller; see the docstring above.
-    del alert
-
     with Session(engine) as session:
         incident = session.get(Incident, incident_id)
         if incident is None:

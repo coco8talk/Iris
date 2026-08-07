@@ -5,14 +5,18 @@ Returns a predefined response. Replace logic and configuration as needed.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 import structlog
+from fastapi import FastAPI
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.types import Command
 
+from agent.alert import new_incident_id
 from agent.config import AgentRole, get_settings
 from agent.guard import (
     BudgetExhaustedError,
@@ -110,13 +114,16 @@ async def investigate_once(
     # 一次 investigate_once 只还原一次台账，之后全程在同一个 ledger 上充值/检查，
     # 中途重新 load 会把本轮已充的 token/调用次数丢掉。
     ledger = load_ledger(state)
+    incident_id = state.get("incident_id")
+    config = {"configurable": {"thread_id": incident_id}}
 
     try:
         # bind_tools 只是本地绑定工具描述，不产生调用；检查点落在真正发起调用之前。
         check_budget(ledger)
         investigate_model = get_model(AgentRole.INVESTIGATE).bind_tools([query_metrics])
         ai_response = await investigate_model.ainvoke(
-            [SystemMessage(INVESTIGATE_SYSTEM_PROMPT), HumanMessage(user_prompt)]
+            [SystemMessage(INVESTIGATE_SYSTEM_PROMPT), HumanMessage(user_prompt)],
+            config=config
         )
         ledger = charge_tokens(ledger, ai_response)
 
@@ -136,7 +143,7 @@ async def investigate_once(
         tool_call = ai_response.tool_calls[0]
 
         check_budget(ledger)
-        envelope = ApiEnvelope.model_validate(await query_metrics.ainvoke(tool_call["args"]))
+        envelope = ApiEnvelope.model_validate(await query_metrics.ainvoke(tool_call["args"], config=config))
         ledger = charge_tool_call(ledger, envelope)
     except (GatewayRequestError, BudgetExceededError, BudgetExhaustedError) as e:
         # BudgetExhaustedError 来自本地 guard（预算/墙钟耗尽），
@@ -199,15 +206,22 @@ async def route_after_verify(state: IncidentState) -> Literal["report_once", "in
         return "report_once"
 
 
-workflow = StateGraph(IncidentState)
-workflow.add_node("investigate_once", investigate_once)
-workflow.add_node("verify_once", verify_once)
-workflow.add_node("report_once", report_once)
 
-workflow.add_edge(START, "investigate_once")
-# investigate_once 的出边由它自己的 Command(goto=...) 给出，这里不挂静态边——
-# 静态边和 Command 并存会同时扇出到两个目标，预算耗尽时收不了口。
-workflow.add_conditional_edges("verify_once", route_after_verify)
-workflow.add_edge("report_once", END)
+def build_graph(checkpointer = None):
+    """装配节点与边并编译。checkpointer=None 时交给托管方自己管 persistence."""
+    workflow = StateGraph(IncidentState)
+    workflow.add_node("investigate_once", investigate_once)
+    workflow.add_node("verify_once", verify_once)
+    workflow.add_node("report_once", report_once)
 
-graph = workflow.compile()
+    workflow.add_edge(START, "investigate_once")
+    # investigate_once 的出边由它自己的 Command(goto=...) 给出，这里不挂静态边——
+    # 静态边和 Command 并存会同时扇出到两个目标，预算耗尽时收不了口。
+    workflow.add_conditional_edges("verify_once", route_after_verify)
+    workflow.add_edge("report_once", END)
+
+    return workflow.compile(checkpointer=checkpointer)
+
+graph = build_graph()
+
+
