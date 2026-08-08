@@ -1,6 +1,8 @@
-from datetime import datetime
+"""Alertmanager payload parsing and incident identifier helpers."""
+
 import hashlib
-from datetime import UTC
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -20,10 +22,9 @@ class Alert(BaseModel):
     fingerprint: str  # AM 自带的 fingerprint，去重的第一优先来源
 
 
-def parse_am_payload(payload: dict) -> list[Alert]:
+def parse_am_payload(payload: dict[str, Any]) -> list[Alert]:
     """把 AM v4 负载解析成 Alert 列表；任一必需字段缺失就抛，由 T5.3 的死信兜底接住."""
-
-    alerts = []
+    alerts: list[Alert] = []
     for alert in payload["alerts"]:
         labels = alert["labels"]
         alerts.append(
@@ -38,7 +39,7 @@ def parse_am_payload(payload: dict) -> list[Alert]:
                 fingerprint=alert["fingerprint"],
             )
         )
-        return alerts
+    return alerts
 
 
 def fingerprint_of(alerts: list[Alert]) -> str:
@@ -53,16 +54,12 @@ def fingerprint_of(alerts: list[Alert]) -> str:
     if fingerprint:
         return fingerprint
 
-    raw = alert.alertname + alert.service + "".join(
-        sorted(
-            [
-                f"{k}={v}"
-                for k, v in alert.labels.items()
-            ]
-        )
+    raw = (
+        alert.alertname
+        + alert.service
+        + "".join(sorted([f"{key}={value}" for key, value in alert.labels.items()]))
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-
 
 
 def new_incident_id() -> str:
@@ -72,8 +69,4 @@ def new_incident_id() -> str:
     """
     today = datetime.now(UTC).strftime("%Y%m%d")
     seq = next_daily_seq(today)
-    return f"inc-{today}-{seq}"
-
-
-
-
+    return f"inc-{today}-{seq:03d}"

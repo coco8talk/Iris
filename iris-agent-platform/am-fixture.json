@@ -1,25 +1,25 @@
 {
   "receiver": "iris-agent",
-  "status": "firing",
+  "status": "resolved",
   "alerts": [
     {
-      "status": "firing",
+      "status": "resolved",
       "labels": {
         "alertname": "PmUserHighErrorRate",
         "service": "pm-user",
         "severity": "warning"
       },
       "annotations": {
-        "description": "pm-user 过去 5 分钟错误率 19.82%，超过 10% 阈值",
+        "description": "pm-user 过去 5 分钟错误率 17.01%，超过 10% 阈值",
         "summary": "pm-user 错误率过高"
       },
       "startsAt": "2026-08-07T08:34:59.966Z",
-      "endsAt": "0001-01-01T00:00:00Z",
+      "endsAt": "2026-08-07T08:58:59.966Z",
       "generatorURL": "http://692fe0d0b013:9090/graph?g0.expr=sum%28rate%28http_server_requests_seconds_count%7Bjob%3D%22pm-user%22%2Coutcome%3D%22SERVER_ERROR%22%7D%5B5m%5D%29%29+%2F+sum%28rate%28http_server_requests_seconds_count%7Bjob%3D%22pm-user%22%7D%5B5m%5D%29%29+%3E+0.1&g0.tab=1",
       "fingerprint": "dcb08b4a4684562d"
     }
   ],
-  "notification_reason": "repeat interval elapsed",
+  "notification_reason": "all alerts resolved",
   "groupLabels": {
     "severity": "warning"
   },
@@ -29,7 +29,7 @@
     "severity": "warning"
   },
   "commonAnnotations": {
-    "description": "pm-user 过去 5 分钟错误率 19.82%，超过 10% 阈值",
+    "description": "pm-user 过去 5 分钟错误率 17.01%，超过 10% 阈值",
     "summary": "pm-user 错误率过高"
   },
   "externalURL": "http://7b76a41223ab:9093",

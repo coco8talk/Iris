@@ -5,18 +5,16 @@ Returns a predefined response. Replace logic and configuration as needed.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 import structlog
-from fastapi import FastAPI
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
-from langgraph.types import Command
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Checkpointer, Command
 
-from agent.alert import new_incident_id
 from agent.config import AgentRole, get_settings
 from agent.guard import (
     BudgetExhaustedError,
@@ -95,18 +93,20 @@ async def investigate_once(
     静态边不会被 Command 抑制，两者并存会让预算耗尽时同时扇出到 report_once 和 verify_once，
     "紧急收口"就永远收不了口。
     """
-    service=state.get("service")
-    if not service:
-        # 没有 service 就永远查不出东西，回流再多轮也一样，直接收口
+    service = state.get("service")
+    incident_id = state.get("incident_id")
+    if not service or not incident_id:
+        # 没有 service 或 incident_id 时无法查询网关，直接降级收口。
+        missing_field = "service" if not service else "incident_id"
         return Command(
             goto="report_once",
-            update={"degraded": True, "degraded_reason": "no_service"},
+            update={"degraded": True, "degraded_reason": f"no_{missing_field}"},
         )
 
     user_prompt = _build_investigate_prompt(state)
 
     gateway_client = GatewayClient(
-        incident_id=state.get("incident_id"),
+        incident_id=incident_id,
         agent_role=AgentRole.INVESTIGATE,
     )
     query_metrics = make_query_metrics(gateway_client)
@@ -114,8 +114,7 @@ async def investigate_once(
     # 一次 investigate_once 只还原一次台账，之后全程在同一个 ledger 上充值/检查，
     # 中途重新 load 会把本轮已充的 token/调用次数丢掉。
     ledger = load_ledger(state)
-    incident_id = state.get("incident_id")
-    config = {"configurable": {"thread_id": incident_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": incident_id}}
 
     try:
         # bind_tools 只是本地绑定工具描述，不产生调用；检查点落在真正发起调用之前。
@@ -123,7 +122,7 @@ async def investigate_once(
         investigate_model = get_model(AgentRole.INVESTIGATE).bind_tools([query_metrics])
         ai_response = await investigate_model.ainvoke(
             [SystemMessage(INVESTIGATE_SYSTEM_PROMPT), HumanMessage(user_prompt)],
-            config=config
+            config=config,
         )
         ledger = charge_tokens(ledger, ai_response)
 
@@ -143,7 +142,9 @@ async def investigate_once(
         tool_call = ai_response.tool_calls[0]
 
         check_budget(ledger)
-        envelope = ApiEnvelope.model_validate(await query_metrics.ainvoke(tool_call["args"], config=config))
+        envelope = ApiEnvelope.model_validate(
+            await query_metrics.ainvoke(tool_call["args"], config=config)
+        )
         ledger = charge_tool_call(ledger, envelope)
     except (GatewayRequestError, BudgetExceededError, BudgetExhaustedError) as e:
         # BudgetExhaustedError 来自本地 guard（预算/墙钟耗尽），
@@ -175,10 +176,14 @@ async def verify_once(state: IncidentState) -> dict[str, Any]:
     """M9 的确定性预检那一半：不调 LLM，纯规则判断证据够不够."""
     if not state.get("metrics_result") or state.get("degraded"):
         return {
-                "verify_verdict": {"verdict": "fail", "objections": ["未取到有效指标证据"]},
-                "verifier_feedback": ["未取到有效指标证据"]
+            "verify_verdict": {
+                "verdict": "fail",
+                "objections": ["未取到有效指标证据"],
+            },
+            "verifier_feedback": ["未取到有效指标证据"],
         }
     return {"verify_verdict": {"verdict": "pass"}}
+
 
 async def report_once(state: IncidentState) -> None:
     """Generate a report based on the state."""
@@ -190,7 +195,10 @@ async def report_once(state: IncidentState) -> None:
         budget_exhausted=(state.get("budget") or {}).get("budget_exhausted"),
     )
 
-async def route_after_verify(state: IncidentState) -> Literal["report_once", "investigate_once"]:
+
+async def route_after_verify(
+    state: IncidentState,
+) -> Literal["report_once", "investigate_once"]:
     """Verify 之后决定回流还是收口；只读不写 state（rounds 的 +1 在 investigate_once 里）."""
     verdict = (state.get("verify_verdict") or {}).get("verdict")
     max_investigate_rounds = get_settings().max_investigate_rounds
@@ -200,14 +208,20 @@ async def route_after_verify(state: IncidentState) -> Literal["report_once", "in
     # 预算/墙钟已经触顶，再回流也只会立刻被 check_budget 拦下，直接出报告
     elif (state.get("budget") or {}).get("budget_exhausted"):
         return "report_once"
-    elif verdict == "fail" and state.get("investigate_rounds", 0) < max_investigate_rounds:
+    elif (
+        verdict == "fail"
+        and state.get("investigate_rounds", 0) < max_investigate_rounds
+    ):
         return "investigate_once"
     else:
         return "report_once"
 
 
-
-def build_graph(checkpointer = None):
+# PyCharm cannot currently match LangGraph's structural StateLike protocols to TypedDict.
+# noinspection PyTypeChecker
+def build_graph(
+    checkpointer: Checkpointer = None,
+) -> CompiledStateGraph[IncidentState, None, IncidentState, IncidentState]:
     """装配节点与边并编译。checkpointer=None 时交给托管方自己管 persistence."""
     workflow = StateGraph(IncidentState)
     workflow.add_node("investigate_once", investigate_once)
@@ -222,6 +236,5 @@ def build_graph(checkpointer = None):
 
     return workflow.compile(checkpointer=checkpointer)
 
+
 graph = build_graph()
-
-

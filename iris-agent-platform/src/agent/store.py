@@ -73,7 +73,6 @@ def find_active(fingerprint: str, within_seconds: int = 1800) -> str | None:
     statement = (
         select(Incident)
         .where(col(Incident.fingerprint) == fingerprint)
-        .where(col(Incident.status).in_(("open", "running")))
         .where(col(Incident.updated_at) >= cutoff)
         .order_by(col(Incident.updated_at).desc())
         .limit(1)
