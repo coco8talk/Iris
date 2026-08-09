@@ -4,9 +4,12 @@ import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
+import structlog
 from pydantic import BaseModel
 
 from agent.store import next_daily_seq
+
+logger = structlog.getLogger()
 
 
 class Alert(BaseModel):
@@ -53,6 +56,15 @@ def fingerprint_of(alerts: list[Alert]) -> str:
     fingerprint = alert.fingerprint
     if fingerprint:
         return fingerprint
+
+    # 走到回退算法说明 AM 没带 fingerprint。回退指纹和 AM 原生指纹算出来的值
+    # 不同，同一个事故若前后两次分走两条路径就会去重失败、拆成两个 incident，
+    # 这是排查“为什么重复建单”时的第一现场。
+    logger.warning(
+        "fingerprint_fallback",
+        alertname=alert.alertname,
+        service=alert.service,
+    )
 
     raw = (
         alert.alertname

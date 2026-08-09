@@ -4,10 +4,13 @@ from functools import cache
 from typing import Any
 
 import httpx
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic.alias_generators import to_camel
 
 from agent.config import AgentRole, GatewaySettings
+
+logger = structlog.getLogger()
 
 
 @cache
@@ -70,26 +73,59 @@ class GatewayClient(BaseModel):
         429 抛 BudgetExceededError，其余 4xx 抛 GatewayRequestError，由上层节点决定如何处理;
         本方法不吞异常、不做降级判断——degraded 只在 2xx 信封里原样透传给调用方.
         """
-        response = httpx.post(
-            url=self.base_url + path,
-            headers={
-                "Authorization": "Bearer " + self.bearer_token.get_secret_value(),
-                "X-Incident-Id": self.incident_id,
-                "X-Agent-Role": self.agent_role.value,
-            },
-            json=body,
-            timeout=10.0,
+        log = logger.bind(
+            incident_id=self.incident_id,
+            agent_role=self.agent_role.value,
+            path=path,
         )
+        try:
+            response = httpx.post(
+                url=self.base_url + path,
+                headers={
+                    "Authorization": "Bearer " + self.bearer_token.get_secret_value(),
+                    "X-Incident-Id": self.incident_id,
+                    "X-Agent-Role": self.agent_role.value,
+                },
+                json=body,
+                timeout=10.0,
+            )
+        except httpx.RequestError:
+            # 连不上/超时不属于本方法声明的两种异常，会一路冒到节点的 except 之外
+            # 直接打挂整个图执行。这里先留一行，否则只能在 incident.last_error 里
+            # 事后考古。注意 headers 里有 bearer token，任何时候都不要整包打出来。
+            log.exception("gateway_request_error", timeout=10.0)
+            raise
 
         if response.status_code == 429:
+            log.warning("gateway_budget_exceeded", status=response.status_code)
             raise BudgetExceededError(
                 f"tool call budget exceeded for incident={self.incident_id}, path={path}"
             )
         if 400 <= response.status_code < 500:
+            log.warning(
+                "gateway_rejected",
+                status=response.status_code,
+                body=response.text[:500],
+            )
             raise GatewayRequestError(
                 f"gateway rejected request: status={response.status_code}, path={path}, body={response.text}"
             )
 
         response.raise_for_status()
 
-        return ApiEnvelope.model_validate(response.json())
+        envelope = ApiEnvelope.model_validate(response.json())
+        # degraded 是 2xx 信封里原样透传的，HTTP 层完全看不出异常；它又直接决定
+        # verify 会不会打回（verify.py 里 degraded 即判 fail），所以要单独可见。
+        log.info(
+            "gateway_call",
+            status=response.status_code,
+            ok=envelope.ok,
+            degraded=envelope.degraded,
+            degraded_reason=envelope.degraded_reason,
+            elapsed_ms=envelope.meta.elapsed_ms if envelope.meta else None,
+            truncated=envelope.meta.truncated if envelope.meta else None,
+            calls_remaining=(
+                envelope.meta.tool_calls_remaining if envelope.meta else None
+            ),
+        )
+        return envelope

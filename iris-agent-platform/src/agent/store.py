@@ -7,9 +7,12 @@ import time
 from pathlib import Path
 from typing import cast
 
+import structlog
 from sqlalchemy import update
 from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 from sqlmodel import Field, Session, SQLModel, col, create_engine, select
+
+logger = structlog.getLogger()
 
 DB_PATH = Path("runs/incidents.db")
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -73,6 +76,7 @@ def find_active(fingerprint: str, within_seconds: int = 1800) -> str | None:
     statement = (
         select(Incident)
         .where(col(Incident.fingerprint) == fingerprint)
+        .where(col(Incident.status).in_(("open", "running")))
         .where(col(Incident.updated_at) >= cutoff)
         .order_by(col(Incident.updated_at).desc())
         .limit(1)
@@ -109,6 +113,10 @@ def merge_alert(incident_id: str) -> None:
     with Session(engine) as session:
         incident = session.get(Incident, incident_id)
         if incident is None:
+            # 调用方刚从 find_active 拿到这个 id 才会走到这里，查不到说明
+            # 记录在两次查询之间被删了或者 id 传错了——静默 return 会让这条
+            # 告警凭空消失，必须留痕。
+            logger.warning("merge_alert_incident_missing", incident_id=incident_id)
             return
         incident.updated_at = time.time()
         session.add(incident)
@@ -128,8 +136,21 @@ def mark_status(incident_id: str, status: str, last_error: str | None = None) ->
         .where(col(Incident.status).not_in(("closed", "failed")))
     )
     with Session(engine) as session:
-        session.exec(stmt)
+        result = session.exec(stmt)
         session.commit()
+
+    # 终态守卫把 UPDATE 拦成 0 行是正常业务分支（比如图正常跑完标了 closed 之后，
+    # 优雅退出又想标 failed），但排障时“我明明调了 mark_status 状态却没变”极易
+    # 被误判成 bug，所以两种结果都记一行，区别只在级别。
+    if result.rowcount == 0:
+        logger.debug(
+            "mark_status_noop",
+            incident_id=incident_id,
+            status=status,
+            reason="already_terminal",
+        )
+    else:
+        logger.info("mark_status", incident_id=incident_id, status=status)
 
 
 def get_incident(incident_id: str) -> Incident | None:
