@@ -26,9 +26,13 @@ class BudgetLedger(BaseModel):
     deadline_ts: float | None = None  # 墙钟截止时间（epoch 秒）；None 表示还没初始化，由 guard.load_ledger() 补上
     budget_exhausted: bool = False    # 任一维度触顶即置 True；report 节点读它，在报告里标注"因预算耗尽提前收口"
 
+
 class Severity(StrEnum):
-    """事故严重度，由 triage 判定；注意它和 Alertmanager labels.severity 不是一回事——
-    AM 的是告警规则作者预设的静态标签，这个是模型看完整组告警后给的判断."""
+    """事故严重度，由 triage 判定.
+
+    注意它和 Alertmanager labels.severity 不是一回事——AM 的是告警规则作者预设的
+    静态标签，这个是模型看完整组告警后给的判断.
+    """
 
     P0 = "P0"  # 核心链路不可用，用户大面积受影响
     P1 = "P1"  # 核心功能明显劣化（错误率/时延突破阈值），仍可部分服务
@@ -37,7 +41,7 @@ class Severity(StrEnum):
 
 
 class Domain(StrEnum):
-    """疑似根因所属的技术域。
+    """疑似根因所属的技术域.
 
     这 7 个字面值是与 M11 Skills 预筛映射表的硬契约，改任何一个都要同步改 M11 的
     loader.listing_for()，否则预筛会静默返回空列表。

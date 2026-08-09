@@ -5,27 +5,27 @@ from __future__ import annotations
 from typing import Literal
 
 import structlog
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from agent.config import AgentRole
 from agent.guard import (
     BudgetExhaustedError,
     charge_tokens,
-    charge_tool_call,
     check_budget,
     load_ledger,
 )
 from agent.llm_retry import ainvoke_with_retry
 from agent.state import IncidentState
-from agent.tools.definetions import make_query_metrics
 from agent.tools.GatewayClient import (
     ApiEnvelope,
     BudgetExceededError,
     GatewayClient,
     GatewayRequestError,
 )
+from agent.tools.register import make_template_tools
 
 logger = structlog.getLogger()
 
@@ -80,7 +80,7 @@ def _build_investigate_prompt(state: IncidentState) -> str:
     )
 
 
-def make_investigate_node(model: Runnable):
+def make_investigate_node(model: BaseChatModel):
     """用注入的 model 造出 investigate 节点闭包.
 
     model 是 get_model(AgentRole.INVESTIGATE) 的原始返回值（还没 bind_tools）——
@@ -118,7 +118,6 @@ def make_investigate_node(model: Runnable):
             incident_id=incident_id,
             agent_role=AgentRole.INVESTIGATE,
         )
-        query_metrics = make_query_metrics(gateway_client)
 
         # 一次 investigate_once 只还原一次台账，之后全程在同一个 ledger 上充值/检查，
         # 中途重新 load 会把本轮已充的 token/调用次数丢掉。
@@ -128,7 +127,10 @@ def make_investigate_node(model: Runnable):
         try:
             # bind_tools 只是本地绑定工具描述，不产生调用；检查点落在真正发起调用之前。
             check_budget(ledger)
-            bound_model = model.bind_tools([query_metrics])
+            tools = make_template_tools(gateway_client, ledger)
+            bound_model = model.bind_tools(tools)
+            tools_by_name = {t.name: t for t in tools}
+
             ai_response = await ainvoke_with_retry(
                 bound_model,
                 [SystemMessage(INVESTIGATE_SYSTEM_PROMPT), HumanMessage(user_prompt)],
@@ -157,12 +159,21 @@ def make_investigate_node(model: Runnable):
                 )
 
             tool_call = ai_response.tool_calls[0]
+            selected_tool = tools_by_name.get(tool_call["name"])
+            if selected_tool is None:
+                # tools_by_name 建自 bind_tools 用的同一份 tools 列表，模型选中的名字
+                # 理论上不可能不在里面；真出现说明工具绑定和调用对不上同一份列表，
+                # 是不变量被破坏，不是可恢复的业务分支，直接冒泡而不是吞掉。
+                raise RuntimeError(
+                    f"investigate model selected an unbound tool: {tool_call['name']!r}"
+                )
 
-            check_budget(ledger)
+            # check_budget/charge_tool_call 已经包进 make_template_tools 返回的工具里
+            # （register.py 的 _BudgetedGatewayClient），这里不用再手动调一遍——
+            # 同一个 ledger 对象会被工具调用路径原地改掉，下面 model_dump() 时已经是最新值。
             envelope = ApiEnvelope.model_validate(
-                await query_metrics.ainvoke(tool_call["args"], config=config)
+                await selected_tool.ainvoke(tool_call["args"], config=config)
             )
-            ledger = charge_tool_call(ledger, envelope)
         except (GatewayRequestError, BudgetExceededError, BudgetExhaustedError) as e:
             # BudgetExhaustedError 来自本地 guard（预算/墙钟耗尽），
             # BudgetExceededError 来自网关 429，两者都走同一条优雅收口路径。

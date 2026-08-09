@@ -1,5 +1,7 @@
+"""证据台账 EvidenceStore：按类型编号取证结果，按 §0.6 格式落盘，复用 M5 的 incident_dir() 做路径安全."""
+
 import re
-from datetime import timezone, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 

@@ -60,7 +60,7 @@ def write_alert_fixture(incident_id: str, alert_payload: dict) -> str:
 
 
 def read_alert_fixture(alert_ref: str) -> List[dict[str, Any]]:
-
+    """读回 write_alert_fixture 落盘的原始 payload，解析成精简后的告警字典列表."""
     path = Path(alert_ref)
     alerts = json.loads(path.read_text(encoding="utf-8"))["alerts"]
     alert_list = []

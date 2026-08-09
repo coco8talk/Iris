@@ -23,6 +23,7 @@ dependencies = [
     "sqlmodel",
     "sqlalchemy>=2.0.51",
     "langgraph-checkpoint-sqlite",
+    "uvicorn>=0.52.1",
 ]
 
 
