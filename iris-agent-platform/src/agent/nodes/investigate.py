@@ -6,21 +6,25 @@ from typing import Literal
 
 import structlog
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
-from agent.config import AgentRole
+from agent.config import AgentRole, get_settings
+from agent.evidence import EvidenceStore
 from agent.guard import (
     BudgetExhaustedError,
     charge_tokens,
     check_budget,
     load_ledger,
 )
-from agent.llm_retry import ainvoke_with_retry
+from agent.investigator import build_simple_investigator
+# create_agent 接管了 LLM 调用，M6 的 ainvoke_with_retry 重试层暂时接不进来
+# （它是包在裸 bound_model.ainvoke 外面的，create_agent 内部不暴露这个注入点）——
+# 已知限制，留给以后给 model 本身包一层带重试的 Runnable 再补。
+from agent.paths import incident_dir
 from agent.state import IncidentState
 from agent.tools.GatewayClient import (
-    ApiEnvelope,
     BudgetExceededError,
     GatewayClient,
     GatewayRequestError,
@@ -28,56 +32,6 @@ from agent.tools.GatewayClient import (
 from agent.tools.register import make_template_tools
 
 logger = structlog.getLogger()
-
-INVESTIGATE_SYSTEM_PROMPT = """
-你是事故排障多智能体系统中的 investigate 角色。
-当前你只有一个工具可用：query_metrics，用于查询指定服务的时序监控指标（经网关代理 Prometheus）。
-
-任务：根据用户消息中给出的 service，选择一个合适的指标维度
-（error_rate / qps / p99 / cpu / memory）和查询窗口，调用 query_metrics 获取数据。
-本轮你必须调用该工具——不要只用文字回答，不要臆造数据。
-
-规则：
-- 每次只能查一个维度；如果不确定选哪个，默认用 error_rate。
-- 先用较大窗口（如 30m）做整体判断，不要一上来就切太窄的窗口。
-- 工具可能返回 degraded=true（网关降级），这不是你的错，如实反映，不要隐瞒。
-"""
-
-INVESTIGATE_USER_PROMPT = (
-    "当前事故 incident_id={incident_id}，需要排查的服务是 service={service}。"
-    "请调用 query_metrics 工具，初步了解该服务的健康状况。"
-)
-
-# 回流第 2 轮才拼上：把上一轮 verify 打回的异议注入，避免模型原样重跑同一次查询
-INVESTIGATE_FEEDBACK_PROMPT = """
-
-上一轮排查已被 verify 打回，异议如下：
-{objections}
-
-本轮请做增量补证：复用已经拿到的 evidence，不要重复取同一份数据
-（同一个 template_key + 同样的 window 就是同一份数据）。
-针对上面的异议换一个还没查过的指标维度，或换一个时间窗口，只补缺的那部分证据。
-已查过的证据如下（args 相同即视为重复）：
-{evidence}
-"""
-
-
-def _build_investigate_prompt(state: IncidentState) -> str:
-    """拼 investigate 的用户消息；有 verifier_feedback（即回流轮）时追加增量补证段."""
-    user_prompt = INVESTIGATE_USER_PROMPT.format(
-        incident_id=state.get("incident_id"),
-        service=state.get("service"),
-    )
-
-    feedback = state.get("verifier_feedback") or []
-    if not feedback:
-        return user_prompt
-
-    evidence = state.get("evidence") or []
-    return user_prompt + INVESTIGATE_FEEDBACK_PROMPT.format(
-        objections="\n".join(f"- {item}" for item in feedback),
-        evidence="\n".join(f"- {item}" for item in evidence) or "- （无）",
-    )
 
 
 def make_investigate_node(model: BaseChatModel):
@@ -91,16 +45,9 @@ def make_investigate_node(model: BaseChatModel):
     async def _investigate(
         state: IncidentState,
     ) -> Command[Literal["verify_once", "report_once"]]:
-        """Query one model-selected metric for the affected service.
-
-        出边全部由 Command(goto=...) 决定，图上不能再挂 investigate_once → verify_once 的静态边：
-        静态边不会被 Command 抑制，两者并存会让预算耗尽时同时扇出到 report_once 和 verify_once，
-        "紧急收口"就永远收不了口。
-        """
         service = state.get("service")
         incident_id = state.get("incident_id")
         if not service or not incident_id:
-            # 没有 service 或 incident_id 时无法查询网关，直接降级收口。
             missing_field = "service" if not service else "incident_id"
             logger.warning(
                 "investigate_skip",
@@ -112,71 +59,41 @@ def make_investigate_node(model: BaseChatModel):
                 update={"degraded": True, "degraded_reason": f"no_{missing_field}"},
             )
 
-        user_prompt = _build_investigate_prompt(state)
-
-        gateway_client = GatewayClient(
-            incident_id=incident_id,
-            agent_role=AgentRole.INVESTIGATE,
+        user_prompt = (
+            f"当前事故 incident_id={incident_id}，需要排查的服务是 service={service}。"
+            "请排查这次告警的根因，给出带证据引用的结论。"
         )
 
-        # 一次 investigate_once 只还原一次台账，之后全程在同一个 ledger 上充值/检查，
-        # 中途重新 load 会把本轮已充的 token/调用次数丢掉。
+        gateway_client = GatewayClient(
+            incident_id=incident_id, agent_role=AgentRole.INVESTIGATE
+        )
         ledger = load_ledger(state)
         config: RunnableConfig = {"configurable": {"thread_id": incident_id}}
 
         try:
-            # bind_tools 只是本地绑定工具描述，不产生调用；检查点落在真正发起调用之前。
             check_budget(ledger)
             tools = make_template_tools(gateway_client, ledger)
-            bound_model = model.bind_tools(tools)
-            tools_by_name = {t.name: t for t in tools}
+            evidence_store = EvidenceStore(incident_id)
 
-            ai_response = await ainvoke_with_retry(
-                bound_model,
-                [SystemMessage(INVESTIGATE_SYSTEM_PROMPT), HumanMessage(user_prompt)],
-                config=config,
-                incident_id=incident_id,
-                agent_role=AgentRole.INVESTIGATE.value,
+            if get_settings().subagents_enabled:
+                raise NotImplementedError("multi-agent investigator 留给 M10 实现")
+
+            agent = build_simple_investigator(
+                model=model,
+                tools=tools,
+                evidence_store=evidence_store,
+                verifier_feedback=state.get("verifier_feedback"),
             )
-            ledger = charge_tokens(ledger, ai_response)
-
-            if not isinstance(ai_response, AIMessage) or not ai_response.tool_calls:
-                # 这一轮 token 已经花掉了，算一轮已用轮次，否则 route_after_verify
-                # 永远看到 rounds=0，会在 verify ↔ investigate 之间无限回流。
-                logger.warning(
-                    "investigate_no_tool_call",
-                    incident_id=incident_id,
-                    investigate_rounds=state.get("investigate_rounds", 0) + 1,
-                )
-                return Command(
-                    goto="verify_once",
-                    update={
-                        "degraded": True,
-                        "degraded_reason": "investigate_model_no_tool_call",
-                        "investigate_rounds": state.get("investigate_rounds", 0) + 1,
-                        "budget": ledger.model_dump(),
-                    },
-                )
-
-            tool_call = ai_response.tool_calls[0]
-            selected_tool = tools_by_name.get(tool_call["name"])
-            if selected_tool is None:
-                # tools_by_name 建自 bind_tools 用的同一份 tools 列表，模型选中的名字
-                # 理论上不可能不在里面；真出现说明工具绑定和调用对不上同一份列表，
-                # 是不变量被破坏，不是可恢复的业务分支，直接冒泡而不是吞掉。
-                raise RuntimeError(
-                    f"investigate model selected an unbound tool: {tool_call['name']!r}"
-                )
-
-            # check_budget/charge_tool_call 已经包进 make_template_tools 返回的工具里
-            # （register.py 的 _BudgetedGatewayClient），这里不用再手动调一遍——
-            # 同一个 ledger 对象会被工具调用路径原地改掉，下面 model_dump() 时已经是最新值。
-            envelope = ApiEnvelope.model_validate(
-                await selected_tool.ainvoke(tool_call["args"], config=config)
+            llm_response = await agent.ainvoke(
+                {"messages": [HumanMessage(user_prompt)]}, config=config
             )
+
+            for message in llm_response["messages"]:
+                if isinstance(message, AIMessage):
+                    ledger = charge_tokens(ledger, message)
+
+            rca_report = llm_response["structured_response"]
         except (GatewayRequestError, BudgetExceededError, BudgetExhaustedError) as e:
-            # BudgetExhaustedError 来自本地 guard（预算/墙钟耗尽），
-            # BudgetExceededError 来自网关 429，两者都走同一条优雅收口路径。
             logger.warning(
                 "investigate_exhausted",
                 incident_id=incident_id,
@@ -189,23 +106,25 @@ def make_investigate_node(model: BaseChatModel):
                     "budget": exhausted.model_dump(),
                     "degraded": True,
                     "degraded_reason": str(e) or type(e).__name__,
+                    "investigate_rounds": state.get("investigate_rounds", 0) + 1,
                 },
             )
+
+        report_path = incident_dir(incident_id) / "report_draft.md"
+        report_path.write_text(rca_report.model_dump_json(indent=2), encoding="utf-8")
 
         logger.info(
             "investigate_done",
             incident_id=incident_id,
-            tool_args=tool_call["args"],
-            degraded=envelope.degraded,
+            root_service=rca_report.root_service,
+            evidence_ids=rca_report.evidence_ids,
             investigate_rounds=state.get("investigate_rounds", 0) + 1,
         )
         return Command(
             goto="verify_once",
             update={
-                "metrics_result": envelope.data,
-                "degraded": envelope.degraded,
-                "degraded_reason": envelope.degraded_reason,
-                "evidence": [{"tool": "query_metrics", "args": tool_call["args"]}],
+                "draft_report_ref": str(report_path),
+                "evidence": rca_report.evidence_ids,
                 "investigate_rounds": state.get("investigate_rounds", 0) + 1,
                 "budget": ledger.model_dump(),
             },

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import operator
 from enum import StrEnum
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, TypedDict, Literal
 
 from pydantic import BaseModel, Field
 
@@ -84,7 +84,7 @@ class IncidentState(TypedDict, total=False):
     triage: TriageResult | None      # 分诊结果。M6 的 triage 节点写入，届时类型收紧为 TriageResult（在 M6 定义）
     investigate_rounds: int          # investigate 已跑轮数；条件边靠它判断还能不能回流。由 investigate 节点自己 +1（M4 写）
     metrics_result: dict[str, Any] | None
-    evidence: Annotated[list[dict], operator.add]           # 证据条目，追加型。M4 先记 {tool, args}，M7 换成 EV-* 台账条目
+    evidence: Annotated[list[str], operator.add]            # 证据条目，追加型。M4 先记 {tool, args}，M7 起是 EV-* 编号
     verifier_feedback: Annotated[list[str], operator.add]   # verify 每次打回的意见，回流时注入 investigate 的 prompt（M4 写占位、M9 写真实异议）
     draft_report_ref: str | None  # 报告草稿的落盘路径，不是全文。M7 产出草稿、M8 落最终 report.md
     verify_verdict: dict | None   # 验收结论。M4 先由确定性预检写，M9 补跨家族 LLM 核验，届时类型收紧为 Verdict（在 M9 定义）
@@ -97,3 +97,16 @@ class IncidentState(TypedDict, total=False):
     # ---- 后续模块占位 ----
     approval: dict | None          # 人工审批决定。M12 的 approval 节点写入
     remediation_result: dict | None  # 修复执行结果。M12 的 remediate 节点写入
+
+class RcaReport(BaseModel):
+    """单 Agent（或 M10 的 lead）产出的根因分析结论。M7 产出，M8 只渲染不重定义."""
+
+    root_service: str        # 根因服务名，必须是 CMDB 里的真实服务名；M12 判分的 acc@service 比对它
+    root_cause: str          # 根因分类，用短语而非长句（如 "slow_query" / "threadpool_exhausted"）；判分的 acc@class 比对它
+    root_detail: str         # 根因细节：具体是哪条 SQL / 哪个池 / 哪次配置变更
+    confidence: Literal["high", "medium", "low"]  # 置信度；M8 在验收 fail 或预算耗尽时会强制降为 low
+    causal_chain: list[str]  # 因果链，从根因到告警现象的有序步骤，每步一句话
+    evidence_ids: list[str]  # 本结论引用的全部证据编号，必须都能在 evidence/ 里找到（M9 预检就查这个）
+    summary_md: str          # 给人读的摘要 Markdown；**只有这个字段允许 M8 的 LLM 润色**
+    remediation: str | None = None  # 修复建议；M12 的审批与执行以它为输入，慢查询类只准建议人工处理
+

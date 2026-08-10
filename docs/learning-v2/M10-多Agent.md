@@ -134,7 +134,7 @@ wc -l src/agent/lead.py src/agent/subagents.py     # 代码量对比
      | `metrics-investigator` | `query_metrics` + `record_evidence` | `metrics-investigator` |
      | `logs-investigator` | `query_logs` + `query_logs_raw` + `record_evidence` | `logs-investigator` |
      | `trace-investigator` | `query_trace` + `record_evidence` | `trace-investigator` |
-     | `lead` | `query_cmdb` + `query_changes` + `read_evidence_summary` + 派活 | `lead` |
+     | `lead` | `query_cmdb` + `read_evidence_summary` + 派活 | `lead` |
 
   2. `query_metrics_raw` 只给 lead 或干脆不给——raw 通道全事故只有 5 次预算（M7 T7.4），散给三个 subagent 会被瞬间打光。
   3. `X-Agent-Role` 按 subagent 注入 `GatewayClient`，网关审计里才分得出是谁在查（M2 的 audit_log 有 `agent_role` 列）。
@@ -150,7 +150,7 @@ wc -l src/agent/lead.py src/agent/subagents.py     # 代码量对比
 1. `subagents.py`：按上表定义三个 subagent，每个给一段**本域的取证指引**（如 `trace-investigator` 要写明"trace_id 从 lead 转交的 logs 摘要里取，不要自己编"）；
 2. 每个 subagent 建自己的 `GatewayClient(incident_id, agent_role=<自己的角色>)`——**不要共用 lead 的那个**，否则审计里全记成 lead；
 3. `lead.py` 编排节奏，四拍：
-   1. **建地基**：`query_cmdb` 确认服务拓扑 + `query_changes` 问最近改了什么；
+   1. **建地基**：`query_cmdb` 确认服务拓扑；
    2. **首轮并行广撒**：三个 subagent 同时派出去，各查本域，回摘要；
    3. **汇总更新假设**：把三份摘要合成 `hypotheses.md`（每条假设：描述 / 支持它的 EV / 反对它的 EV / 下一步要什么证据）；
    4. **定向追查**：按假设派第二轮（通常只派 1~2 个 subagent），然后写 `report_draft.md`（结论条条带 `[EV-*]`，格式与 M7 完全一致——M8 的报告节点不区分是谁写的草稿）；

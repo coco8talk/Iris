@@ -84,7 +84,10 @@ class Settings(BaseSettings):
     # ↑ 必须与网关一致：charge_tool_call 用 limit - meta.tool_calls_remaining 反推已用次数，对不上会算错
     raw_call_budget: int = 5             # 网关 raw 通道调用上限，与 M2 网关侧 raw 预算对齐，与模板通道分开计
     wall_clock_budget_seconds: int = 600  # 墙钟预算；guard.load_ledger() 用它算 deadline_ts
-    max_investigate_rounds: int = 2      # investigate 回流上限，条件边判断还能不能打回时用
+    max_investigate_rounds: int = 2  # investigate 回流上限，条件边判断还能不能打回时用
+
+
+    subagents_enabled: bool = False  # M10 才会真正生效；M7 恒为 False，走本模块单 Agent
 
 
 @cache
