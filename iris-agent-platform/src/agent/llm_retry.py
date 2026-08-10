@@ -41,7 +41,7 @@ async def ainvoke_with_retry(
     attempts: int = DEFAULT_ATTEMPTS,
     incident_id: str | None = None,
     agent_role: str | None = None,
-) -> Any:
+) -> None:
     """调用 model.ainvoke，对传输层错误做指数退避重试.
 
     重试只包住这一次 LLM 调用，不要上升成 LangGraph 的节点级 RetryPolicy：
@@ -73,3 +73,4 @@ async def ainvoke_with_retry(
                 error=str(e),
             )
             await asyncio.sleep(backoff)
+    return None

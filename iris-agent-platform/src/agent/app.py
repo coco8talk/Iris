@@ -16,7 +16,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from agent.alert import fingerprint_of, new_incident_id, parse_am_payload
 from agent.graph import build_graph
-from agent.paths import write_alert_fixture
+from agent.paths import incident_dir, write_alert_fixture
 from agent.state import IncidentState
 from agent.store import (
     create_db_and_tables,
@@ -25,6 +25,7 @@ from agent.store import (
     mark_status,
     merge_alert,
 )
+from agent.store import get_incident as get_incident_record
 
 logger = structlog.getLogger()
 
@@ -188,3 +189,55 @@ async def resume(incident_id: str) -> JSONResponse:
     logger.info("resume_requested", incident_id=incident_id)
     resume_incident_run(app, incident_id)
     return JSONResponse({"resumed": True})
+
+
+@app.get("/incidents/{incident_id}")
+async def get_incident(incident_id: str) -> JSONResponse:
+    """Return incident status and its structured report when available."""
+    try:
+        output_dir = incident_dir(incident_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    incident = get_incident_record(incident_id)
+    if incident is None:
+        return JSONResponse({"error": "incident not found"}, status_code=404)
+
+    try:
+        report = json.loads(
+            (output_dir / "report.json").read_text(encoding="utf-8")
+        )
+    except FileNotFoundError:
+        return JSONResponse(
+            {
+                "incident_id": incident_id,
+                "status": incident.status,
+                "root_service": None,
+                "root_cause": None,
+                "root_detail": None,
+                "confidence": None,
+                "causal_chain": None,
+                "evidence_ids": None,
+                "summary_md": None,
+                "verdict": None,
+                "objections": None,
+                "budget_exhausted": None,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "incident_id": incident_id,
+            "status": incident.status,
+            "root_service": report.get("root_service"),
+            "root_cause": report.get("root_cause"),
+            "root_detail": report.get("root_detail"),
+            "confidence": report.get("confidence"),
+            "causal_chain": report.get("causal_chain"),
+            "evidence_ids": report.get("evidence_ids"),
+            "summary_md": report.get("summary_md"),
+            "verdict": report.get("verdict"),
+            "objections": report.get("objections"),
+            "budget_exhausted": report.get("budget_exhausted"),
+        }
+    )
