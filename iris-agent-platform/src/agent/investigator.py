@@ -1,3 +1,5 @@
+"""Single-agent investigator assembly and prompts."""
+
 from typing import Literal
 
 from langchain.agents import create_agent
@@ -14,11 +16,16 @@ INVESTIGATOR_SYSTEM_PROMPT = """
 你持有以下只读取证工具:
 - query_cmdb(service):查服务在 CMDB 里登记的拓扑与实例信息。
 - query_metrics(template_key, service, window, compare_baseline):查时序指标,
-  template_key 是 error_rate/qps/p99/cpu/memory 之一,一次只能查一个维度。
+  template_key 是 error_rate/qps/p99_latency/cpu_usage/jvm_heap_usage 之一,
+  一次只能查一个维度。
 - query_logs(service, window, end_offset_seconds, pattern):查日志,返回按 pattern
   聚合的日志组,以及从匹配行里提取出的 distinctTraceIds。
 - query_trace(trace_id, max_depth):查一条 trace 的完整调用链。trace_id 必须来自
   query_logs 返回的 distinctTraceIds,禁止凭空构造或猜测。
+- query_metrics_raw(query, service, window, end_offset_seconds):模板指标无法表达时才用的
+  raw PromQL 逃生通道。
+- query_logs_raw(query, service, window, end_offset_seconds):模板日志无法表达时才用的
+  raw LogQL 逃生通道。
 - record_evidence(kind, source, summary, excerpt):登记一条证据,kind 取值
   M(metrics)/L(logs)/T(trace)/S(cmdb 等其他)。调用后返回分配到的 EV-* 编号,
   之后的结论必须引用这个编号。
@@ -30,6 +37,14 @@ INVESTIGATOR_SYSTEM_PROMPT = """
    定位到具体时间段和具体请求。
 3. 需要看某条请求的完整调用链时,trace_id 只能从 query_logs 返回的
    distinctTraceIds 里取,不要自己编造或猜测格式正确的 trace_id。
+
+## raw 通道使用规则（受限逃生舱）
+- query_metrics_raw / query_logs_raw 在全事故范围内共用 5 次额度；模板工具能表达的
+  查询一律走模板，只有模板覆盖不了时才使用 raw 通道。
+- 写 raw 查询必须带 label selector，例如 PromQL 的 {service="pm-question"} 或
+  以 {service_name="pm-question"} 开头的 LogQL；否则网关会返回 403。
+- raw 查询产出的证据在调用 record_evidence 时，source 字段必须原样记录你实际写出的
+  PromQL/LogQL 查询表达式，不得改写或转述。
 
 ## 证据登记(强制)
 - 每次工具调用拿到有意义的结果后,必须调用 record_evidence 登记,不能只在
@@ -161,4 +176,3 @@ def build_simple_investigator(model: BaseChatModel, tools: list[BaseTool], evide
         system_prompt = system_prompt,
         response_format = RcaReport,
     )
-

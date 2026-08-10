@@ -30,16 +30,20 @@ def load_ledger(state: IncidentState) -> BudgetLedger:
         deadline_ts= time.time() + budget.wall_clock_budget_seconds,
     )
 
-def check_budget(ledger: BudgetLedger) -> None:
+def check_budget(ledger: BudgetLedger, *, raw: bool = False) -> None:
     """在每次 LLM 调用前、每次网关工具调用前各调一次.
 
-    tokens_used>=token_limit、tool_calls_used>=tool_calls_limit、
-    raw_calls_used>=raw_calls_limit、now>=deadline_ts 任一成立就抛 BudgetExhaustedError。
+    token 与墙钟预算对两个通道都生效；模板调用只检查 tool_calls_limit，raw 调用只检查
+    raw_calls_limit，避免任一通道耗尽后误伤另一个通道。
     """
+    channel_exhausted = (
+        ledger.raw_calls_used >= ledger.raw_calls_limit
+        if raw
+        else ledger.tool_calls_used >= ledger.tool_calls_limit
+    )
     if (ledger.tokens_used>=ledger.token_limit
-            or ledger.tool_calls_used>=ledger.tool_calls_limit
-            or ledger.raw_calls_used>=ledger.raw_calls_limit
-            or time.time()>=ledger.deadline_ts):
+            or channel_exhausted
+            or (ledger.deadline_ts is not None and time.time()>=ledger.deadline_ts)):
         raise BudgetExhaustedError
 
 
@@ -94,5 +98,3 @@ def charge_tool_call(
         raw_calls_used=ledger.raw_calls_used,
     )
     return ledger
-
-

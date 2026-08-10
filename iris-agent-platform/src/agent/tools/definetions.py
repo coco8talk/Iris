@@ -10,7 +10,10 @@ class QueryMetricsInput(BaseModel):
     """Input schema for querying templated service metrics."""
 
     template_key: str = Field(
-        description="指标模板名，如 error_rate/qps/p99/cpu/memory，一次只能查一个维度"
+        description=(
+            "指标模板名，只能是 error_rate/qps/p99_latency/cpu_usage/"
+            "jvm_heap_usage 之一，一次只能查一个维度"
+        )
     )
     service: str = Field(description="被查询的服务名，需与 CMDB 登记的服务名一致")
     window: int = Field(
@@ -275,3 +278,69 @@ def make_query_metrics_raw(gateway_client: GatewayClient):
         return response.model_dump()
 
     return query_metrics_raw
+
+
+class QueryLogsRawInput(BaseModel):
+    """Input schema for querying logs with raw LogQL."""
+
+    query: str = Field(
+        max_length=500,
+        description=(
+            "Raw LogQL query string for diagnostics that query_logs cannot express. "
+            "必须包含至少一个 label selector，否则网关 403；查询必须以该 selector "
+            '开头，例如 {service_name="pm-question"} |= "ERROR"。'
+        ),
+    )
+    service: str = Field(
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9._-]+$",
+        description=(
+            "Target service name, must match the service name registered in "
+            "CMDB. Only letters, digits, '.', '_', '-' are allowed."
+        ),
+    )
+    window: int = Field(
+        gt=0,
+        le=86400,
+        description=(
+            "Time window in seconds to query, must be > 0 and at most 86400 (24h). "
+            "Same usage pattern as query_metrics_raw: start broad, then narrow."
+        ),
+    )
+    end_offset_seconds: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Optional backward offset in seconds from now, used as the query's end "
+            "time (defaults to now when omitted). Combine with a narrower window to "
+            "slide the query into a specific past time range — same pattern as "
+            "query_metrics_raw."
+        ),
+    )
+
+
+def make_query_logs_raw(gateway_client: GatewayClient):
+    """Create a raw logs query tool bound to the gateway client."""
+
+    @tool("query_logs_raw", args_schema=QueryLogsRawInput)
+    def query_logs_raw(
+        query: str, service: str, window: int, end_offset_seconds: int | None = None
+    ) -> dict:
+        """Query logs with raw LogQL only when query_logs cannot express the need.
+
+        The query must start with a label selector containing at least one matcher,
+        otherwise the gateway rejects it with a 403. This escape hatch uses the
+        raw budget shared with query_metrics_raw, not the template-tool budget.
+        """
+        response = gateway_client.call(
+            "/logs/query/raw",
+            {
+                "query": query,
+                "service": service,
+                "window": window,
+                "endOffsetSeconds": end_offset_seconds,
+            },
+        )
+        return response.model_dump()
+
+    return query_logs_raw

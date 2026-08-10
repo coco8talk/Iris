@@ -4,11 +4,13 @@ import cn.hutool.core.bean.BeanUtil;
 import com.silas.iris.toolgateway.cmdb.service.ServiceRegistry;
 import com.silas.iris.toolgateway.common.audit.constant.AuditConstants;
 import com.silas.iris.toolgateway.common.constant.HeaderConstants;
+import com.silas.iris.toolgateway.common.exception.RawQueryRejectedException;
 import com.silas.iris.toolgateway.common.interceptor.AuthInterceptor;
 import com.silas.iris.toolgateway.common.redis.RedisService;
 import com.silas.iris.toolgateway.common.result.ApiEnvelope;
 import com.silas.iris.toolgateway.logs.constant.LogsQueryConstants;
 import com.silas.iris.toolgateway.logs.model.dto.QueryLogsDTO;
+import com.silas.iris.toolgateway.logs.model.dto.QueryLogsRawDTO;
 import com.silas.iris.toolgateway.logs.model.vo.LokiQueryRangeVO;
 import com.silas.iris.toolgateway.logs.model.vo.QueryLogsVO;
 import com.silas.iris.toolgateway.logs.utils.LogPatternAggregator;
@@ -127,6 +129,55 @@ public class LogsController {
                 incidentId, aggregation.data().getTotalLines(), aggregation.data().getPatterns().size(),
                 remaining, System.currentTimeMillis() - startTask);
         return ApiEnvelope.ok(aggregation.data(), buildMeta(startTask, remaining, aggregation.truncated()));
+    }
+
+    /**
+     * LogQL 逃生通道：跳过 {@link LogQlBuilder} 模板拼装，直接查询调用方提供的 LogQL。
+     * 本地 selector 校验先于 raw 配额消费，格式错误的查询不会消耗预算。
+     */
+    @PostMapping("/query/raw")
+    @Operation(summary = "裸 LogQL 查询（raw 逃生通道）",
+            description = "直接使用调用方提供的 LogQL 查询 Loki；查询必须以非空 label selector 开头，否则 403 拒绝")
+    @Parameters({
+            @Parameter(name = HeaderConstants.AUTHORIZATION_HEADER,
+                    description = "访问令牌，格式：Bearer <token>", in = ParameterIn.HEADER, required = true),
+            @Parameter(name = HeaderConstants.INCIDENT_ID_HEADER,
+                    description = "事件 ID", in = ParameterIn.HEADER, required = true),
+            @Parameter(name = HeaderConstants.AGENT_ROLE_HEADER,
+                    description = "Agent 角色", in = ParameterIn.HEADER, required = true)
+    })
+    public ApiEnvelope<QueryLogsVO> queryRaw(
+            @Valid @RequestBody QueryLogsRawDTO dto,
+            @RequestAttribute(HeaderConstants.INCIDENT_ID_ATTR) String incidentId,
+            HttpServletRequest request) {
+
+        long startTask = System.currentTimeMillis();
+        request.setAttribute(HeaderConstants.TOOL_NAME_ATTR, AuditConstants.QUERY_LOGS);
+        request.setAttribute(HeaderConstants.TEMPLATE_OR_RAW_ATTR, AuditConstants.RAW);
+        request.setAttribute(HeaderConstants.AUDIT_REQUEST_PARAMS_ATTR, BeanUtil.beanToMap(dto));
+        log.info("开始裸 LogQL 查询，incidentId: {}, service: {}, window: {}",
+                incidentId, dto.getService(), dto.getWindow());
+
+        validateRawLogQL(dto.getQuery());
+        Long remaining = redisService.consume_raw_tool_calls(incidentId);
+
+        TimeRange range = resolveTimeRange(dto.getWindow(), dto.getEndOffsetSeconds());
+        URI uri = buildQueryRangeUri(dto.getQuery(), range);
+        log.info("开始请求 Loki query_range（raw），incidentId: {}", incidentId);
+        LokiQueryRangeVO raw = fetchQueryRange(uri);
+
+        LogPatternAggregator.AggregationResult aggregation = LogPatternAggregator.aggregate(raw);
+        log.info("裸 LogQL 查询完成，incidentId: {}, totalLines: {}, patternGroups: {}, remaining: {}, elapsedMs: {}",
+                incidentId, aggregation.data().getTotalLines(), aggregation.data().getPatterns().size(),
+                remaining, System.currentTimeMillis() - startTask);
+        return ApiEnvelope.ok(aggregation.data(), buildMeta(startTask, remaining, aggregation.truncated()));
+    }
+
+    private void validateRawLogQL(String query) {
+        if (!LogsQueryConstants.RAW_LOGQL_LABEL_SELECTOR.matcher(query).matches()) {
+            throw new RawQueryRejectedException(
+                    "LogQL 查询必须以包含至少一个 label matcher 的 selector 开头，如 {service_name=\"xxx\"}");
+        }
     }
 
     private TimeRange resolveTimeRange(int window, Long endOffsetSeconds) {

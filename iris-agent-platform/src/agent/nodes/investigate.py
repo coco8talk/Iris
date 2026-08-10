@@ -19,6 +19,7 @@ from agent.guard import (
     load_ledger,
 )
 from agent.investigator import build_simple_investigator
+
 # create_agent 接管了 LLM 调用，M6 的 ainvoke_with_retry 重试层暂时接不进来
 # （它是包在裸 bound_model.ainvoke 外面的，create_agent 内部不暴露这个注入点）——
 # 已知限制，留给以后给 model 本身包一层带重试的 Runnable 再补。
@@ -29,7 +30,7 @@ from agent.tools.GatewayClient import (
     GatewayClient,
     GatewayRequestError,
 )
-from agent.tools.register import make_template_tools
+from agent.tools.register import make_raw_tools, make_template_tools
 
 logger = structlog.getLogger()
 
@@ -72,7 +73,9 @@ def make_investigate_node(model: BaseChatModel):
 
         try:
             check_budget(ledger)
-            tools = make_template_tools(gateway_client, ledger)
+            tools = make_template_tools(gateway_client, ledger) + make_raw_tools(
+                gateway_client, ledger
+            )
             evidence_store = EvidenceStore(incident_id)
 
             if get_settings().subagents_enabled:
