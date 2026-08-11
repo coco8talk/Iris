@@ -30,7 +30,8 @@ async def report_once(state: IncidentState) -> None:
     都是设计内的降级路径，不是 bug，必须也能产出报告、也能收口。
     """
     incident_id = state["incident_id"]  # 入口就写死的字段，缺了才是真 bug，值得直接崩
-    verdict = state.get("verify_verdict") or {}
+    verdict_obj = state.get("verify_verdict")
+    verdict = verdict_obj.model_dump() if verdict_obj else {}
     budget = state.get("budget") or {}
     rounds_exhausted = (
         state.get("investigate_rounds", 0) >= get_settings().max_investigate_rounds

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import operator
 from enum import StrEnum
-from typing import Annotated, Any, TypedDict, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -65,6 +65,21 @@ class TriageResult(BaseModel):
     # 而 matched_cases 要等 M11 的 Chroma 检索才有真实来源。
 
 
+class VerdictEnum(StrEnum):
+    """验收结论。只有三种，别再加中间态——回流判定靠它做分支."""
+
+    PASS = "pass"
+    FAIL = "fail"
+    ABSENT = "absent"  # 本任务暂不使用，留给后续任务（跨家族 LLM 核验）
+
+
+class Verdict(BaseModel):
+    """一次验收的结论，由 verify 节点写入 IncidentState.verify_verdict."""
+
+    verdict: VerdictEnum
+    objections: list[str] = []
+    checked_by: str | None = None  # 本任务暂不使用，留给后续任务
+
 
 class IncidentState(TypedDict, total=False):
     """一次事故从告警进入到报告出口的全流程共享状态.
@@ -87,7 +102,7 @@ class IncidentState(TypedDict, total=False):
     evidence: Annotated[list[str], operator.add]            # 证据条目，追加型。M4 先记 {tool, args}，M7 起是 EV-* 编号
     verifier_feedback: Annotated[list[str], operator.add]   # verify 每次打回的意见，回流时注入 investigate 的 prompt（M4 写占位、M9 写真实异议）
     draft_report_ref: str | None  # 报告草稿的落盘路径，不是全文。M7 产出草稿、M8 落最终 report.md
-    verify_verdict: dict | None   # 验收结论。M4 先由确定性预检写，M9 补跨家族 LLM 核验，届时类型收紧为 Verdict（在 M9 定义）
+    verify_verdict: Verdict | None
 
     # ---- 降级与预算 ----
     degraded: bool             # 本次链路上是否出现过网关降级；H3 一等信号，任何节点不许吞（M3 起就在写）
@@ -109,4 +124,3 @@ class RcaReport(BaseModel):
     evidence_ids: list[str]  # 本结论引用的全部证据编号，必须都能在 evidence/ 里找到（M9 预检就查这个）
     summary_md: str          # 给人读的摘要 Markdown；**只有这个字段允许 M8 的 LLM 润色**
     remediation: str | None = None  # 修复建议；M12 的审批与执行以它为输入，慢查询类只准建议人工处理
-
