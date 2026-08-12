@@ -1,5 +1,7 @@
 """Define schemas and factories for gateway-backed diagnostic tools."""
 
+from typing import Literal
+
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -9,12 +11,12 @@ from agent.tools.GatewayClient import GatewayClient
 class QueryMetricsInput(BaseModel):
     """Input schema for querying templated service metrics."""
 
-    template_key: str = Field(
-        description=(
-            "指标模板名，只能是 error_rate/qps/p99_latency/cpu_usage/"
-            "jvm_heap_usage 之一，一次只能查一个维度"
-        )
-    )
+    # 之前是 str + 描述里文字列出可选值——只是提示，模型在真实跑通中编过
+    # "p95_latency" 这种听起来合理但网关不认的值，被 400 拒绝、白耗预算。
+    # 收成 Literal 后无效值在参数校验这层就会被拦下，不会走到网关才发现。
+    template_key: Literal[
+        "error_rate", "qps", "p99_latency", "cpu_usage", "jvm_heap_usage"
+    ] = Field(description="指标模板名，一次只能查一个维度")
     service: str = Field(description="被查询的服务名，需与 CMDB 登记的服务名一致")
     window: int = Field(
         description="查询窗口(单位：秒)，如 '120'；先用大窗口看整体，再缩小窗口配合 end_offset_seconds 定位"
@@ -29,7 +31,10 @@ def make_query_metrics(gateway_client: GatewayClient):
 
     @tool("query_metrics", args_schema=QueryMetricsInput)
     def query_metrics(
-        template_key: str, service: str, window: str, compare_baseline: bool = False
+        template_key: Literal["error_rate", "qps", "p99_latency", "cpu_usage", "jvm_heap_usage"],
+        service: str,
+        window: str,
+        compare_baseline: bool = False,
     ) -> dict:
         """Query time-series monitoring metrics for a service over a given window (via Prometheus query_range).
 

@@ -102,6 +102,7 @@ class IncidentState(TypedDict, total=False):
     evidence: Annotated[list[str], operator.add]            # 证据条目，追加型。M4 先记 {tool, args}，M7 起是 EV-* 编号
     verifier_feedback: Annotated[list[str], operator.add]   # verify 每次打回的意见，回流时注入 investigate 的 prompt（M4 写占位、M9 写真实异议）
     draft_report_ref: str | None  # 报告草稿的落盘路径，不是全文。M7 产出草稿、M8 落最终 report.md
+    hypotheses_ref: str | None  # lead 编排产出的假设列表落盘路径（M10 T10.2）；M7 单 Agent 路径下恒为 None
     verify_verdict: Verdict | None
 
     # ---- 降级与预算 ----

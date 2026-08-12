@@ -14,6 +14,12 @@ class AgentRole(StrEnum):
     INVESTIGATE = "investigate"
     VERIFY = "verify"
     REPORT = "report"
+    # ---- M10 起新增：lead + 三个最小权限 subagent，各自独立角色，
+    # 网关审计的 agent_role 列才分得出层（T10.2 完成判定第一条） ----
+    LEAD = "lead"
+    METRICS_INVESTIGATOR = "metrics-investigator"
+    LOGS_INVESTIGATOR = "logs-investigator"
+    TRACE_INVESTIGATOR = "trace-investigator"
 
 
 class ProviderSettings(BaseSettings):
@@ -87,7 +93,11 @@ class Settings(BaseSettings):
     max_investigate_rounds: int = 2  # investigate 回流上限，条件边判断还能不能打回时用
 
 
-    subagents_enabled: bool = False  # M10 才会真正生效；M7 恒为 False，走本模块单 Agent
+    # T10.1 spike 结论：deepagents 胜出，subgraph 实现已删除。多 Agent 路径现在只剩一种
+    # 实现，运行时真正需要切换的只是"要不要多 Agent"这一个二元开关——不再需要
+    # inner_engine 这第二个开关和它并存（两个开关永远同步变化就是信号，说明该合并）。
+    # subagents_enabled=True 走 lead（T10.2），False 走 M7 单 Agent（A2 消融对照组）。
+    subagents_enabled: bool = False
 
 
 @cache

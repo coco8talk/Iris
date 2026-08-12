@@ -1,13 +1,27 @@
 """证据台账 EvidenceStore：按类型编号取证结果，按 §0.6 格式落盘，复用 M5 的 incident_dir() 做路径安全."""
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from agent.paths import incident_dir
 
 _VALID_KINDS = ("M", "L", "T", "S")
+
+
+def _clean_utf8(value: str) -> str:
+    """落盘前把可能夹带非法 UTF-8 字节的文本转成保证可回读的干净文本.
+
+    真实网关吐回的日志片段偶尔混进一个孤立的非法字节（实测抓到过 query_logs
+    的 excerpt 里有一个单独的 0x91），字节层面根本不是合法 UTF-8 序列。这种
+    字符串能正常存在于内存里，一旦原样 write_text(encoding="utf-8") 再
+    read_text(encoding="utf-8") 走一圈，就会在读的那一刻 UnicodeDecodeError
+    炸穿整条链路（不只是 lead 的 read_evidence_summary，M9 verify 读证据全文
+    一样会炸）。这里用 errors="replace" 提前吃掉这类字节，换成 U+FFFD，不让
+    单条脏证据拖垮整个事故的排查链路。
+    """
+    return value.encode("utf-8", errors="replace").decode("utf-8")
 
 
 class EvidenceStore:
@@ -56,18 +70,18 @@ class EvidenceStore:
         evidence_id = self.new_id(kind)
         path = self.base_dir / f"{evidence_id}.md"
 
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         content = (
             "---\n"
             f"evidence_id: {evidence_id}\n"
-            f"source: {source}\n"
+            f"source: {_clean_utf8(source)}\n"
             f"agent_role: {agent_role}\n"
             f"ts: {ts}\n"
             f"degraded: {str(degraded).lower()}\n"
             f"truncated: {str(truncated).lower()}\n"
             "---\n\n"
-            f"{summary}\n\n"
-            f"{excerpt}\n"
+            f"{_clean_utf8(summary)}\n\n"
+            f"{_clean_utf8(excerpt)}\n"
         )
         path.write_text(content, encoding="utf-8")
         return path
@@ -75,6 +89,17 @@ class EvidenceStore:
     def list_ids(self) -> list[str]:
         """列出本事故已有的全部证据编号，M9 的确定性预检和 M10 的 lead 摘要工具都用它."""
         return [path.stem for path in self.base_dir.glob("EV-*.md")]
+
+    def read_summary(self, evidence_id: str) -> str:
+        """只读一份证据的 summary 段（不含 excerpt），T10.2 offload 硬约束专用.
+
+        lead 的 read_evidence_summary 工具只接这个方法，不接 read()——即使 lead
+        以后哪天想"顺手"多读点，这里在数据层就没有 excerpt 可给，护栏是接口
+        本身，不是靠谁记得调用哪个方法。
+        """
+        full = self.read(evidence_id)
+        _, body = full.split("---\n\n", 1)  # 去掉 YAML frontmatter，与 write() 的分段格式严格对应
+        return body.split("\n\n", 1)[0].strip()
 
     def read(self, evidence_id: str) -> str:
         """读一份证据全文。M9 verify 的 LLM 段靠它拿到证据原文.
@@ -86,5 +111,7 @@ class EvidenceStore:
         path = (self.base_dir / f"{evidence_id}.md").resolve()
         if not path.is_relative_to(self.base_dir.resolve()):
             raise ValueError(f"evidence_id 越界: {evidence_id!r}")
-        return path.read_text(encoding="utf-8")
+        # errors="replace"：兜底历史文件（write() 加 _clean_utf8 之前落盘的）
+        # 里可能还留着非法字节，读的时候不因为一个坏字节炸穿整条链路。
+        return path.read_text(encoding="utf-8", errors="replace")
 
